@@ -114,6 +114,12 @@ export const catalog: CatalogItem[] = [
   ])
 ];
 
+const hoodiePink = catalog.find((item) => item.id === "hoodie-pink");
+if (hoodiePink) {
+  hoodiePink.clothingModelUrl = "/assets/models/clothing/hoodie-pink.glb";
+  hoodiePink.clothingModelScale = 1;
+}
+
 export const starterItems = [
   "quaternius-superhero-female",
   "quaternius-superhero-male",
