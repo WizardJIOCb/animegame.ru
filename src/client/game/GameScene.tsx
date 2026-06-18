@@ -918,7 +918,33 @@ function stablePetSeed(item?: CatalogItem) {
   return [...id].reduce((seed, char) => seed + char.charCodeAt(0), 0);
 }
 
-function PetCompanion({ item, ownerMoving, ownerRotation }: { item?: CatalogItem; ownerMoving: boolean; ownerRotation: number }) {
+function initialPetPosition(ownerPosition: THREE.Vector3, seed: number) {
+  const angle = seed * 0.71;
+  return new THREE.Vector3(
+    THREE.MathUtils.clamp(ownerPosition.x + Math.cos(angle) * 0.72, -walkLimit, walkLimit),
+    0.01,
+    THREE.MathUtils.clamp(ownerPosition.z + Math.sin(angle) * 0.72, -walkLimit, walkLimit)
+  );
+}
+
+function clampWorldPetTarget(target: THREE.Vector3) {
+  target.x = THREE.MathUtils.clamp(target.x, -walkLimit, walkLimit);
+  target.z = THREE.MathUtils.clamp(target.z, -walkLimit, walkLimit);
+  target.y = 0;
+  return target;
+}
+
+function PetCompanion({
+  item,
+  ownerMoving,
+  ownerPosition,
+  ownerRotation
+}: {
+  item?: CatalogItem;
+  ownerMoving: boolean;
+  ownerPosition: THREE.Vector3;
+  ownerRotation: number;
+}) {
   const root = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
   const frontLeft = useRef<THREE.Group>(null);
@@ -929,44 +955,67 @@ function PetCompanion({ item, ownerMoving, ownerRotation }: { item?: CatalogItem
   const wingLeft = useRef<THREE.Group>(null);
   const wingRight = useRef<THREE.Group>(null);
   const time = useRef(0);
-  const localTarget = useRef(new THREE.Vector3(0.62, 0, 0.45));
+  const behaviorTime = useRef(0);
+  const targetPosition = useRef(new THREE.Vector3());
   const nextWanderAt = useRef(0);
   const seed = useMemo(() => stablePetSeed(item), [item?.id]);
+  const initialPosition = useMemo(() => initialPetPosition(ownerPosition, seed), [seed]);
+
+  useEffect(() => {
+    targetPosition.current.copy(initialPosition);
+    nextWanderAt.current = behaviorTime.current + 2.5 + (seed % 4) * 0.45;
+  }, [initialPosition, seed]);
 
   useFrame((_, delta) => {
     if (!root.current) {
       return;
     }
 
+    behaviorTime.current += delta;
     const current = root.current.position;
-    const distanceToTarget = Math.hypot(current.x - localTarget.current.x, current.z - localTarget.current.z);
-    const petMoving = ownerMoving || distanceToTarget > 0.045;
-    time.current += delta * (petMoving ? 8.5 : 2.2);
+    const ownerDistance = Math.hypot(current.x - ownerPosition.x, current.z - ownerPosition.z);
+    const targetDistance = Math.hypot(current.x - targetPosition.current.x, current.z - targetPosition.current.z);
+    const shouldCatchUp = ownerMoving || ownerDistance > 1.35;
 
-    if (ownerMoving) {
+    if (shouldCatchUp) {
       const forward = new THREE.Vector2(Math.sin(ownerRotation), Math.cos(ownerRotation));
       const right = new THREE.Vector2(Math.cos(ownerRotation), -Math.sin(ownerRotation));
       const side = seed % 2 === 0 ? 1 : -1;
-      const sway = Math.sin(time.current * 0.55 + seed) * 0.18;
-      localTarget.current.set(
-        right.x * (0.52 * side + sway) - forward.x * 0.68,
+      const sway = Math.sin(behaviorTime.current * 0.8 + seed) * 0.16;
+      targetPosition.current.set(
+        ownerPosition.x + right.x * (0.48 * side + sway) - forward.x * 0.72,
         0,
-        right.y * (0.52 * side + sway) - forward.y * 0.68
+        ownerPosition.z + right.y * (0.48 * side + sway) - forward.y * 0.72
       );
-    } else if (time.current >= nextWanderAt.current) {
-      const angle = time.current * 0.75 + seed * 0.37;
+      clampWorldPetTarget(targetPosition.current);
+      nextWanderAt.current = behaviorTime.current + 2.2 + (seed % 3) * 0.45;
+    } else if (targetDistance < 0.08 && behaviorTime.current >= nextWanderAt.current) {
+      const angle = behaviorTime.current * 0.9 + seed * 0.37;
       const radius = 0.48 + (seed % 5) * 0.06 + Math.sin(time.current * 0.9 + seed) * 0.08;
-      localTarget.current.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
-      nextWanderAt.current = time.current + 1.25 + (seed % 4) * 0.32;
+      targetPosition.current.set(
+        ownerPosition.x + Math.cos(angle) * radius,
+        0,
+        ownerPosition.z + Math.sin(angle) * radius
+      );
+      clampWorldPetTarget(targetPosition.current);
+      nextWanderAt.current = behaviorTime.current + 3.2 + (seed % 5) * 0.55;
     }
 
     const beforeX = current.x;
     const beforeZ = current.z;
+    const toTarget = targetPosition.current.clone().sub(current);
+    toTarget.y = 0;
+    const distanceToTarget = toTarget.length();
+    const speed = shouldCatchUp ? 2.15 : 0.72;
+    if (distanceToTarget > 0.025) {
+      current.add(toTarget.normalize().multiplyScalar(Math.min(distanceToTarget, delta * speed)));
+    }
+
+    const petMoving = Math.hypot(current.x - beforeX, current.z - beforeZ) > 0.0015;
+    time.current += delta * (petMoving ? 8.5 : 2.2);
     const phase = Math.sin(time.current);
     const counter = Math.sin(time.current + Math.PI);
-    const nextPosition = localTarget.current.clone();
-    nextPosition.y = (petMoving ? Math.abs(phase) * 0.045 : Math.sin(time.current) * 0.012) + 0.01;
-    current.lerp(nextPosition, Math.min(1, delta * (ownerMoving ? 4.2 : 1.55)));
+    current.y = (petMoving ? Math.abs(phase) * 0.045 : Math.sin(time.current) * 0.012) + 0.01;
 
     const velocityX = current.x - beforeX;
     const velocityZ = current.z - beforeZ;
@@ -1000,7 +1049,7 @@ function PetCompanion({ item, ownerMoving, ownerRotation }: { item?: CatalogItem
 
   if (palette.kind === "slime") {
     return (
-      <group ref={root} position={[0.62, 0.01, 0.45]} scale={0.88}>
+      <group ref={root} position={initialPosition} scale={0.88}>
         <mesh castShadow position={[0, 0.18, 0]}>
           <sphereGeometry args={[0.24, 28, 18]} />
           <meshStandardMaterial color={palette.body} roughness={0.35} metalness={0.02} transparent opacity={0.86} />
@@ -1018,7 +1067,7 @@ function PetCompanion({ item, ownerMoving, ownerRotation }: { item?: CatalogItem
 
   if (palette.kind === "robot") {
     return (
-      <group ref={root} position={[0.62, 0.01, 0.45]} scale={0.82}>
+      <group ref={root} position={initialPosition} scale={0.82}>
         <group ref={body}>
           <mesh castShadow position={[0, 0.24, 0]}><boxGeometry args={[0.34, 0.3, 0.28]} /><meshStandardMaterial color={palette.body} roughness={0.42} metalness={0.28} /></mesh>
           <mesh castShadow position={[0, 0.48, -0.03]}><boxGeometry args={[0.28, 0.2, 0.22]} /><meshStandardMaterial color={palette.body} roughness={0.35} metalness={0.32} /></mesh>
@@ -1045,7 +1094,7 @@ function PetCompanion({ item, ownerMoving, ownerRotation }: { item?: CatalogItem
 
   if (palette.kind === "star") {
     return (
-      <group ref={root} position={[0.62, 0.08, 0.45]} scale={0.74}>
+      <group ref={root} position={initialPosition} scale={0.74}>
         <mesh castShadow>
           <sphereGeometry args={[0.18, 18, 18]} />
           <meshStandardMaterial color={palette.body} emissive={palette.glow} emissiveIntensity={0.28} roughness={0.38} />
@@ -1063,7 +1112,7 @@ function PetCompanion({ item, ownerMoving, ownerRotation }: { item?: CatalogItem
 
   if (palette.kind === "owl" || palette.kind === "dragon") {
     return (
-      <group ref={root} position={[0.62, 0.02, 0.45]} scale={0.78}>
+      <group ref={root} position={initialPosition} scale={0.78}>
         <group ref={body}>
           <mesh castShadow position={[0, 0.27, 0]}><sphereGeometry args={[0.22, 20, 16]} /><meshStandardMaterial color={palette.body} roughness={0.58} /></mesh>
           <mesh castShadow position={[0, 0.5, -0.03]}><sphereGeometry args={[0.18, 20, 14]} /><meshStandardMaterial color={palette.kind === "dragon" ? palette.body : palette.accent} roughness={0.55} /></mesh>
@@ -1079,7 +1128,7 @@ function PetCompanion({ item, ownerMoving, ownerRotation }: { item?: CatalogItem
   }
 
   return (
-    <group ref={root} position={[0.62, 0.01, 0.45]} scale={isBunny ? 0.76 : 0.82}>
+    <group ref={root} position={initialPosition} scale={isBunny ? 0.76 : 0.82}>
       <group ref={body}>
         <mesh castShadow position={[0, 0.25, 0]} rotation={[Math.PI / 2, 0, 0]}>
           <capsuleGeometry args={[0.16, 0.32, 8, 16]} />
@@ -1176,21 +1225,23 @@ function Player({
   });
 
   return (
-    <group ref={group} position={initialPosition.current}>
-      <group ref={body} position={[0, playerVisualYOffset, 0]} rotation={[0, initialRotation.current, 0]}>
-        {character?.modelUrl ? (
-          <Suspense fallback={<ProceduralPlayerBody color={color} isSelf={isSelf} />}>
-            <CharacterModel item={character} moving={isActuallyMoving} outfit={outfit} />
-          </Suspense>
-        ) : (
-          <ProceduralPlayerBody color={color} isSelf={isSelf} />
-        )}
+    <>
+      <group ref={group} position={initialPosition.current}>
+        <group ref={body} position={[0, playerVisualYOffset, 0]} rotation={[0, initialRotation.current, 0]}>
+          {character?.modelUrl ? (
+            <Suspense fallback={<ProceduralPlayerBody color={color} isSelf={isSelf} />}>
+              <CharacterModel item={character} moving={isActuallyMoving} outfit={outfit} />
+            </Suspense>
+          ) : (
+            <ProceduralPlayerBody color={color} isSelf={isSelf} />
+          )}
+        </group>
+        <Html center position={[0, 1.95, 0]} distanceFactor={7}>
+          <div className="name-tag">{username}</div>
+        </Html>
       </group>
-      <PetCompanion item={pet} ownerMoving={isActuallyMoving} ownerRotation={rotation} />
-      <Html center position={[0, 1.95, 0]} distanceFactor={7}>
-        <div className="name-tag">{username}</div>
-      </Html>
-    </group>
+      <PetCompanion item={pet} ownerMoving={isActuallyMoving} ownerPosition={position} ownerRotation={rotation} />
+    </>
   );
 }
 
