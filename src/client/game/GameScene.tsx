@@ -669,6 +669,135 @@ function patternAmount(pattern: OutfitPalette["pattern"], x: number, y: number, 
   return ((x * 5 + y * 3) % 97) < 6 ? 0.32 : 0;
 }
 
+function makeClothCanvasTexture(item?: CatalogItem, scale = 1) {
+  const colors = outfitColors(item);
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext("2d")!;
+  const main = new THREE.Color(colors.main);
+  const accent = new THREE.Color(colors.accent);
+  const trim = new THREE.Color(colors.trim);
+  const dark = main.clone().offsetHSL(0, 0.04, -0.18).getStyle();
+  const light = main.clone().offsetHSL(0.01, -0.06, 0.16).getStyle();
+
+  context.fillStyle = main.getStyle();
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "rgba(255,255,255,0.08)";
+  for (let y = 0; y < canvas.height; y += 16) {
+    context.fillRect(0, y, canvas.width, 4);
+  }
+
+  if (colors.pattern === "neon" || colors.pattern === "scanline" || colors.pattern === "armor") {
+    context.fillStyle = dark;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = accent.getStyle();
+    context.lineWidth = 3;
+    for (let x = -canvas.width; x < canvas.width * 2; x += 42) {
+      context.beginPath();
+      context.moveTo(x, 0);
+      context.lineTo(x + 96, canvas.height);
+      context.stroke();
+    }
+    context.strokeStyle = trim.getStyle();
+    context.lineWidth = 1.5;
+    for (let y = 24; y < canvas.height; y += 44) {
+      context.beginPath();
+      context.moveTo(0, y);
+      context.lineTo(canvas.width, y + 12);
+      context.stroke();
+    }
+  } else if (colors.pattern === "sakura") {
+    context.fillStyle = light;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < 46; i += 1) {
+      const x = (i * 47) % canvas.width;
+      const y = (i * 83) % canvas.height;
+      context.fillStyle = i % 3 === 0 ? accent.getStyle() : trim.getStyle();
+      context.beginPath();
+      context.ellipse(x, y, 5 + (i % 4), 2.5, i * 0.7, 0, Math.PI * 2);
+      context.fill();
+    }
+  } else if (colors.pattern === "stars" || colors.pattern === "sparkle") {
+    context.fillStyle = dark;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < 70; i += 1) {
+      const x = (i * 61) % canvas.width;
+      const y = (i * 97) % canvas.height;
+      const size = i % 5 === 0 ? 4 : 2;
+      context.fillStyle = i % 4 === 0 ? trim.getStyle() : accent.getStyle();
+      context.fillRect(x - size / 2, y, size, 1.5);
+      context.fillRect(x, y - size / 2, 1.5, size);
+    }
+  } else if (colors.pattern === "waves" || colors.pattern === "cloud") {
+    context.fillStyle = main.getStyle();
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = accent.getStyle();
+    context.lineWidth = 4;
+    for (let y = 18; y < canvas.height; y += 32) {
+      context.beginPath();
+      for (let x = 0; x <= canvas.width; x += 8) {
+        const nextY = y + Math.sin((x + y) * 0.05) * 8;
+        if (x === 0) {
+          context.moveTo(x, nextY);
+        } else {
+          context.lineTo(x, nextY);
+        }
+      }
+      context.stroke();
+    }
+    context.strokeStyle = trim.getStyle();
+    context.lineWidth = 1.5;
+    for (let y = 30; y < canvas.height; y += 48) {
+      context.beginPath();
+      context.moveTo(0, y);
+      context.lineTo(canvas.width, y - 18);
+      context.stroke();
+    }
+  } else if (colors.pattern === "school") {
+    context.fillStyle = main.getStyle();
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = trim.getStyle();
+    context.lineWidth = 5;
+    for (let x = 24; x < canvas.width; x += 64) {
+      context.beginPath();
+      context.moveTo(x, 0);
+      context.lineTo(x, canvas.height);
+      context.stroke();
+    }
+    context.strokeStyle = accent.getStyle();
+    context.lineWidth = 3;
+    for (let y = 30; y < canvas.height; y += 58) {
+      context.beginPath();
+      context.moveTo(0, y);
+      context.lineTo(canvas.width, y);
+      context.stroke();
+    }
+  } else {
+    context.fillStyle = light;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = accent.getStyle();
+    for (let i = 0; i < 36; i += 1) {
+      const x = (i * 41) % canvas.width;
+      const y = (i * 73) % canvas.height;
+      context.beginPath();
+      context.arc(x, y, 3 + (i % 3), 0, Math.PI * 2);
+      context.fill();
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(scale, scale);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 function makeOutfitTexture(source: THREE.Texture, item?: CatalogItem) {
   if (!item) {
     return source;
@@ -751,6 +880,150 @@ function makeOutfitTexture(source: THREE.Texture, item?: CatalogItem) {
   return texture;
 }
 
+function outfitShape(item?: CatalogItem) {
+  const id = item?.id ?? "";
+  return {
+    dress: id.includes("dress") || id.includes("kimono") || id.includes("idol"),
+    hoodie: id.includes("hoodie"),
+    jacket: id.includes("jacket") || id.includes("cyber"),
+    armor: id.includes("armor") || id.includes("neo"),
+    shoes: id.includes("sneakers") || id.includes("boots"),
+    hat: id.includes("hat") || id.includes("cap"),
+    scarf: id.includes("scarf"),
+    hair: id.includes("hair"),
+    wings: id.includes("wings"),
+    mask: id.includes("mask")
+  };
+}
+
+function OutfitOverlay({ outfit, character }: { outfit?: CatalogItem; character: CatalogItem }) {
+  const clothTexture = useMemo(() => makeClothCanvasTexture(outfit, 1.45), [outfit?.id]);
+  const trimTexture = useMemo(() => makeClothCanvasTexture(outfit, 2.2), [outfit?.id]);
+  if (!outfit) {
+    return null;
+  }
+
+  const shape = outfitShape(outfit);
+  const colors = outfitColors(outfit);
+  const characterId = character.id.toLowerCase();
+  const isMale = characterId.endsWith("-male") || characterId.includes("superhero-male");
+  const torsoY = isMale ? 1.04 : 1.0;
+  const torsoHeight = shape.dress ? 0.58 : 0.54;
+  const torsoRadiusTop = isMale ? 0.3 : 0.255;
+  const torsoRadiusBottom = isMale ? 0.235 : 0.22;
+  const materialProps = {
+    map: clothTexture,
+    roughness: shape.armor ? 0.42 : 0.72,
+    metalness: shape.armor ? 0.24 : 0.02
+  };
+
+  return (
+    <group renderOrder={8}>
+      {!shape.shoes && !shape.hat && !shape.hair && !shape.mask && !shape.wings ? (
+        <>
+          <mesh castShadow position={[0, torsoY, -0.012]} scale={[1.04, 1, 0.82]}>
+            <cylinderGeometry args={[torsoRadiusTop, torsoRadiusBottom, torsoHeight, 28, 1, true]} />
+            <meshStandardMaterial {...materialProps} color="#ffffff" side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1} />
+          </mesh>
+          <mesh castShadow position={[0, torsoY + torsoHeight / 2 + 0.025, -0.012]} scale={[1.04, 1, 0.82]}>
+            <torusGeometry args={[torsoRadiusTop * 0.82, 0.018, 8, 28]} />
+            <meshStandardMaterial color={colors.trim} roughness={0.58} />
+          </mesh>
+          {(shape.hoodie || shape.jacket || shape.dress || shape.armor) ? (
+            <>
+              <mesh castShadow position={[-0.35, 1.02, -0.005]} rotation={[0.05, 0, -0.18]}>
+                <capsuleGeometry args={[shape.dress ? 0.075 : 0.068, shape.dress ? 0.5 : 0.44, 8, 14]} />
+                <meshStandardMaterial map={trimTexture} color="#ffffff" roughness={0.74} />
+              </mesh>
+              <mesh castShadow position={[0.35, 1.02, -0.005]} rotation={[0.05, 0, 0.18]}>
+                <capsuleGeometry args={[shape.dress ? 0.075 : 0.068, shape.dress ? 0.5 : 0.44, 8, 14]} />
+                <meshStandardMaterial map={trimTexture} color="#ffffff" roughness={0.74} />
+              </mesh>
+            </>
+          ) : null}
+          {shape.dress ? (
+            <mesh castShadow position={[0, 0.63, -0.005]} scale={[1, 0.9, 0.82]}>
+              <coneGeometry args={[isMale ? 0.36 : 0.42, isMale ? 0.22 : 0.26, 32, 1, true]} />
+              <meshStandardMaterial map={clothTexture} color="#ffffff" side={THREE.DoubleSide} roughness={0.76} />
+            </mesh>
+          ) : (
+            <mesh castShadow position={[0, 0.64, -0.005]} scale={[1.02, 1, 0.78]}>
+              <cylinderGeometry args={[isMale ? 0.235 : 0.22, isMale ? 0.25 : 0.235, 0.22, 28, 1, true]} />
+              <meshStandardMaterial map={trimTexture} color="#ffffff" side={THREE.DoubleSide} roughness={0.76} />
+            </mesh>
+          )}
+          {shape.hoodie ? (
+            <mesh castShadow position={[0, 1.32, 0.085]} rotation={[0.35, 0, 0]} scale={[1.15, 0.7, 0.78]}>
+              <torusGeometry args={[0.22, 0.055, 10, 24]} />
+              <meshStandardMaterial color={colors.main} roughness={0.8} />
+            </mesh>
+          ) : null}
+          {shape.jacket ? (
+            <mesh castShadow position={[0, 1.02, -0.225]} scale={[0.64, 1.2, 0.08]}>
+              <boxGeometry args={[0.12, 0.5, 0.03]} />
+              <meshStandardMaterial color={colors.accent} emissive={colors.accent} emissiveIntensity={0.18} roughness={0.54} />
+            </mesh>
+          ) : null}
+          {shape.armor ? (
+            <>
+              <mesh castShadow position={[0, 1.08, -0.255]} scale={[0.75, 1, 0.12]}>
+                <boxGeometry args={[0.42, 0.34, 0.04]} />
+                <meshStandardMaterial color={colors.main} metalness={0.35} roughness={0.36} />
+              </mesh>
+              <mesh castShadow position={[0, 1.09, -0.282]} scale={[0.7, 1, 0.08]}>
+                <boxGeometry args={[0.08, 0.42, 0.03]} />
+                <meshStandardMaterial color={colors.accent} emissive={colors.accent} emissiveIntensity={0.35} />
+              </mesh>
+            </>
+          ) : null}
+        </>
+      ) : null}
+      {shape.shoes ? (
+        <>
+          <mesh castShadow position={[-0.12, 0.045, -0.05]} scale={[1, 0.48, 1.55]}>
+            <capsuleGeometry args={[0.065, 0.14, 6, 10]} />
+            <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.55} />
+          </mesh>
+          <mesh castShadow position={[0.12, 0.045, -0.05]} scale={[1, 0.48, 1.55]}>
+            <capsuleGeometry args={[0.065, 0.14, 6, 10]} />
+            <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.55} />
+          </mesh>
+        </>
+      ) : null}
+      {shape.hat ? (
+        <>
+          <mesh castShadow position={[0, 1.68, 0]} scale={[1, 0.34, 1]}>
+            <sphereGeometry args={[0.21, 24, 12]} />
+            <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.7} />
+          </mesh>
+          <mesh castShadow position={[0, 1.62, -0.19]} scale={[1.2, 0.16, 0.45]}>
+            <boxGeometry args={[0.24, 0.05, 0.18]} />
+            <meshStandardMaterial color={colors.accent} roughness={0.7} />
+          </mesh>
+        </>
+      ) : null}
+      {shape.scarf ? (
+        <mesh castShadow position={[0, 1.32, -0.02]} rotation={[Math.PI / 2, 0, 0]} scale={[1.12, 0.8, 1]}>
+          <torusGeometry args={[0.23, 0.035, 8, 28]} />
+          <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.78} />
+        </mesh>
+      ) : null}
+      {shape.wings ? (
+        <>
+          <mesh castShadow position={[-0.32, 1.2, 0.22]} rotation={[0.12, 0.45, 0.55]}>
+            <coneGeometry args={[0.16, 0.62, 4]} />
+            <meshStandardMaterial color={colors.trim} emissive={colors.accent} emissiveIntensity={0.25} transparent opacity={0.78} />
+          </mesh>
+          <mesh castShadow position={[0.32, 1.2, 0.22]} rotation={[0.12, -0.45, -0.55]}>
+            <coneGeometry args={[0.16, 0.62, 4]} />
+            <meshStandardMaterial color={colors.trim} emissive={colors.accent} emissiveIntensity={0.25} transparent opacity={0.78} />
+          </mesh>
+        </>
+      ) : null}
+    </group>
+  );
+}
+
 function CharacterModel({ item, moving, outfit }: { item: CatalogItem; moving: boolean; outfit?: CatalogItem }) {
   const gltf = useGLTF(item.modelUrl ?? "");
   const bones = useRef<Record<string, THREE.Bone>>({});
@@ -768,9 +1041,6 @@ function CharacterModel({ item, moving, outfit }: { item: CatalogItem; moving: b
         const materials = Array.isArray(node.material) ? node.material : [node.material];
         for (const material of materials) {
           if (material instanceof THREE.MeshStandardMaterial) {
-            if (material.map && material.name.toLowerCase().includes("superhero")) {
-              material.map = makeOutfitTexture(material.map, outfit);
-            }
             material.normalMap = null;
             material.roughnessMap = null;
             material.normalScale.set(0, 0);
@@ -844,7 +1114,12 @@ function CharacterModel({ item, moving, outfit }: { item: CatalogItem; moving: b
     }
   });
 
-  return <primitive object={scene} scale={item.modelScale ?? 1} />;
+  return (
+    <>
+      <primitive object={scene} scale={item.modelScale ?? 1} />
+      <OutfitOverlay outfit={outfit} character={item} />
+    </>
+  );
 }
 
 function ProceduralPlayerBody({ color, isSelf }: { color: string; isSelf: boolean }) {
