@@ -101,7 +101,7 @@ export const catalog: CatalogItem[] = [
     ["pet-dragon", "Мини-дракон", 1800, "legendary", "🐉"],
     ["pet-owl", "Совенок Ночь", 740, "rare", "🦉"],
     ["pet-panda", "Панда Боба", 1100, "epic", "🐼"],
-    ["pet-slime", "Слайм Пудинг", 360, "common", "🫧"],
+    ["pet-slime", "Слайм Пудинг", 360, "common", "🟢"],
     ["pet-robot", "Робо-питомец", 870, "epic", "🤖"],
     ["pet-star", "Звездный дух", 1600, "legendary", "🌟"]
   ]),

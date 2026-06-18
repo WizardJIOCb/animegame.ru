@@ -1,6 +1,6 @@
 import { Html, OrbitControls, Sparkles, useGLTF } from "@react-three/drei";
 import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { CatalogItem, HomeState, PublicUser, RemotePlayer } from "../types";
@@ -590,30 +590,83 @@ function ModelFallback({ item, size }: { item: CatalogItem; size: [number, numbe
   );
 }
 
-function outfitColors(item?: CatalogItem) {
+type OutfitPalette = {
+  main: string;
+  accent: string;
+  trim: string;
+  pattern: "soft" | "neon" | "sakura" | "stars" | "scanline" | "waves" | "school" | "sparkle" | "armor" | "cloud";
+};
+
+function outfitColors(item?: CatalogItem): OutfitPalette {
   const id = item?.id ?? "";
   if (id.includes("black") || id.includes("night")) {
-    return { main: "#111827", accent: "#7c3aed", trim: "#e5e7eb" };
+    return { main: "#111827", accent: "#7c3aed", trim: "#e5e7eb", pattern: id.includes("night") ? "stars" : "neon" };
   }
   if (id.includes("sakura") || id.includes("pink") || id.includes("idol")) {
-    return { main: "#f9a8d4", accent: "#ec4899", trim: "#fff1f2" };
+    return { main: "#f9a8d4", accent: "#ec4899", trim: "#fff1f2", pattern: id.includes("idol") ? "sparkle" : id.includes("sakura") ? "sakura" : "soft" };
   }
   if (id.includes("cyber") || id.includes("neo")) {
-    return { main: "#1f2937", accent: "#22d3ee", trim: "#a78bfa" };
+    return { main: "#1f2937", accent: "#22d3ee", trim: "#a78bfa", pattern: id.includes("neo") ? "armor" : "scanline" };
   }
   if (id.includes("kimono") || id.includes("summer")) {
-    return { main: "#7dd3fc", accent: "#f59e0b", trim: "#fef3c7" };
+    return { main: "#7dd3fc", accent: "#f59e0b", trim: "#fef3c7", pattern: "waves" };
   }
   if (id.includes("school") || id.includes("blue")) {
-    return { main: "#2563eb", accent: "#f8fafc", trim: "#111827" };
+    return { main: "#2563eb", accent: "#f8fafc", trim: "#111827", pattern: "school" };
   }
   if (id.includes("cloud") || id.includes("silver")) {
-    return { main: "#dbeafe", accent: "#38bdf8", trim: "#ffffff" };
+    return { main: "#dbeafe", accent: "#38bdf8", trim: "#ffffff", pattern: "cloud" };
   }
   if (id.includes("star") || id.includes("moon")) {
-    return { main: "#312e81", accent: "#facc15", trim: "#e0e7ff" };
+    return { main: "#312e81", accent: "#facc15", trim: "#e0e7ff", pattern: "stars" };
   }
-  return { main: item?.color ?? "#ec4899", accent: "#ffffff", trim: "#111827" };
+  return { main: item?.color ?? "#ec4899", accent: "#ffffff", trim: "#111827", pattern: "soft" };
+}
+
+function colorToRgb(color: THREE.Color) {
+  return {
+    r: Math.round(color.r * 255),
+    g: Math.round(color.g * 255),
+    b: Math.round(color.b * 255)
+  };
+}
+
+function blendChannel(base: number, overlay: number, amount: number) {
+  return Math.round(base * (1 - amount) + overlay * amount);
+}
+
+function patternAmount(pattern: OutfitPalette["pattern"], x: number, y: number, width: number, height: number) {
+  const nx = x / width;
+  const ny = y / height;
+  const wave = Math.sin((nx * 18 + ny * 11) * Math.PI);
+
+  if (pattern === "neon") {
+    return (x + y) % 46 < 5 || (x - y + 2048) % 58 < 4 ? 0.62 : 0;
+  }
+  if (pattern === "sakura") {
+    const petal = ((x * 7 + y * 13) % 149) < 9 || ((x * 11 - y * 5 + 3000) % 173) < 7;
+    return petal ? 0.5 : wave > 0.78 ? 0.22 : 0;
+  }
+  if (pattern === "stars" || pattern === "sparkle") {
+    const star = ((x * 19 + y * 31) % 211) < 6 || ((x * 29 - y * 17 + 4000) % 257) < 5;
+    return star ? 0.72 : Math.max(0, wave - 0.82) * 0.28;
+  }
+  if (pattern === "scanline") {
+    return y % 18 < 3 || x % 64 < 4 ? 0.5 : 0;
+  }
+  if (pattern === "waves") {
+    return Math.sin(nx * Math.PI * 24 + Math.sin(ny * Math.PI * 8) * 1.8) > 0.72 ? 0.48 : 0;
+  }
+  if (pattern === "school") {
+    return x % 74 < 5 || y % 58 < 4 ? 0.58 : 0;
+  }
+  if (pattern === "armor") {
+    return x % 88 < 5 || y % 72 < 5 || Math.abs(((x + y) % 96) - 48) < 3 ? 0.56 : 0;
+  }
+  if (pattern === "cloud") {
+    return Math.sin(nx * Math.PI * 16) + Math.cos(ny * Math.PI * 12) > 1.25 ? 0.42 : 0;
+  }
+  return ((x * 5 + y * 3) % 97) < 6 ? 0.32 : 0;
 }
 
 function makeOutfitTexture(source: THREE.Texture, item?: CatalogItem) {
@@ -631,6 +684,10 @@ function makeOutfitTexture(source: THREE.Texture, item?: CatalogItem) {
   const colors = outfitColors(item);
   const main = new THREE.Color(colors.main);
   const accent = new THREE.Color(colors.accent);
+  const trim = new THREE.Color(colors.trim);
+  const mainRgb = colorToRgb(main);
+  const accentRgb = colorToRgb(accent);
+  const trimRgb = colorToRgb(trim);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -644,18 +701,36 @@ function makeOutfitTexture(source: THREE.Texture, item?: CatalogItem) {
   const data = imageData.data;
 
   for (let i = 0; i < data.length; i += 4) {
+    const pixel = i / 4;
+    const x = pixel % width;
+    const y = Math.floor(pixel / width);
     const r = data[i];
     const g = data[i + 1];
     const b = data[i + 2];
     const alpha = data[i + 3];
     const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
 
-    if (alpha > 0 && luminance < 92) {
-      const shade = THREE.MathUtils.clamp(luminance / 96, 0.18, 0.95);
-      const target = luminance < 42 ? main : accent;
-      data[i] = Math.round(target.r * 255 * shade);
-      data[i + 1] = Math.round(target.g * 255 * shade);
-      data[i + 2] = Math.round(target.b * 255 * shade);
+    if (alpha > 0 && luminance < 104) {
+      const shade = THREE.MathUtils.clamp(luminance / 102, 0.26, 1);
+      const target = luminance < 48 ? mainRgb : accentRgb;
+      let nextR = Math.round(target.r * shade);
+      let nextG = Math.round(target.g * shade);
+      let nextB = Math.round(target.b * shade);
+      const amount = patternAmount(colors.pattern, x, y, width, height);
+      if (amount > 0) {
+        const overlay = amount > 0.55 ? trimRgb : accentRgb;
+        nextR = blendChannel(nextR, overlay.r, amount);
+        nextG = blendChannel(nextG, overlay.g, amount);
+        nextB = blendChannel(nextB, overlay.b, amount);
+      }
+      if (x % 128 < 2 || y % 128 < 2) {
+        nextR = blendChannel(nextR, trimRgb.r, 0.18);
+        nextG = blendChannel(nextG, trimRgb.g, 0.18);
+        nextB = blendChannel(nextB, trimRgb.b, 0.18);
+      }
+      data[i] = nextR;
+      data[i + 1] = nextG;
+      data[i + 2] = nextB;
     }
   }
 
@@ -799,12 +874,219 @@ function ProceduralPlayerBody({ color, isSelf }: { color: string; isSelf: boolea
   );
 }
 
+function petPalette(item: CatalogItem) {
+  const id = item.id;
+  if (id.includes("shiba")) {
+    return { body: "#d97706", accent: "#fff7ed", dark: "#1f2937", glow: "#f59e0b", kind: "dog" };
+  }
+  if (id.includes("cat")) {
+    return { body: "#f5f5f4", accent: "#fbcfe8", dark: "#111827", glow: "#38bdf8", kind: "cat" };
+  }
+  if (id.includes("bunny")) {
+    return { body: "#f8fafc", accent: "#f9a8d4", dark: "#334155", glow: "#f0abfc", kind: "bunny" };
+  }
+  if (id.includes("fox")) {
+    return { body: "#f97316", accent: "#ffedd5", dark: "#1f2937", glow: "#facc15", kind: "fox" };
+  }
+  if (id.includes("dragon")) {
+    return { body: "#22c55e", accent: "#facc15", dark: "#14532d", glow: "#86efac", kind: "dragon" };
+  }
+  if (id.includes("owl")) {
+    return { body: "#92400e", accent: "#fde68a", dark: "#111827", glow: "#fbbf24", kind: "owl" };
+  }
+  if (id.includes("panda")) {
+    return { body: "#f8fafc", accent: "#111827", dark: "#111827", glow: "#a7f3d0", kind: "panda" };
+  }
+  if (id.includes("slime")) {
+    return { body: "#34d399", accent: "#a7f3d0", dark: "#064e3b", glow: "#d9f99d", kind: "slime" };
+  }
+  if (id.includes("robot")) {
+    return { body: "#94a3b8", accent: "#22d3ee", dark: "#0f172a", glow: "#67e8f9", kind: "robot" };
+  }
+  if (id.includes("star")) {
+    return { body: "#facc15", accent: "#fde68a", dark: "#7c2d12", glow: "#fef08a", kind: "star" };
+  }
+  return { body: item.color, accent: "#ffffff", dark: "#111827", glow: "#f0abfc", kind: "dog" };
+}
+
+function PetCompanion({ item, ownerMoving }: { item?: CatalogItem; ownerMoving: boolean }) {
+  const root = useRef<THREE.Group>(null);
+  const body = useRef<THREE.Group>(null);
+  const frontLeft = useRef<THREE.Group>(null);
+  const frontRight = useRef<THREE.Group>(null);
+  const backLeft = useRef<THREE.Group>(null);
+  const backRight = useRef<THREE.Group>(null);
+  const tail = useRef<THREE.Group>(null);
+  const wingLeft = useRef<THREE.Group>(null);
+  const wingRight = useRef<THREE.Group>(null);
+  const time = useRef(0);
+
+  useFrame((_, delta) => {
+    if (!root.current) {
+      return;
+    }
+    time.current += delta * (ownerMoving ? 8.5 : 2.2);
+    const phase = Math.sin(time.current);
+    const counter = Math.sin(time.current + Math.PI);
+    root.current.position.y = (ownerMoving ? Math.abs(phase) * 0.045 : Math.sin(time.current) * 0.012) + 0.01;
+    root.current.rotation.z = ownerMoving ? phase * 0.055 : 0;
+    if (body.current) {
+      body.current.rotation.x = ownerMoving ? Math.sin(time.current * 0.5) * 0.05 : Math.sin(time.current) * 0.025;
+    }
+    if (frontLeft.current) frontLeft.current.rotation.x = phase * 0.55;
+    if (frontRight.current) frontRight.current.rotation.x = counter * 0.55;
+    if (backLeft.current) backLeft.current.rotation.x = counter * 0.55;
+    if (backRight.current) backRight.current.rotation.x = phase * 0.55;
+    if (tail.current) tail.current.rotation.y = Math.sin(time.current * 1.8) * (ownerMoving ? 0.45 : 0.22);
+    if (wingLeft.current) wingLeft.current.rotation.z = -0.55 - Math.abs(phase) * 0.45;
+    if (wingRight.current) wingRight.current.rotation.z = 0.55 + Math.abs(phase) * 0.45;
+  });
+
+  if (!item) {
+    return null;
+  }
+
+  const palette = petPalette(item);
+  const isBunny = palette.kind === "bunny";
+  const isFox = palette.kind === "fox";
+  const isCat = palette.kind === "cat";
+  const isPanda = palette.kind === "panda";
+
+  if (palette.kind === "slime") {
+    return (
+      <group ref={root} position={[0.62, 0.01, 0.45]} scale={0.88}>
+        <mesh castShadow position={[0, 0.18, 0]}>
+          <sphereGeometry args={[0.24, 28, 18]} />
+          <meshStandardMaterial color={palette.body} roughness={0.35} metalness={0.02} transparent opacity={0.86} />
+        </mesh>
+        <mesh castShadow position={[0, 0.36, -0.03]} scale={[1, 0.45, 1]}>
+          <sphereGeometry args={[0.18, 24, 12]} />
+          <meshStandardMaterial color={palette.accent} roughness={0.28} transparent opacity={0.65} />
+        </mesh>
+        <mesh position={[-0.07, 0.24, -0.19]}><sphereGeometry args={[0.025, 10, 10]} /><meshStandardMaterial color={palette.dark} /></mesh>
+        <mesh position={[0.07, 0.24, -0.19]}><sphereGeometry args={[0.025, 10, 10]} /><meshStandardMaterial color={palette.dark} /></mesh>
+        <pointLight color={palette.glow} intensity={0.8} distance={1.2} position={[0, 0.35, 0]} />
+      </group>
+    );
+  }
+
+  if (palette.kind === "robot") {
+    return (
+      <group ref={root} position={[0.62, 0.01, 0.45]} scale={0.82}>
+        <group ref={body}>
+          <mesh castShadow position={[0, 0.24, 0]}><boxGeometry args={[0.34, 0.3, 0.28]} /><meshStandardMaterial color={palette.body} roughness={0.42} metalness={0.28} /></mesh>
+          <mesh castShadow position={[0, 0.48, -0.03]}><boxGeometry args={[0.28, 0.2, 0.22]} /><meshStandardMaterial color={palette.body} roughness={0.35} metalness={0.32} /></mesh>
+          <mesh position={[-0.06, 0.5, -0.15]}><boxGeometry args={[0.05, 0.035, 0.015]} /><meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={0.8} /></mesh>
+          <mesh position={[0.06, 0.5, -0.15]}><boxGeometry args={[0.05, 0.035, 0.015]} /><meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={0.8} /></mesh>
+          <mesh castShadow position={[0, 0.65, 0]}><cylinderGeometry args={[0.012, 0.012, 0.14, 8]} /><meshStandardMaterial color={palette.dark} /></mesh>
+          <mesh castShadow position={[0, 0.73, 0]}><sphereGeometry args={[0.035, 12, 12]} /><meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={0.65} /></mesh>
+        </group>
+        {((
+          [
+            [-0.12, 0.06, -0.08, frontLeft],
+            [0.12, 0.06, -0.08, frontRight],
+            [-0.12, 0.06, 0.1, backLeft],
+            [0.12, 0.06, 0.1, backRight]
+          ] as Array<[number, number, number, RefObject<THREE.Group | null>]>
+        )).map(([x, y, z, ref], index) => (
+          <group key={index} ref={ref} position={[x, y, z]}>
+            <mesh castShadow><cylinderGeometry args={[0.035, 0.035, 0.12, 8]} /><meshStandardMaterial color={palette.dark} roughness={0.5} metalness={0.25} /></mesh>
+          </group>
+        ))}
+      </group>
+    );
+  }
+
+  if (palette.kind === "star") {
+    return (
+      <group ref={root} position={[0.62, 0.08, 0.45]} scale={0.74}>
+        <mesh castShadow>
+          <sphereGeometry args={[0.18, 18, 18]} />
+          <meshStandardMaterial color={palette.body} emissive={palette.glow} emissiveIntensity={0.28} roughness={0.38} />
+        </mesh>
+        {[0, 1, 2, 3, 4, 5].map((index) => (
+          <mesh key={index} castShadow rotation={[0, 0, (index / 6) * Math.PI * 2]} position={[Math.cos((index / 6) * Math.PI * 2) * 0.18, Math.sin((index / 6) * Math.PI * 2) * 0.18, 0]}>
+            <coneGeometry args={[0.07, 0.22, 5]} />
+            <meshStandardMaterial color={index % 2 ? palette.accent : palette.body} emissive={palette.glow} emissiveIntensity={0.18} roughness={0.42} />
+          </mesh>
+        ))}
+        <pointLight color={palette.glow} intensity={0.95} distance={1.4} />
+      </group>
+    );
+  }
+
+  if (palette.kind === "owl" || palette.kind === "dragon") {
+    return (
+      <group ref={root} position={[0.62, 0.02, 0.45]} scale={0.78}>
+        <group ref={body}>
+          <mesh castShadow position={[0, 0.27, 0]}><sphereGeometry args={[0.22, 20, 16]} /><meshStandardMaterial color={palette.body} roughness={0.58} /></mesh>
+          <mesh castShadow position={[0, 0.5, -0.03]}><sphereGeometry args={[0.18, 20, 14]} /><meshStandardMaterial color={palette.kind === "dragon" ? palette.body : palette.accent} roughness={0.55} /></mesh>
+          <group ref={wingLeft} position={[-0.2, 0.32, 0.02]} rotation={[0, 0, -0.65]}><mesh castShadow><coneGeometry args={[0.1, 0.34, 4]} /><meshStandardMaterial color={palette.kind === "dragon" ? palette.dark : palette.body} roughness={0.56} /></mesh></group>
+          <group ref={wingRight} position={[0.2, 0.32, 0.02]} rotation={[0, 0, 0.65]}><mesh castShadow><coneGeometry args={[0.1, 0.34, 4]} /><meshStandardMaterial color={palette.kind === "dragon" ? palette.dark : palette.body} roughness={0.56} /></mesh></group>
+          <mesh position={[-0.06, 0.52, -0.16]}><sphereGeometry args={[0.035, 10, 10]} /><meshStandardMaterial color={palette.dark} /></mesh>
+          <mesh position={[0.06, 0.52, -0.16]}><sphereGeometry args={[0.035, 10, 10]} /><meshStandardMaterial color={palette.dark} /></mesh>
+          <mesh castShadow position={[0, 0.47, -0.2]} rotation={[Math.PI / 2, 0, 0]}><coneGeometry args={[0.045, 0.08, 4]} /><meshStandardMaterial color={palette.accent} roughness={0.5} /></mesh>
+          {palette.kind === "dragon" ? <group ref={tail} position={[0, 0.24, 0.22]} rotation={[1.15, 0, 0]}><mesh castShadow><coneGeometry args={[0.065, 0.38, 8]} /><meshStandardMaterial color={palette.body} roughness={0.55} /></mesh></group> : null}
+        </group>
+      </group>
+    );
+  }
+
+  return (
+    <group ref={root} position={[0.62, 0.01, 0.45]} scale={isBunny ? 0.76 : 0.82}>
+      <group ref={body}>
+        <mesh castShadow position={[0, 0.25, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <capsuleGeometry args={[0.16, 0.32, 8, 16]} />
+          <meshStandardMaterial color={palette.body} roughness={0.58} />
+        </mesh>
+        <mesh castShadow position={[0, 0.43, -0.25]} scale={isFox ? [1, 0.9, 1.08] : [1, 1, 1]}>
+          <sphereGeometry args={[0.17, 20, 16]} />
+          <meshStandardMaterial color={palette.body} roughness={0.58} />
+        </mesh>
+        <mesh castShadow position={[0, 0.38, -0.37]} scale={[1.1, 0.82, 0.65]}>
+          <sphereGeometry args={[0.09, 14, 10]} />
+          <meshStandardMaterial color={palette.accent} roughness={0.6} />
+        </mesh>
+        <mesh position={[-0.06, 0.46, -0.39]}><sphereGeometry args={[0.022, 10, 10]} /><meshStandardMaterial color={palette.dark} /></mesh>
+        <mesh position={[0.06, 0.46, -0.39]}><sphereGeometry args={[0.022, 10, 10]} /><meshStandardMaterial color={palette.dark} /></mesh>
+        {(isBunny ? [-0.08, 0.08] : [-0.1, 0.1]).map((x, index) => (
+          <mesh key={index} castShadow position={[x, isBunny ? 0.68 : 0.56, -0.23]} rotation={[isBunny ? 0.15 : 0.5, 0, x < 0 ? -0.22 : 0.22]}>
+            {isBunny ? <capsuleGeometry args={[0.045, 0.26, 6, 10]} /> : <coneGeometry args={[isCat ? 0.065 : 0.075, isCat ? 0.15 : 0.18, 4]} />}
+            <meshStandardMaterial color={isPanda ? palette.accent : palette.body} roughness={0.58} />
+          </mesh>
+        ))}
+        <group ref={tail} position={[0, 0.28, 0.29]} rotation={[1.15, 0, 0]}>
+          <mesh castShadow scale={isFox ? [1.35, 1.35, 1.35] : [1, 1, 1]}>
+            {isBunny ? <sphereGeometry args={[0.08, 14, 10]} /> : <capsuleGeometry args={[0.045, isFox ? 0.34 : 0.22, 6, 10]} />}
+            <meshStandardMaterial color={isFox ? palette.accent : palette.body} roughness={0.58} />
+          </mesh>
+        </group>
+      </group>
+      {((
+        [
+          [-0.1, -0.13, frontLeft],
+          [0.1, -0.13, frontRight],
+          [-0.1, 0.13, backLeft],
+          [0.1, 0.13, backRight]
+        ] as Array<[number, number, RefObject<THREE.Group | null>]>
+      )).map(([x, z, ref], index) => (
+        <group key={index} ref={ref} position={[x, 0.1, z]}>
+          <mesh castShadow>
+            <capsuleGeometry args={[0.035, 0.14, 4, 8]} />
+            <meshStandardMaterial color={isPanda && index < 2 ? palette.accent : palette.body} roughness={0.6} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
 function Player({
   username,
   color,
   position,
   isSelf = false,
-  petColor,
+  pet,
   character,
   outfit,
   moving = false,
@@ -814,7 +1096,7 @@ function Player({
   color: string;
   position: THREE.Vector3;
   isSelf?: boolean;
-  petColor?: string;
+  pet?: CatalogItem;
   character?: CatalogItem;
   outfit?: CatalogItem;
   moving?: boolean;
@@ -858,18 +1140,7 @@ function Player({
           <ProceduralPlayerBody color={color} isSelf={isSelf} />
         )}
       </group>
-      {petColor ? (
-        <group position={[0.55, 0, 0.45]}>
-          <mesh castShadow position={[0, 0.23, 0]}>
-            <sphereGeometry args={[0.2, 18, 18]} />
-            <meshStandardMaterial color={petColor} roughness={0.6} />
-          </mesh>
-          <mesh castShadow position={[0.12, 0.38, 0]}>
-            <sphereGeometry args={[0.12, 16, 16]} />
-            <meshStandardMaterial color={petColor} roughness={0.6} />
-          </mesh>
-        </group>
-      ) : null}
+      <PetCompanion item={pet} ownerMoving={isActuallyMoving} />
       <Html center position={[0, 1.95, 0]} distanceFactor={7}>
         <div className="name-tag">{username}</div>
       </Html>
@@ -1296,7 +1567,7 @@ function World({
         color={outfit?.color ?? "#ff8ab3"}
         position={renderPosition}
         isSelf
-        petColor={pet?.color}
+        pet={pet}
         character={character}
         outfit={outfit}
         moving={isWalking}
@@ -1308,7 +1579,7 @@ function World({
           username={player.username}
           color={player.outfit?.color ?? "#8b5cf6"}
           position={player.vector}
-          petColor={player.pet?.color}
+          pet={player.pet}
           character={player.character}
           outfit={player.outfit}
           rotation={player.position.rotation ?? 0}
