@@ -22,7 +22,7 @@ const floorSize = 9;
 const walkLimit = floorSize / 2 - 0.45;
 const walkStep = 0.45;
 const gridCount = Math.round((walkLimit * 2) / walkStep) + 1;
-const playerVisualYOffset = -0.13;
+const playerVisualYOffset = -0.055;
 
 type Blocker = {
   x: number;
@@ -822,7 +822,16 @@ function World({
 }: GameSceneProps) {
   const target = useRef(new THREE.Vector3(0, 0, 1.2));
   const selfPosition = useRef(new THREE.Vector3(0, 0, 1.2));
-  const floorPointerDown = useRef<{ x: number; y: number } | null>(null);
+  const floorPointerDown = useRef<{
+    x: number;
+    y: number;
+    button: number;
+    pointerType: string;
+    point: THREE.Vector3;
+    longPressHandled: boolean;
+  } | null>(null);
+  const floorLongPressTimer = useRef<number | null>(null);
+  const ignoreNextFloorClick = useRef(false);
   const pathQueue = useRef<THREE.Vector3[]>([]);
   const pendingInteraction = useRef<PendingInteraction>(null);
   const selfRotation = useRef(0);
@@ -848,6 +857,8 @@ function World({
     [catalog, remotePlayers]
   );
 
+  useEffect(() => () => clearFloorLongPress(), []);
+
   useFrame((_, delta) => {
     const waypoint = pathQueue.current[0];
     if (waypoint) {
@@ -855,6 +866,7 @@ function World({
       direction.y = 0;
       const distance = direction.length();
       if (distance < 0.06) {
+        selfPosition.current.copy(waypoint);
         pathQueue.current.shift();
       } else {
         selfRotation.current = Math.atan2(direction.x, direction.z);
@@ -896,6 +908,38 @@ function World({
     setRenderRotation(selfRotation.current);
   });
 
+  function clearFloorLongPress() {
+    if (floorLongPressTimer.current !== null) {
+      window.clearTimeout(floorLongPressTimer.current);
+      floorLongPressTimer.current = null;
+    }
+  }
+
+  function rotateSelfToward(point: THREE.Vector3) {
+    if (buildMode) {
+      return;
+    }
+
+    const direction = point.clone().sub(selfPosition.current);
+    direction.y = 0;
+    if (direction.lengthSq() < 0.0001) {
+      return;
+    }
+
+    pathQueue.current = [];
+    pendingInteraction.current = null;
+    walkingRef.current = false;
+    setIsWalking(false);
+    selfRotation.current = Math.atan2(direction.x, direction.z);
+    setRenderRotation(selfRotation.current);
+    onMove({
+      x: selfPosition.current.x,
+      y: selfPosition.current.y,
+      z: selfPosition.current.z,
+      rotation: selfRotation.current
+    });
+  }
+
   function walkToPoint(next: THREE.Vector3, interaction: PendingInteraction = null) {
     const path = findPath(selfPosition.current, next, blockers);
     const finalPoint = isPointWalkable(next.x, next.z, blockers)
@@ -933,14 +977,73 @@ function World({
     walkToPoint(next, { itemId: item.id, action: item.type === "furniture" ? "use" : "look" });
   }
 
-  function handleFloorClick(event: ThreeEvent<MouseEvent>) {
+  function handleFloorPointerDown(event: ThreeEvent<PointerEvent>) {
+    clearFloorLongPress();
+    const start = {
+      x: event.nativeEvent.clientX,
+      y: event.nativeEvent.clientY,
+      button: event.nativeEvent.button,
+      pointerType: event.nativeEvent.pointerType,
+      point: event.point.clone(),
+      longPressHandled: false
+    };
+    floorPointerDown.current = start;
+
+    if (start.pointerType !== "mouse" && !buildMode) {
+      floorLongPressTimer.current = window.setTimeout(() => {
+        if (floorPointerDown.current === start) {
+          start.longPressHandled = true;
+          rotateSelfToward(start.point);
+        }
+      }, 520);
+    }
+  }
+
+  function handleFloorPointerMove(event: ThreeEvent<PointerEvent>) {
     const start = floorPointerDown.current;
+    if (!start) {
+      return;
+    }
+
+    const dragDistance = Math.hypot(event.nativeEvent.clientX - start.x, event.nativeEvent.clientY - start.y);
+    if (dragDistance > 10) {
+      clearFloorLongPress();
+    }
+  }
+
+  function handleFloorPointerUp(event: ThreeEvent<PointerEvent>) {
+    const start = floorPointerDown.current;
+    if (!start || start.button !== 2) {
+      return;
+    }
+
+    clearFloorLongPress();
+    const dragDistance = Math.hypot(event.nativeEvent.clientX - start.x, event.nativeEvent.clientY - start.y);
+    floorPointerDown.current = null;
+    ignoreNextFloorClick.current = true;
+    if (dragDistance <= 6) {
+      rotateSelfToward(event.point);
+    }
+  }
+
+  function handleFloorClick(event: ThreeEvent<MouseEvent>) {
+    if (ignoreNextFloorClick.current) {
+      ignoreNextFloorClick.current = false;
+      return;
+    }
+
+    const start = floorPointerDown.current;
+    if (!start) {
+      return;
+    }
+
+    clearFloorLongPress();
     const dragDistance = start
       ? Math.hypot(event.nativeEvent.clientX - start.x, event.nativeEvent.clientY - start.y)
       : 0;
     floorPointerDown.current = null;
 
-    if (dragDistance > 6) {
+    if (dragDistance > 6 || start?.longPressHandled) {
       return;
     }
 
@@ -948,6 +1051,11 @@ function World({
     next.x = THREE.MathUtils.clamp(next.x, -floorSize / 2 + 0.4, floorSize / 2 - 0.4);
     next.z = THREE.MathUtils.clamp(next.z, -floorSize / 2 + 0.4, floorSize / 2 - 0.4);
     next.y = 0;
+
+    if (start?.button === 2) {
+      rotateSelfToward(next);
+      return;
+    }
 
     if (buildMode) {
       if (selectedPlacedId) {
@@ -982,12 +1090,9 @@ function World({
       <mesh
         receiveShadow
         rotation={[-Math.PI / 2, 0, 0]}
-        onPointerDown={(event) => {
-          floorPointerDown.current = {
-            x: event.nativeEvent.clientX,
-            y: event.nativeEvent.clientY
-          };
-        }}
+        onPointerDown={handleFloorPointerDown}
+        onPointerMove={handleFloorPointerMove}
+        onPointerUp={handleFloorPointerUp}
         onClick={handleFloorClick}
       >
         <planeGeometry args={[floorSize, floorSize]} />
