@@ -1,0 +1,17 @@
+[Unit]
+Description=AnimeGame API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/animegame.ru
+Environment=PORT=4000
+Environment=JWT_SECRET=change-this-long-random-secret
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
