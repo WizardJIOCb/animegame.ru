@@ -22,6 +22,7 @@ const floorSize = 9;
 const walkLimit = floorSize / 2 - 0.45;
 const walkStep = 0.45;
 const gridCount = Math.round((walkLimit * 2) / walkStep) + 1;
+const playerVisualYOffset = -0.13;
 
 type Blocker = {
   x: number;
@@ -676,7 +677,7 @@ function Player({
       group.current.position.lerp(position, Math.min(1, delta * lerpSpeed));
       group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, rotation, Math.min(1, delta * 9));
       if (body.current) {
-        body.current.position.y = 0;
+        body.current.position.y = playerVisualYOffset;
         body.current.rotation.z = actuallyMoving ? Math.sin(bob.current) * 0.035 : 0;
       }
     }
@@ -684,7 +685,7 @@ function Player({
 
   return (
     <group ref={group} position={initialPosition.current} rotation={[0, initialRotation.current, 0]}>
-      <group ref={body} position={[0, -0.08, 0]}>
+      <group ref={body} position={[0, playerVisualYOffset, 0]}>
         {character?.modelUrl ? (
           <Suspense fallback={<ProceduralPlayerBody color={color} isSelf={isSelf} />}>
             <CharacterModel item={character} moving={isActuallyMoving} />
