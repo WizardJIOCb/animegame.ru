@@ -35,6 +35,11 @@ type Cell = {
   z: number;
 };
 
+type PendingInteraction = {
+  itemId: string;
+  action: string;
+} | null;
+
 function getItem(catalog: CatalogItem[], itemId: string) {
   return catalog.find((item) => item.id === itemId);
 }
@@ -273,13 +278,27 @@ function CameraControls() {
       }
     }
 
+    function cameraKey(event: KeyboardEvent) {
+      const byCode: Record<string, string> = {
+        KeyW: "w",
+        KeyA: "a",
+        KeyS: "s",
+        KeyD: "d",
+        ArrowUp: "arrowup",
+        ArrowLeft: "arrowleft",
+        ArrowDown: "arrowdown",
+        ArrowRight: "arrowright"
+      };
+      return byCode[event.code] ?? event.key.toLowerCase();
+    }
+
     function handleKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
         return;
       }
 
-      const key = event.key.toLowerCase();
+      const key = cameraKey(event);
       if (["w", "a", "s", "d", "arrowup", "arrowleft", "arrowdown", "arrowright"].includes(key)) {
         event.preventDefault();
         keysRef.current.add(key);
@@ -287,7 +306,7 @@ function CameraControls() {
     }
 
     function handleKeyUp(event: KeyboardEvent) {
-      keysRef.current.delete(event.key.toLowerCase());
+      keysRef.current.delete(cameraKey(event));
     }
 
     element.addEventListener("pointerdown", handlePointerDown);
@@ -440,12 +459,12 @@ function makePaintTexture(color: string, kind: "floor" | "wall") {
 
 function RuntimeModel({ item, size }: { item: CatalogItem; size: [number, number, number] }) {
   const gltf = useGLTF(item.modelUrl ?? "");
-  const scene = useMemo(() => {
+  const { scene, scale } = useMemo(() => {
     const clone = gltf.scene.clone(true);
     clone.traverse((node) => {
       if (node instanceof THREE.Mesh) {
         node.castShadow = true;
-        node.receiveShadow = false;
+        node.receiveShadow = true;
         const materials = Array.isArray(node.material) ? node.material : [node.material];
         for (const material of materials) {
           if (material instanceof THREE.MeshStandardMaterial) {
@@ -456,14 +475,28 @@ function RuntimeModel({ item, size }: { item: CatalogItem; size: [number, number
         }
       }
     });
-    return clone;
-  }, [gltf.scene]);
+    clone.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(clone);
+    const dimensions = box.getSize(new THREE.Vector3());
+    const baseScale = item.modelScale ?? 1;
+    const scaleX = dimensions.x > 0 ? (size[0] / dimensions.x) * baseScale : baseScale;
+    const scaleY = dimensions.y > 0 ? (size[1] / dimensions.y) * baseScale : baseScale;
+    const scaleZ = dimensions.z > 0 ? (size[2] / dimensions.z) * baseScale : baseScale;
+    return {
+      scene: clone,
+      scale: [
+        THREE.MathUtils.clamp(scaleX, 0.35, 4),
+        THREE.MathUtils.clamp(scaleY, 0.35, 4),
+        THREE.MathUtils.clamp(scaleZ, 0.35, 4)
+      ] as [number, number, number]
+    };
+  }, [gltf.scene, item.modelScale, size]);
 
   return (
     <primitive
       object={scene}
       position={[0, -size[1] / 2, 0]}
-      scale={item.modelScale ?? 1}
+      scale={scale}
     />
   );
 }
@@ -487,7 +520,7 @@ function CharacterModel({ item, moving }: { item: CatalogItem; moving: boolean }
     clone.traverse((node) => {
       if (node instanceof THREE.Mesh) {
         node.castShadow = true;
-        node.receiveShadow = true;
+        node.receiveShadow = false;
         const materials = Array.isArray(node.material) ? node.material : [node.material];
         for (const material of materials) {
           if (material instanceof THREE.MeshStandardMaterial) {
@@ -678,7 +711,7 @@ function PlacedObject({
   rotation: number;
   selected: boolean;
   buildMode: boolean;
-  onInteract: (itemId: string, action: string) => void;
+  onInteract: (item: CatalogItem, x: number, z: number, size: [number, number, number]) => void;
   onSelect: (instanceId: string) => void;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -699,7 +732,7 @@ function PlacedObject({
           onSelect(instanceId);
           return;
         }
-        onInteract(item.id, item.type === "furniture" ? "use" : "look");
+        onInteract(item, x, z, size);
       }}
     >
       {selected ? (
@@ -771,6 +804,7 @@ function World({
   const selfPosition = useRef(new THREE.Vector3(0, 0, 1.2));
   const floorPointerDown = useRef<{ x: number; y: number } | null>(null);
   const pathQueue = useRef<THREE.Vector3[]>([]);
+  const pendingInteraction = useRef<PendingInteraction>(null);
   const selfRotation = useRef(0);
   const walkingRef = useRef(false);
   const lastMoveSent = useRef(0);
@@ -827,12 +861,54 @@ function World({
           z: selfPosition.current.z,
           rotation: selfRotation.current
         });
+        if (pendingInteraction.current) {
+          const nextInteraction = pendingInteraction.current;
+          pendingInteraction.current = null;
+          onInteract(nextInteraction.itemId, nextInteraction.action);
+        }
       }
     }
 
     setRenderPosition(selfPosition.current.clone());
     setRenderRotation(selfRotation.current);
   });
+
+  function walkToPoint(next: THREE.Vector3, interaction: PendingInteraction = null) {
+    const path = findPath(selfPosition.current, next, blockers);
+    const finalPoint = isPointWalkable(next.x, next.z, blockers)
+      ? next
+      : path[path.length - 1] ?? selfPosition.current;
+    const waypoints = path.length > 1 ? path.slice(1) : [];
+    const fullPath = appendUniqueWaypoint(waypoints, finalPoint);
+    pendingInteraction.current = interaction;
+    pathQueue.current = fullPath;
+    target.current = finalPoint;
+    walkingRef.current = fullPath.length > 0;
+    setIsWalking(fullPath.length > 0);
+    if (fullPath.length === 0) {
+      onMove({ x: finalPoint.x, y: finalPoint.y, z: finalPoint.z, rotation: selfRotation.current });
+      if (pendingInteraction.current) {
+        const nextInteraction = pendingInteraction.current;
+        pendingInteraction.current = null;
+        onInteract(nextInteraction.itemId, nextInteraction.action);
+      }
+    }
+  }
+
+  function handleObjectInteract(item: CatalogItem, x: number, z: number, size: [number, number, number]) {
+    const objectPosition = new THREE.Vector3(x, 0, z);
+    const fromObjectToPlayer = selfPosition.current.clone().sub(objectPosition);
+    fromObjectToPlayer.y = 0;
+    if (fromObjectToPlayer.lengthSq() < 0.001) {
+      fromObjectToPlayer.set(0, 0, 1);
+    }
+    fromObjectToPlayer.normalize();
+    const distance = Math.max(size[0], size[2]) / 2 + 0.65;
+    const next = objectPosition.add(fromObjectToPlayer.multiplyScalar(distance));
+    next.x = THREE.MathUtils.clamp(next.x, -floorSize / 2 + 0.4, floorSize / 2 - 0.4);
+    next.z = THREE.MathUtils.clamp(next.z, -floorSize / 2 + 0.4, floorSize / 2 - 0.4);
+    walkToPoint(next, { itemId: item.id, action: item.type === "furniture" ? "use" : "look" });
+  }
 
   function handleFloorClick(event: ThreeEvent<MouseEvent>) {
     const start = floorPointerDown.current;
@@ -857,19 +933,7 @@ function World({
       return;
     }
 
-    const path = findPath(selfPosition.current, next, blockers);
-    const finalPoint = isPointWalkable(next.x, next.z, blockers)
-      ? next
-      : path[path.length - 1] ?? selfPosition.current;
-    const waypoints = path.length > 1 ? path.slice(1) : [];
-    const fullPath = appendUniqueWaypoint(waypoints, finalPoint);
-    pathQueue.current = fullPath;
-    target.current = finalPoint;
-    walkingRef.current = fullPath.length > 0;
-    setIsWalking(fullPath.length > 0);
-    if (fullPath.length === 0) {
-      onMove({ x: finalPoint.x, y: finalPoint.y, z: finalPoint.z, rotation: selfRotation.current });
-    }
+    walkToPoint(next);
   }
 
   const floorColor = home.homeStyle?.floorColor ?? "#252633";
@@ -930,7 +994,7 @@ function World({
             rotation={placed.rotation}
             selected={selectedPlacedId === placed.instanceId}
             buildMode={buildMode}
-            onInteract={onInteract}
+            onInteract={handleObjectInteract}
             onSelect={onSelectPlaced}
           />
         );
