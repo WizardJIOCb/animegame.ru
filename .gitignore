@@ -5,3 +5,5 @@ data/db.json
 .env
 tmp/
 public/assets/models/Universal Base Characters\[Standard\]/
+tools/blender/*.blend
+tools/blender/*.blend1
