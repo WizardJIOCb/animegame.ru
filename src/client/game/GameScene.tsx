@@ -1293,13 +1293,6 @@ function SkinnedOutfitModel({ outfit, moving }: { outfit: CatalogItem; moving: b
       }
     });
     clone.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(clone);
-    if (Number.isFinite(box.min.x) && Number.isFinite(box.min.y) && Number.isFinite(box.min.z)) {
-      const center = box.getCenter(new THREE.Vector3());
-      clone.position.x = -center.x;
-      clone.position.y = -box.min.y;
-      clone.position.z = -center.z;
-    }
     return clone;
   }, [gltf.scene]);
 
