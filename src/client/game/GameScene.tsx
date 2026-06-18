@@ -829,9 +829,12 @@ function World({
     () =>
       remotePlayers.map((player) => ({
         ...player,
-        vector: new THREE.Vector3(player.position.x, player.position.y, player.position.z)
+        vector: new THREE.Vector3(player.position.x, player.position.y, player.position.z),
+        character: player.avatar?.character ? getItem(catalog, player.avatar.character) : undefined,
+        outfit: player.avatar?.outfit ? getItem(catalog, player.avatar.outfit) : undefined,
+        pet: player.avatar?.pet ? getItem(catalog, player.avatar.pet) : undefined
       })),
-    [remotePlayers]
+    [catalog, remotePlayers]
   );
 
   useFrame((_, delta) => {
@@ -1019,7 +1022,15 @@ function World({
         rotation={renderRotation}
       />
       {remoteVectors.map((player) => (
-        <Player key={player.username} username={player.username} color="#8b5cf6" position={player.vector} rotation={player.position.rotation ?? 0} />
+        <Player
+          key={player.username}
+          username={player.username}
+          color={player.outfit?.color ?? "#8b5cf6"}
+          position={player.vector}
+          petColor={player.pet?.color}
+          character={player.character}
+          rotation={player.position.rotation ?? 0}
+        />
       ))}
       <CameraControls />
     </>

@@ -68,4 +68,5 @@ export type HomeState = {
 export type RemotePlayer = {
   username: string;
   position: { x: number; y: number; z: number; rotation?: number };
+  avatar?: PublicUser["avatar"];
 };

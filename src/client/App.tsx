@@ -8,6 +8,7 @@ import type { Activity, CatalogItem, ChatMessage, HomeState, PlacedItem, PublicU
 
 type Tab = "shop" | "work" | "visit" | "inventory";
 type VoiceState = "off" | "connecting" | "on";
+type VoicePeerInfo = { id: string; username: string };
 type VoiceSignal =
   | { type: "description"; description: RTCSessionDescriptionInit }
   | { type: "candidate"; candidate: RTCIceCandidateInit };
@@ -48,11 +49,12 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [voiceState, setVoiceState] = useState<VoiceState>("off");
   const [voiceError, setVoiceError] = useState("");
-  const [remoteVoiceUsers, setRemoteVoiceUsers] = useState<string[]>([]);
+  const [remoteVoicePeers, setRemoteVoicePeers] = useState<VoicePeerInfo[]>([]);
   const socketRef = useRef<Socket | null>(null);
   const localVoiceStreamRef = useRef<MediaStream | null>(null);
   const voicePeersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const voiceAudioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const voicePeerNamesRef = useRef<Map<string, string>>(new Map());
   const voiceCandidateQueueRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const voiceActiveRef = useRef(false);
 
@@ -111,7 +113,8 @@ export default function App() {
     socket.on("connect", () => {
       socket.emit("home:join", owner);
     });
-    socket.on("player:joined", ({ username }: { username: string }) => {
+    socket.on("player:joined", ({ username, avatar }: { username: string; avatar?: PublicUser["avatar"] }) => {
+      setRemotePlayers((current) => current.map((player) => player.username === username ? { ...player, avatar: avatar ?? player.avatar } : player));
       showToast(`${username} зашел в дом`);
     });
     socket.on("player:left", ({ username }: { username: string }) => {
@@ -122,7 +125,7 @@ export default function App() {
       setRemotePlayers((current) => {
         const exists = current.some((player) => player.username === payload.username);
         return exists
-          ? current.map((player) => (player.username === payload.username ? payload : player))
+          ? current.map((player) => (player.username === payload.username ? { ...payload, avatar: payload.avatar ?? player.avatar } : player))
           : [...current, payload];
       });
     });
@@ -145,20 +148,20 @@ export default function App() {
     socket.on("world:interaction", ({ username, action }: { username: string; action: string }) => {
       showToast(`${username}: ${action}`);
     });
-    socket.on("voice:users", ({ users }: { users: string[] }) => {
-      users.forEach((username) => {
-        void createVoicePeer(username, true);
+    socket.on("voice:users", ({ users }: { users: VoicePeerInfo[] }) => {
+      users.forEach((peer) => {
+        void createVoicePeer(peer, true);
       });
     });
-    socket.on("voice:userJoined", ({ username }: { username: string }) => {
-      setRemoteVoiceUsers((current) => current.includes(username) ? current : [...current, username]);
-      showToast(`${username} joined voice`);
+    socket.on("voice:userJoined", (peer: VoicePeerInfo) => {
+      rememberVoicePeer(peer);
+      showToast(`${peer.username} joined voice`);
     });
-    socket.on("voice:userLeft", ({ username }: { username: string }) => {
-      closeVoicePeer(username);
-      showToast(`${username} left voice`);
+    socket.on("voice:userLeft", (peer: VoicePeerInfo) => {
+      closeVoicePeer(peer.id);
+      showToast(`${peer.username} left voice`);
     });
-    socket.on("voice:signal", ({ from, signal }: { from: string; signal: VoiceSignal }) => {
+    socket.on("voice:signal", ({ from, signal }: { from: VoicePeerInfo; signal: VoiceSignal }) => {
       void handleVoiceSignal(from, signal);
     });
 
@@ -218,42 +221,55 @@ export default function App() {
     voicePeersRef.current.forEach((peer) => peer.close());
     voicePeersRef.current.clear();
     voiceCandidateQueueRef.current.clear();
+    voicePeerNamesRef.current.clear();
     voiceAudioRefs.current.forEach((audio) => {
       audio.pause();
       audio.srcObject = null;
       audio.remove();
     });
     voiceAudioRefs.current.clear();
-    setRemoteVoiceUsers([]);
+    setRemoteVoicePeers([]);
     setVoiceState("off");
   }
 
-  function closeVoicePeer(username: string) {
-    voicePeersRef.current.get(username)?.close();
-    voicePeersRef.current.delete(username);
-    voiceCandidateQueueRef.current.delete(username);
-    const audio = voiceAudioRefs.current.get(username);
+  function rememberVoicePeer(peer: VoicePeerInfo) {
+    voicePeerNamesRef.current.set(peer.id, peer.username);
+    setRemoteVoicePeers((current) => {
+      if (current.some((entry) => entry.id === peer.id)) {
+        return current.map((entry) => entry.id === peer.id ? peer : entry);
+      }
+      return [...current, peer];
+    });
+  }
+
+  function closeVoicePeer(peerId: string) {
+    voicePeersRef.current.get(peerId)?.close();
+    voicePeersRef.current.delete(peerId);
+    voiceCandidateQueueRef.current.delete(peerId);
+    voicePeerNamesRef.current.delete(peerId);
+    const audio = voiceAudioRefs.current.get(peerId);
     if (audio) {
       audio.pause();
       audio.srcObject = null;
       audio.remove();
-      voiceAudioRefs.current.delete(username);
+      voiceAudioRefs.current.delete(peerId);
     }
-    setRemoteVoiceUsers((current) => current.filter((entry) => entry !== username));
+    setRemoteVoicePeers((current) => current.filter((entry) => entry.id !== peerId));
   }
 
-  async function createVoicePeer(remoteUsername: string, initiator: boolean) {
-    if (!voiceActiveRef.current || remoteUsername === user?.username) {
+  async function createVoicePeer(remotePeer: VoicePeerInfo, initiator: boolean) {
+    if (!voiceActiveRef.current || remotePeer.id === socketRef.current?.id) {
       return null;
     }
 
-    const existingPeer = voicePeersRef.current.get(remoteUsername);
+    rememberVoicePeer(remotePeer);
+    const existingPeer = voicePeersRef.current.get(remotePeer.id);
     if (existingPeer) {
       return existingPeer;
     }
 
     const peer = new RTCPeerConnection(voiceRtcConfig);
-    voicePeersRef.current.set(remoteUsername, peer);
+    voicePeersRef.current.set(remotePeer.id, peer);
     localVoiceStreamRef.current?.getTracks().forEach((track) => {
       peer.addTrack(track, localVoiceStreamRef.current!);
     });
@@ -261,7 +277,7 @@ export default function App() {
     peer.onicecandidate = (event) => {
       if (event.candidate) {
         socketRef.current?.emit("voice:signal", {
-          to: remoteUsername,
+          to: remotePeer.id,
           signal: { type: "candidate", candidate: event.candidate.toJSON() } satisfies VoiceSignal
         });
       }
@@ -273,26 +289,26 @@ export default function App() {
         return;
       }
 
-      let audio = voiceAudioRefs.current.get(remoteUsername);
+      let audio = voiceAudioRefs.current.get(remotePeer.id);
       if (!audio) {
         audio = document.createElement("audio");
         audio.autoplay = true;
         audio.setAttribute("playsinline", "true");
-        audio.dataset.voiceUser = remoteUsername;
+        audio.dataset.voiceUser = remotePeer.username;
         audio.style.display = "none";
         document.body.appendChild(audio);
-        voiceAudioRefs.current.set(remoteUsername, audio);
+        voiceAudioRefs.current.set(remotePeer.id, audio);
       }
       if (audio.srcObject !== stream) {
         audio.srcObject = stream;
       }
       void audio.play().catch(() => undefined);
-      setRemoteVoiceUsers((current) => current.includes(remoteUsername) ? current : [...current, remoteUsername]);
+      rememberVoicePeer(remotePeer);
     };
 
     peer.onconnectionstatechange = () => {
       if (["closed", "disconnected", "failed"].includes(peer.connectionState)) {
-        closeVoicePeer(remoteUsername);
+        closeVoicePeer(remotePeer.id);
       }
     };
 
@@ -300,7 +316,7 @@ export default function App() {
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
       socketRef.current?.emit("voice:signal", {
-        to: remoteUsername,
+        to: remotePeer.id,
         signal: { type: "description", description: offer } satisfies VoiceSignal
       });
     }
@@ -308,7 +324,7 @@ export default function App() {
     return peer;
   }
 
-  async function handleVoiceSignal(from: string, signal: VoiceSignal) {
+  async function handleVoiceSignal(from: VoicePeerInfo, signal: VoiceSignal) {
     if (!voiceActiveRef.current) {
       return;
     }
@@ -320,15 +336,15 @@ export default function App() {
 
     if (signal.type === "description") {
       await peer.setRemoteDescription(signal.description);
-      const queuedCandidates = voiceCandidateQueueRef.current.get(from) ?? [];
-      voiceCandidateQueueRef.current.delete(from);
+      const queuedCandidates = voiceCandidateQueueRef.current.get(from.id) ?? [];
+      voiceCandidateQueueRef.current.delete(from.id);
       await Promise.all(queuedCandidates.map((candidate) => peer.addIceCandidate(candidate).catch(() => undefined)));
 
       if (signal.description.type === "offer") {
         const answer = await peer.createAnswer();
         await peer.setLocalDescription(answer);
         socketRef.current?.emit("voice:signal", {
-          to: from,
+          to: from.id,
           signal: { type: "description", description: answer } satisfies VoiceSignal
         });
       }
@@ -336,9 +352,9 @@ export default function App() {
     }
 
     if (!peer.remoteDescription) {
-      const queue = voiceCandidateQueueRef.current.get(from) ?? [];
+      const queue = voiceCandidateQueueRef.current.get(from.id) ?? [];
       queue.push(signal.candidate);
-      voiceCandidateQueueRef.current.set(from, queue);
+      voiceCandidateQueueRef.current.set(from.id, queue);
       return;
     }
 
@@ -699,9 +715,9 @@ export default function App() {
                 {voiceState === "on" ? <Mic size={16} /> : <MicOff size={16} />}
                 {voiceLabel}
               </button>
-              {(voiceError || voiceState === "on" || remoteVoiceUsers.length > 0) ? (
+              {(voiceError || voiceState === "on" || remoteVoicePeers.length > 0) ? (
                 <span className="voice-status">
-                  {voiceError || (remoteVoiceUsers.length > 0 ? `Speaking: ${remoteVoiceUsers.join(", ")}` : "Voice room is open")}
+                  {voiceError || (remoteVoicePeers.length > 0 ? `Connected: ${remoteVoicePeers.map((peer) => peer.username).join(", ")}` : "Voice room is open")}
                 </span>
               ) : null}
             </div>

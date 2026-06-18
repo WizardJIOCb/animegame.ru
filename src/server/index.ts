@@ -105,6 +105,11 @@ function clampHomeCoordinate(value: unknown) {
   return Math.max(-4.1, Math.min(4.1, Number.isFinite(numberValue) ? numberValue : 0));
 }
 
+function getPublicAvatar(username: string) {
+  const user = findUserByName(username);
+  return user?.avatar;
+}
+
 function leaveVoiceRoom(socket: Socket) {
   const homeOwner = socket.data.voiceHomeOwner as string | undefined;
   if (!homeOwner) {
@@ -117,12 +122,12 @@ function leaveVoiceRoom(socket: Socket) {
     return;
   }
 
-  if (roomUsers.get(socket.data.username) === socket.id) {
-    roomUsers.delete(socket.data.username);
+  if (roomUsers.get(socket.id) === socket.data.username) {
+    roomUsers.delete(socket.id);
     if (roomUsers.size === 0) {
       voiceRooms.delete(homeOwner);
     }
-    socket.to(`home:${homeOwner}`).emit("voice:userLeft", { username: socket.data.username });
+    socket.to(`home:${homeOwner}`).emit("voice:userLeft", { id: socket.id, username: socket.data.username });
   }
   socket.data.voiceHomeOwner = undefined;
 }
@@ -428,14 +433,15 @@ io.on("connection", (socket) => {
     const room = `home:${homeOwner}`;
     socket.join(room);
     socket.data.homeOwner = homeOwner;
-    socket.to(room).emit("player:joined", { username: socket.data.username });
+    socket.to(room).emit("player:joined", { username: socket.data.username, avatar: getPublicAvatar(socket.data.username) });
   });
 
   socket.on("player:move", (position: { x: number; y: number; z: number; rotation?: number }) => {
     const room = `home:${socket.data.homeOwner}`;
     socket.to(room).emit("player:moved", {
       username: socket.data.username,
-      position
+      position,
+      avatar: getPublicAvatar(socket.data.username)
     });
   });
 
@@ -474,12 +480,14 @@ io.on("connection", (socket) => {
     const homeOwner = String(socket.data.homeOwner ?? socket.data.username);
     leaveVoiceRoom(socket);
     const roomUsers = voiceRooms.get(homeOwner) ?? new Map<string, string>();
-    const users = [...roomUsers.keys()].filter((username) => username !== socket.data.username);
-    roomUsers.set(socket.data.username, socket.id);
+    const users = [...roomUsers.entries()]
+      .filter(([id]) => id !== socket.id)
+      .map(([id, username]) => ({ id, username }));
+    roomUsers.set(socket.id, socket.data.username);
     voiceRooms.set(homeOwner, roomUsers);
     socket.data.voiceHomeOwner = homeOwner;
     socket.emit("voice:users", { users });
-    socket.to(`home:${homeOwner}`).emit("voice:userJoined", { username: socket.data.username });
+    socket.to(`home:${homeOwner}`).emit("voice:userJoined", { id: socket.id, username: socket.data.username });
   });
 
   socket.on("voice:leave", () => {
@@ -488,18 +496,17 @@ io.on("connection", (socket) => {
 
   socket.on("voice:signal", (payload: { to?: string; signal?: unknown }) => {
     const homeOwner = socket.data.voiceHomeOwner as string | undefined;
-    const targetUsername = String(payload.to ?? "");
-    if (!homeOwner || !targetUsername || !payload.signal) {
+    const targetSocketId = String(payload.to ?? "");
+    if (!homeOwner || !targetSocketId || !payload.signal) {
       return;
     }
 
-    const targetSocketId = voiceRooms.get(homeOwner)?.get(targetUsername);
-    if (!targetSocketId) {
+    if (!voiceRooms.get(homeOwner)?.has(targetSocketId)) {
       return;
     }
 
     io.to(targetSocketId).emit("voice:signal", {
-      from: socket.data.username,
+      from: { id: socket.id, username: socket.data.username },
       signal: payload.signal
     });
   });
