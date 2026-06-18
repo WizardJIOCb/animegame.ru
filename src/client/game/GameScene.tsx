@@ -1,6 +1,6 @@
 import { Html, OrbitControls, Sparkles, useGLTF } from "@react-three/drei";
-import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
-import { Suspense, useMemo, useRef, useState } from "react";
+import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { CatalogItem, HomeState, PublicUser, RemotePlayer } from "../types";
 
@@ -202,6 +202,154 @@ function appendUniqueWaypoint(path: THREE.Vector3[], waypoint: THREE.Vector3) {
     return [...path, waypoint.clone()];
   }
   return path;
+}
+
+function CameraControls() {
+  const { camera, gl } = useThree();
+  const controlsRef = useRef<any>(null);
+  const dragRef = useRef<{ x: number; y: number } | null>(null);
+  const keysRef = useRef(new Set<string>());
+
+  function getFlatAxes() {
+    const right = new THREE.Vector3();
+    camera.matrixWorld.extractBasis(right, new THREE.Vector3(), new THREE.Vector3());
+    right.y = 0;
+    right.normalize();
+
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.y = 0;
+    forward.normalize();
+
+    return { right, forward };
+  }
+
+  function panFlat(move: THREE.Vector3) {
+    if (move.lengthSq() === 0 || !controlsRef.current) {
+      return;
+    }
+
+    camera.position.add(move);
+    controlsRef.current.target.add(move);
+    controlsRef.current.update();
+  }
+
+  useEffect(() => {
+    const element = gl.domElement;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (event.button !== 2) {
+        return;
+      }
+
+      event.preventDefault();
+      dragRef.current = { x: event.clientX, y: event.clientY };
+      element.setPointerCapture?.(event.pointerId);
+    }
+
+    function handlePointerMove(event: PointerEvent) {
+      const last = dragRef.current;
+      if (!last) {
+        return;
+      }
+
+      event.preventDefault();
+      const dx = event.clientX - last.x;
+      const dy = event.clientY - last.y;
+      dragRef.current = { x: event.clientX, y: event.clientY };
+
+      const { right, forward } = getFlatAxes();
+      const distance = camera.position.distanceTo(controlsRef.current?.target ?? new THREE.Vector3());
+      const speed = Math.max(0.008, distance * 0.0018);
+      const move = right.multiplyScalar(-dx * speed).add(forward.multiplyScalar(dy * speed));
+      panFlat(move);
+    }
+
+    function handlePointerUp(event: PointerEvent) {
+      if (event.button === 2) {
+        dragRef.current = null;
+        element.releasePointerCapture?.(event.pointerId);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (["w", "a", "s", "d", "arrowup", "arrowleft", "arrowdown", "arrowright"].includes(key)) {
+        event.preventDefault();
+        keysRef.current.add(key);
+      }
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      keysRef.current.delete(event.key.toLowerCase());
+    }
+
+    element.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      element.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [camera, gl]);
+
+  useFrame((_, delta) => {
+    const keys = keysRef.current;
+    let x = 0;
+    let z = 0;
+
+    if (keys.has("a") || keys.has("arrowleft")) {
+      x -= 1;
+    }
+    if (keys.has("d") || keys.has("arrowright")) {
+      x += 1;
+    }
+    if (keys.has("w") || keys.has("arrowup")) {
+      z += 1;
+    }
+    if (keys.has("s") || keys.has("arrowdown")) {
+      z -= 1;
+    }
+
+    if (x === 0 && z === 0) {
+      return;
+    }
+
+    const { right, forward } = getFlatAxes();
+    const move = right.multiplyScalar(x).add(forward.multiplyScalar(z));
+    if (move.lengthSq() > 0) {
+      move.normalize().multiplyScalar(delta * 4.2);
+      panFlat(move);
+    }
+  });
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      makeDefault
+      enablePan={false}
+      panSpeed={0}
+      mouseButtons={{
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN
+      }}
+      maxPolarAngle={Math.PI / 2.25}
+      minDistance={5.2}
+      maxDistance={11}
+    />
+  );
 }
 
 function makePaintTexture(color: string, kind: "floor" | "wall") {
@@ -688,20 +836,7 @@ function World({
       {remoteVectors.map((player) => (
         <Player key={player.username} username={player.username} color="#8b5cf6" position={player.vector} rotation={player.position.rotation ?? 0} />
       ))}
-      <OrbitControls
-        makeDefault
-        enablePan
-        screenSpacePanning
-        panSpeed={0.75}
-        mouseButtons={{
-          LEFT: THREE.MOUSE.ROTATE,
-          MIDDLE: THREE.MOUSE.DOLLY,
-          RIGHT: THREE.MOUSE.PAN
-        }}
-        maxPolarAngle={Math.PI / 2.25}
-        minDistance={5.2}
-        maxDistance={11}
-      />
+      <CameraControls />
     </>
   );
 }
