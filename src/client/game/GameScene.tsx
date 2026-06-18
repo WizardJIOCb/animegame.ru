@@ -169,6 +169,7 @@ function World({
 }: GameSceneProps) {
   const target = useRef(new THREE.Vector3(0, 0, 1.2));
   const selfPosition = useRef(new THREE.Vector3(0, 0, 1.2));
+  const floorPointerDown = useRef<{ x: number; y: number } | null>(null);
   const [renderPosition, setRenderPosition] = useState(new THREE.Vector3(0, 0, 1.2));
   const outfit = getItem(catalog, user.avatar.outfit);
   const pet = user.avatar.pet ? getItem(catalog, user.avatar.pet) : undefined;
@@ -188,6 +189,16 @@ function World({
   });
 
   function handleFloorClick(event: ThreeEvent<MouseEvent>) {
+    const start = floorPointerDown.current;
+    const dragDistance = start
+      ? Math.hypot(event.nativeEvent.clientX - start.x, event.nativeEvent.clientY - start.y)
+      : 0;
+    floorPointerDown.current = null;
+
+    if (dragDistance > 6) {
+      return;
+    }
+
     const next = event.point.clone();
     next.x = THREE.MathUtils.clamp(next.x, -floorSize / 2 + 0.4, floorSize / 2 - 0.4);
     next.z = THREE.MathUtils.clamp(next.z, -floorSize / 2 + 0.4, floorSize / 2 - 0.4);
@@ -204,7 +215,17 @@ function World({
       <directionalLight castShadow intensity={2.7} position={[3, 7, 5]} shadow-mapSize={[2048, 2048]} />
       <pointLight color="#f8b4d9" intensity={1.2} position={[-3.5, 3.5, -2.8]} />
       <Sparkles count={42} scale={[8, 2, 8]} size={1.7} speed={0.25} color="#ffd1e8" />
-      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} onClick={handleFloorClick}>
+      <mesh
+        receiveShadow
+        rotation={[-Math.PI / 2, 0, 0]}
+        onPointerDown={(event) => {
+          floorPointerDown.current = {
+            x: event.nativeEvent.clientX,
+            y: event.nativeEvent.clientY
+          };
+        }}
+        onClick={handleFloorClick}
+      >
         <planeGeometry args={[floorSize, floorSize]} />
         <meshStandardMaterial color="#252633" roughness={0.82} />
       </mesh>
@@ -249,4 +270,3 @@ export function GameScene(props: GameSceneProps) {
     </Canvas>
   );
 }
-
