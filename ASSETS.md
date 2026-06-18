@@ -13,6 +13,11 @@
   - License: Creative Commons Zero v1.0 Universal
   - Runtime files used: `public/assets/models/kaykit-furniture/*.gltf`, `*.bin`, texture atlas
 
+- Kenney Nature Kit
+  - Source: https://kenney.nl/assets/nature-kit
+  - License: Creative Commons CC0
+  - Runtime files used: `public/assets/models/kenney-nature/*.glb`
+
 ## Planned Character Pipeline
 
 - Quaternius Universal Base Characters

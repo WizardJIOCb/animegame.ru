@@ -2,11 +2,14 @@ import { Coins, DoorOpen, Hammer, Home, LogOut, MessageCircle, RotateCw, Shirt, 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { AuthScreen } from "./components/AuthScreen";
-import { buy, earn, getCatalog, getHome, getPlayers, getToken, login, me, movePlacedItem, place, register, rotatePlacedItem, sellPlacedItem, setToken } from "./api";
+import { buy, earn, getCatalog, getHome, getPlayers, getToken, login, me, movePlacedItem, place, register, rotatePlacedItem, sellPlacedItem, setToken, updateHomeStyle } from "./api";
 import { GameScene } from "./game/GameScene";
 import type { Activity, CatalogItem, ChatMessage, HomeState, PlacedItem, PublicUser, RemotePlayer } from "./types";
 
 type Tab = "shop" | "work" | "visit" | "inventory";
+
+const floorSwatches = ["#252633", "#29333f", "#24362e", "#463b31", "#302b46", "#3b2d35"];
+const wallSwatches = ["#303346", "#263849", "#2c4039", "#4a3941", "#3b3453", "#44382f"];
 
 function rarityLabel(rarity: CatalogItem["rarity"]) {
   return {
@@ -117,6 +120,9 @@ export default function App() {
       setHome((current) => current ? { ...current, placedItems: current.placedItems.filter((item) => item.instanceId !== instanceId) } : current);
       setSelectedPlacedId((current) => current === instanceId ? "" : current);
     });
+    socket.on("home:styleUpdated", (homeStyle: PublicUser["homeStyle"]) => {
+      setHome((current) => current ? { ...current, homeStyle } : current);
+    });
     socket.on("world:interaction", ({ username, action }: { username: string; action: string }) => {
       showToast(`${username}: ${action}`);
     });
@@ -196,7 +202,7 @@ export default function App() {
       return;
     }
 
-    const response = await rotatePlacedItem(selectedPlaced.instanceId, selectedPlaced.rotation + Math.PI / 4);
+    const response = await rotatePlacedItem(selectedPlaced.instanceId, selectedPlaced.rotation + Math.PI / 12);
     updatePlacedItem(response.placed);
   }
 
@@ -210,6 +216,20 @@ export default function App() {
     setHome((current) => current ? { ...current, placedItems: current.placedItems.filter((item) => item.instanceId !== response.placed.instanceId) } : current);
     setSelectedPlacedId("");
     showToast(`Sold +${response.refund}`);
+  }
+
+  async function handleStyleChange(nextStyle: Partial<NonNullable<PublicUser["homeStyle"]>>) {
+    if (!ownHome || !home) {
+      return;
+    }
+
+    const currentStyle = home.homeStyle ?? { floorColor: "#252633", wallColor: "#303346" };
+    const response = await updateHomeStyle(
+      nextStyle.floorColor ?? currentStyle.floorColor,
+      nextStyle.wallColor ?? currentStyle.wallColor
+    );
+    setUser(response.user);
+    setHome((current) => current ? { ...current, homeStyle: response.homeStyle } : current);
   }
 
   function handleMove(position: { x: number; y: number; z: number; rotation?: number }) {
@@ -322,6 +342,32 @@ export default function App() {
               <button className="sell-button" onClick={handleSellSelected} disabled={!selectedPlaced}>
                 <Trash2 size={16} /> Sell
               </button>
+              <div className="style-swatches" aria-label="Floor colors">
+                <span>Floor</span>
+                {floorSwatches.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={home.homeStyle?.floorColor === color ? "swatch active" : "swatch"}
+                    style={{ backgroundColor: color }}
+                    title={`Floor ${color}`}
+                    onClick={() => handleStyleChange({ floorColor: color })}
+                  />
+                ))}
+              </div>
+              <div className="style-swatches" aria-label="Wall colors">
+                <span>Walls</span>
+                {wallSwatches.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={home.homeStyle?.wallColor === color ? "swatch active" : "swatch"}
+                    style={{ backgroundColor: color }}
+                    title={`Walls ${color}`}
+                    onClick={() => handleStyleChange({ wallColor: color })}
+                  />
+                ))}
+              </div>
             </div>
           ) : null}
           {toast ? <div className="toast">{toast}</div> : null}
@@ -338,7 +384,7 @@ export default function App() {
           {tab === "shop" ? (
             <div className="panel-body">
               <div className="filter-row">
-                {(["all", "furniture", "decor", "clothing", "character", "pet"] as const).map((nextFilter) => (
+                {(["all", "furniture", "decor", "outdoor", "clothing", "character", "pet"] as const).map((nextFilter) => (
                   <button key={nextFilter} className={filter === nextFilter ? "active" : ""} onClick={() => setFilter(nextFilter)}>
                     {nextFilter === "all" ? "всё" : nextFilter}
                   </button>
@@ -391,7 +437,7 @@ export default function App() {
             <div className="panel-body">
               <div className="item-grid">
                 {inventoryItems.map((item, index) => {
-                  const placeable = ownHome && ["furniture", "decor"].includes(item.type);
+                  const placeable = ownHome && ["furniture", "decor", "outdoor"].includes(item.type);
                   return (
                     <button key={`${item.id}-${index}`} className="shop-card" onClick={() => placeable && handlePlace(item.id)} disabled={!placeable}>
                       <span className="item-emoji">{item.emoji}</span>

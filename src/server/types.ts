@@ -1,4 +1,4 @@
-export type ItemType = "furniture" | "clothing" | "pet" | "decor" | "character" | "activity";
+export type ItemType = "furniture" | "clothing" | "pet" | "decor" | "outdoor" | "character" | "activity";
 
 export type CatalogItem = {
   id: string;
@@ -42,6 +42,10 @@ export type User = {
     hair: string;
     character?: string;
     pet?: string;
+  };
+  homeStyle?: {
+    floorColor: string;
+    wallColor: string;
   };
   createdAt: number;
 };

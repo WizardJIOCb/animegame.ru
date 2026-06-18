@@ -102,6 +102,10 @@ fastify.post("/api/auth/register", async (request, reply) => {
       outfit: "hoodie-pink",
       hair: "hair-rose"
     },
+    homeStyle: {
+      floorColor: "#252633",
+      wallColor: "#303346"
+    },
     createdAt: Date.now()
   };
 
@@ -147,10 +151,29 @@ fastify.get("/api/home/:username", async (request, reply) => {
   return {
     owner: user.username,
     avatar: user.avatar,
+    homeStyle: user.homeStyle ?? { floorColor: "#252633", wallColor: "#303346" },
     placedItems: user.placedItems,
     inventory: user.inventory,
     chats: readDb().chats.filter((message) => message.homeOwner === user.username).slice(-50)
   };
+});
+
+fastify.post("/api/home/style", async (request, reply) => {
+  try {
+    const user = requireUser(request);
+    const body = request.body as { floorColor?: string; wallColor?: string };
+    const db = readDb();
+    const dbUser = db.users.find((entry) => entry.id === user.id)!;
+    dbUser.homeStyle = {
+      floorColor: /^#[0-9a-fA-F]{6}$/.test(body.floorColor ?? "") ? body.floorColor! : dbUser.homeStyle?.floorColor ?? "#252633",
+      wallColor: /^#[0-9a-fA-F]{6}$/.test(body.wallColor ?? "") ? body.wallColor! : dbUser.homeStyle?.wallColor ?? "#303346"
+    };
+    writeDb(db);
+    io.to(`home:${dbUser.username}`).emit("home:styleUpdated", dbUser.homeStyle);
+    return { user: toPublicUser(dbUser), homeStyle: dbUser.homeStyle };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
 });
 
 fastify.post("/api/earn", async (request, reply) => {
@@ -215,7 +238,7 @@ fastify.post("/api/place", async (request, reply) => {
   try {
     const user = requireUser(request);
     const body = request.body as { itemId?: string; x?: number; z?: number; rotation?: number };
-    const item = catalog.find((entry) => entry.id === body.itemId && ["furniture", "decor"].includes(entry.type));
+    const item = catalog.find((entry) => entry.id === body.itemId && ["furniture", "decor", "outdoor"].includes(entry.type));
     if (!item || !user.inventory.includes(item.id)) {
       return reply.code(400).send({ error: "Предмета нет в инвентаре" });
     }

@@ -1,4 +1,4 @@
-export type ItemType = "furniture" | "clothing" | "pet" | "decor" | "character" | "activity";
+export type ItemType = "furniture" | "clothing" | "pet" | "decor" | "outdoor" | "character" | "activity";
 
 export type CatalogItem = {
   id: string;
@@ -42,6 +42,10 @@ export type PublicUser = {
     character?: string;
     pet?: string;
   };
+  homeStyle?: {
+    floorColor: string;
+    wallColor: string;
+  };
   createdAt: number;
 };
 
@@ -58,6 +62,7 @@ export type HomeState = {
   placedItems: PlacedItem[];
   inventory: string[];
   chats: ChatMessage[];
+  homeStyle?: PublicUser["homeStyle"];
 };
 
 export type RemotePlayer = {

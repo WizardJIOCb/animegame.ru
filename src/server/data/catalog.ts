@@ -1,6 +1,7 @@
 import type { CatalogItem, ItemType } from "../types";
 import { generatedCharacterCatalog } from "./generatedCharacterCatalog";
 import { generatedModelCatalog } from "./generatedModelCatalog";
+import { generatedOutdoorCatalog } from "./generatedOutdoorCatalog";
 
 const palette = [
   "#f97316",
@@ -35,6 +36,7 @@ const makeItems = (
 export const catalog: CatalogItem[] = [
   ...generatedCharacterCatalog,
   ...generatedModelCatalog,
+  ...generatedOutdoorCatalog,
   ...makeItems("furniture", [
     ["bed-cloud", "Кровать Облако", 260, "common", "🛏", [2.6, 0.7, 1.7]],
     ["bed-neon", "Неоновая кровать", 820, "epic", "🛏", [2.8, 0.8, 1.8]],

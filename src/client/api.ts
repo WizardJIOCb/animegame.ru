@@ -104,3 +104,10 @@ export function sellPlacedItem(instanceId: string) {
     body: JSON.stringify({ instanceId })
   });
 }
+
+export function updateHomeStyle(floorColor: string, wallColor: string) {
+  return request<{ user: PublicUser; homeStyle: PublicUser["homeStyle"] }>("/api/home/style", {
+    method: "POST",
+    body: JSON.stringify({ floorColor, wallColor })
+  });
+}
