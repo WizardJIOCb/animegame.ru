@@ -1,4 +1,4 @@
-import { Html, OrbitControls, Sparkles, Text, useGLTF } from "@react-three/drei";
+import { Html, OrbitControls, Sparkles, useGLTF } from "@react-three/drei";
 import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
 import { Suspense, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -110,9 +110,9 @@ function Player({
           </mesh>
         </group>
       ) : null}
-      <Text position={[0, 1.95, 0]} fontSize={0.18} color="#ffffff" anchorX="center">
-        {username}
-      </Text>
+      <Html center position={[0, 1.95, 0]} distanceFactor={7}>
+        <div className="name-tag">{username}</div>
+      </Html>
     </group>
   );
 }

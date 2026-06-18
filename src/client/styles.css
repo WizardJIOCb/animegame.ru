@@ -272,6 +272,19 @@ input:focus {
   pointer-events: none;
 }
 
+.name-tag {
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(16, 17, 22, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
 .side-panel {
   min-height: 0;
   display: grid;
@@ -448,4 +461,3 @@ input:focus {
     grid-template-rows: auto 420px 240px;
   }
 }
-
