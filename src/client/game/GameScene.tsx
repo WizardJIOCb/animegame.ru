@@ -892,6 +892,86 @@ function makeOutfitDecalTexture(item: CatalogItem | undefined, kind: OutfitDecal
   return texture;
 }
 
+function poseCharacterBones(
+  bones: Record<string, THREE.Bone>,
+  initialRotations: Record<string, THREE.Euler>,
+  time: number,
+  moving: boolean
+) {
+  const phase = Math.sin(time);
+  const counterPhase = Math.sin(time + Math.PI);
+  const idle = Math.sin(time) * 0.035;
+  const leftArmDown = -1.18;
+  const rightArmDown = 1.18;
+
+  const setBone = (name: string, x = 0, y = 0, z = 0) => {
+    const bone = bones[name];
+    const initial = initialRotations[name];
+    if (!bone || !initial) {
+      return;
+    }
+    bone.rotation.set(initial.x + x, initial.y + y, initial.z + z);
+  };
+
+  if (moving) {
+    setBone("upperarm_l", phase * 0.24, 0.04, leftArmDown + phase * 0.05);
+    setBone("lowerarm_l", 0.16 + Math.max(0, counterPhase) * 0.14, 0, -0.08);
+    setBone("hand_l", -0.08, 0, -0.02);
+    setBone("upperarm_r", counterPhase * 0.24, -0.04, rightArmDown + counterPhase * 0.05);
+    setBone("lowerarm_r", 0.16 + Math.max(0, phase) * 0.14, 0, 0.08);
+    setBone("hand_r", -0.08, 0, 0.02);
+    setBone("thigh_l", counterPhase * 0.62, 0, 0);
+    setBone("calf_l", Math.max(0, phase) * 0.52, 0, 0);
+    setBone("foot_l", Math.max(0, phase) * -0.22, 0, 0);
+    setBone("thigh_r", phase * 0.62, 0, 0);
+    setBone("calf_r", Math.max(0, counterPhase) * 0.52, 0, 0);
+    setBone("foot_r", Math.max(0, counterPhase) * -0.22, 0, 0);
+    setBone("spine_01", 0.04, phase * 0.035, phase * 0.025);
+  } else {
+    setBone("upperarm_l", idle, 0.08, leftArmDown);
+    setBone("lowerarm_l", 0.16, 0, -0.08);
+    setBone("hand_l", -0.08, 0, -0.02);
+    setBone("upperarm_r", idle, -0.08, rightArmDown);
+    setBone("lowerarm_r", 0.16, 0, 0.08);
+    setBone("hand_r", -0.08, 0, 0.02);
+    setBone("spine_01", idle * 0.35, 0, 0);
+    setBone("thigh_l");
+    setBone("thigh_r");
+    setBone("calf_l");
+    setBone("calf_r");
+    setBone("foot_l");
+    setBone("foot_r");
+  }
+}
+
+function prepareClonedSkinnedScene(scene: THREE.Object3D) {
+  scene.traverse((node) => {
+    if (node instanceof THREE.Mesh) {
+      node.castShadow = true;
+      node.receiveShadow = false;
+      node.frustumCulled = false;
+      node.material = Array.isArray(node.material)
+        ? node.material.map((material) => material.clone())
+        : node.material.clone();
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      for (const material of materials) {
+        if (material instanceof THREE.MeshStandardMaterial) {
+          for (const texture of [material.map, material.normalMap, material.roughnessMap, material.metalnessMap]) {
+            if (texture) {
+              texture.anisotropy = 8;
+              texture.magFilter = THREE.LinearFilter;
+              texture.minFilter = THREE.LinearMipmapLinearFilter;
+              texture.needsUpdate = true;
+            }
+          }
+          material.roughness = Math.max(material.roughness, 0.48);
+          material.needsUpdate = true;
+        }
+      }
+    }
+  });
+}
+
 function makeOutfitTexture(source: THREE.Texture, item?: CatalogItem) {
   if (!item) {
     return source;
@@ -1149,13 +1229,12 @@ function CharacterModel({ item, moving, outfit }: { item: CatalogItem; moving: b
   const time = useRef(0);
   const scene = useMemo(() => {
     const clone = cloneSkeleton(gltf.scene);
+    prepareClonedSkinnedScene(clone);
     clone.traverse((node) => {
-      if (node instanceof THREE.Mesh) {
-        node.castShadow = true;
-        node.receiveShadow = false;
-        node.material = Array.isArray(node.material)
-          ? node.material.map((material) => material.clone())
-          : node.material.clone();
+      if (node instanceof THREE.Bone) {
+        bones.current[node.name] = node;
+        initialRotations.current[node.name] = node.rotation.clone();
+      } else if (node instanceof THREE.Mesh) {
         const materials = Array.isArray(node.material) ? node.material : [node.material];
         for (const material of materials) {
           if (material instanceof THREE.MeshStandardMaterial) {
@@ -1167,10 +1246,6 @@ function CharacterModel({ item, moving, outfit }: { item: CatalogItem; moving: b
             material.needsUpdate = true;
           }
         }
-      }
-      if (node instanceof THREE.Bone) {
-        bones.current[node.name] = node;
-        initialRotations.current[node.name] = node.rotation.clone();
       }
     });
     clone.updateMatrixWorld(true);
@@ -1186,58 +1261,54 @@ function CharacterModel({ item, moving, outfit }: { item: CatalogItem; moving: b
 
   useFrame((_, delta) => {
     time.current += delta * (moving ? 8.5 : 1.4);
-    const phase = Math.sin(time.current);
-    const counterPhase = Math.sin(time.current + Math.PI);
-    const idle = Math.sin(time.current) * 0.035;
-    const leftArmDown = -1.18;
-    const rightArmDown = 1.18;
-
-    const setBone = (name: string, x = 0, y = 0, z = 0) => {
-      const bone = bones.current[name];
-      const initial = initialRotations.current[name];
-      if (!bone || !initial) {
-        return;
-      }
-      bone.rotation.set(initial.x + x, initial.y + y, initial.z + z);
-    };
-
-    if (moving) {
-      setBone("upperarm_l", phase * 0.24, 0.04, leftArmDown + phase * 0.05);
-      setBone("lowerarm_l", 0.16 + Math.max(0, counterPhase) * 0.14, 0, -0.08);
-      setBone("hand_l", -0.08, 0, -0.02);
-      setBone("upperarm_r", counterPhase * 0.24, -0.04, rightArmDown + counterPhase * 0.05);
-      setBone("lowerarm_r", 0.16 + Math.max(0, phase) * 0.14, 0, 0.08);
-      setBone("hand_r", -0.08, 0, 0.02);
-      setBone("thigh_l", counterPhase * 0.62, 0, 0);
-      setBone("calf_l", Math.max(0, phase) * 0.52, 0, 0);
-      setBone("foot_l", Math.max(0, phase) * -0.22, 0, 0);
-      setBone("thigh_r", phase * 0.62, 0, 0);
-      setBone("calf_r", Math.max(0, counterPhase) * 0.52, 0, 0);
-      setBone("foot_r", Math.max(0, counterPhase) * -0.22, 0, 0);
-      setBone("spine_01", 0.04, phase * 0.035, phase * 0.025);
-    } else {
-      setBone("upperarm_l", idle, 0.08, leftArmDown);
-      setBone("lowerarm_l", 0.16, 0, -0.08);
-      setBone("hand_l", -0.08, 0, -0.02);
-      setBone("upperarm_r", idle, -0.08, rightArmDown);
-      setBone("lowerarm_r", 0.16, 0, 0.08);
-      setBone("hand_r", -0.08, 0, 0.02);
-      setBone("spine_01", idle * 0.35, 0, 0);
-      setBone("thigh_l");
-      setBone("thigh_r");
-      setBone("calf_l");
-      setBone("calf_r");
-      setBone("foot_l");
-      setBone("foot_r");
-    }
+    poseCharacterBones(bones.current, initialRotations.current, time.current, moving);
   });
 
   return (
     <>
       <primitive object={scene} scale={item.modelScale ?? 1} />
-      <OutfitOverlay outfit={outfit} character={item} />
+      {outfit?.clothingModelUrl ? (
+        <Suspense fallback={null}>
+          <SkinnedOutfitModel outfit={outfit} moving={moving} />
+        </Suspense>
+      ) : (
+        <OutfitOverlay outfit={outfit} character={item} />
+      )}
     </>
   );
+}
+
+function SkinnedOutfitModel({ outfit, moving }: { outfit: CatalogItem; moving: boolean }) {
+  const gltf = useGLTF(outfit.clothingModelUrl ?? "");
+  const bones = useRef<Record<string, THREE.Bone>>({});
+  const initialRotations = useRef<Record<string, THREE.Euler>>({});
+  const time = useRef(0);
+  const scene = useMemo(() => {
+    const clone = cloneSkeleton(gltf.scene);
+    prepareClonedSkinnedScene(clone);
+    clone.traverse((node) => {
+      if (node instanceof THREE.Bone) {
+        bones.current[node.name] = node;
+        initialRotations.current[node.name] = node.rotation.clone();
+      }
+    });
+    clone.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(clone);
+    if (Number.isFinite(box.min.x) && Number.isFinite(box.min.y) && Number.isFinite(box.min.z)) {
+      const center = box.getCenter(new THREE.Vector3());
+      clone.position.x = -center.x;
+      clone.position.y = -box.min.y;
+      clone.position.z = -center.z;
+    }
+    return clone;
+  }, [gltf.scene]);
+
+  useFrame((_, delta) => {
+    time.current += delta * (moving ? 8.5 : 1.4);
+    poseCharacterBones(bones.current, initialRotations.current, time.current, moving);
+  });
+
+  return <primitive object={scene} scale={outfit.clothingModelScale ?? 1} />;
 }
 
 function ProceduralPlayerBody({ color, isSelf }: { color: string; isSelf: boolean }) {

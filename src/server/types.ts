@@ -11,6 +11,8 @@ export type CatalogItem = {
   size?: [number, number, number];
   modelUrl?: string;
   modelScale?: number;
+  clothingModelUrl?: string;
+  clothingModelScale?: number;
 };
 
 export type PlacedItem = {
