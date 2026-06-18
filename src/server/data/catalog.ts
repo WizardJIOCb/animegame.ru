@@ -18,6 +18,21 @@ const palette = [
   "#f59e0b"
 ];
 
+const customOutdoorCatalog: CatalogItem[] = [
+  {
+    id: "custom-wooden-cabin",
+    type: "outdoor",
+    name: "Wooden Cabin",
+    price: 1800,
+    color: "#92400e",
+    rarity: "epic",
+    emoji: "3D",
+    size: [2.7, 2.55, 2.25],
+    modelUrl: "/assets/models/custom/wooden-cabin.glb?v=1",
+    modelScale: 1
+  }
+];
+
 const makeItems = (
   type: ItemType,
   entries: Array<[string, string, number, CatalogItem["rarity"], string, CatalogItem["size"]?]>
@@ -37,6 +52,7 @@ export const catalog: CatalogItem[] = [
   ...generatedCharacterCatalog,
   ...generatedModelCatalog,
   ...generatedOutdoorCatalog,
+  ...customOutdoorCatalog,
   ...makeItems("furniture", [
     ["bed-cloud", "Кровать Облако", 260, "common", "🛏", [2.6, 0.7, 1.7]],
     ["bed-neon", "Неоновая кровать", 820, "epic", "🛏", [2.8, 0.8, 1.8]],
