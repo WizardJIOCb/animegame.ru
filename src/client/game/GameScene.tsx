@@ -215,6 +215,8 @@ function CameraControls() {
   const { camera, gl } = useThree();
   const controlsRef = useRef<any>(null);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
+  const touchPointers = useRef(new Map<number, { x: number; y: number }>());
+  const touchPanRef = useRef<{ x: number; y: number } | null>(null);
   const keysRef = useRef(new Set<string>());
 
   function getFlatAxes() {
@@ -243,8 +245,45 @@ function CameraControls() {
 
   useEffect(() => {
     const element = gl.domElement;
+    const previousTouchAction = element.style.touchAction;
+    element.style.touchAction = "none";
+
+    function getTouchCentroid() {
+      const points = [...touchPointers.current.values()];
+      if (points.length < 2) {
+        return null;
+      }
+
+      return points.reduce(
+        (center, point) => ({
+          x: center.x + point.x / points.length,
+          y: center.y + point.y / points.length
+        }),
+        { x: 0, y: 0 }
+      );
+    }
+
+    function panByScreenDelta(dx: number, dy: number, mode: "drag" | "touch") {
+      const { right, forward } = getFlatAxes();
+      const distance = camera.position.distanceTo(controlsRef.current?.target ?? new THREE.Vector3());
+      const speed = Math.max(0.008, distance * 0.0018);
+      const move = mode === "touch"
+        ? right.multiplyScalar(dx * speed).add(forward.multiplyScalar(-dy * speed))
+        : right.multiplyScalar(-dx * speed).add(forward.multiplyScalar(dy * speed));
+      panFlat(move);
+    }
 
     function handlePointerDown(event: PointerEvent) {
+      if (event.pointerType === "touch") {
+        touchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (touchPointers.current.size >= 2) {
+          event.preventDefault();
+          touchPanRef.current = getTouchCentroid();
+          element.setPointerCapture?.(event.pointerId);
+        }
+        return;
+      }
+
       if (event.button !== 2) {
         return;
       }
@@ -255,6 +294,27 @@ function CameraControls() {
     }
 
     function handlePointerMove(event: PointerEvent) {
+      if (event.pointerType === "touch") {
+        if (!touchPointers.current.has(event.pointerId)) {
+          return;
+        }
+
+        touchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        const centroid = getTouchCentroid();
+        if (!centroid) {
+          touchPanRef.current = null;
+          return;
+        }
+
+        event.preventDefault();
+        const last = touchPanRef.current ?? centroid;
+        const dx = centroid.x - last.x;
+        const dy = centroid.y - last.y;
+        touchPanRef.current = centroid;
+        panByScreenDelta(dx, dy, "touch");
+        return;
+      }
+
       const last = dragRef.current;
       if (!last) {
         return;
@@ -265,14 +325,17 @@ function CameraControls() {
       const dy = event.clientY - last.y;
       dragRef.current = { x: event.clientX, y: event.clientY };
 
-      const { right, forward } = getFlatAxes();
-      const distance = camera.position.distanceTo(controlsRef.current?.target ?? new THREE.Vector3());
-      const speed = Math.max(0.008, distance * 0.0018);
-      const move = right.multiplyScalar(-dx * speed).add(forward.multiplyScalar(dy * speed));
-      panFlat(move);
+      panByScreenDelta(dx, dy, "drag");
     }
 
     function handlePointerUp(event: PointerEvent) {
+      if (event.pointerType === "touch") {
+        touchPointers.current.delete(event.pointerId);
+        touchPanRef.current = getTouchCentroid();
+        element.releasePointerCapture?.(event.pointerId);
+        return;
+      }
+
       if (event.button === 2) {
         dragRef.current = null;
         element.releasePointerCapture?.(event.pointerId);
@@ -313,13 +376,16 @@ function CameraControls() {
     element.addEventListener("pointerdown", handlePointerDown);
     window.addEventListener("pointermove", handlePointerMove, { passive: false });
     window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
 
     return () => {
+      element.style.touchAction = previousTouchAction;
       element.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
