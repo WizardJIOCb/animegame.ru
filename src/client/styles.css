@@ -462,7 +462,7 @@ input:focus {
 .chat-box {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   padding-top: 10px;
@@ -473,6 +473,43 @@ input:focus {
   align-items: center;
   gap: 7px;
   font-weight: 900;
+}
+
+.voice-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-button {
+  min-height: 34px;
+  border-radius: 6px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1eff8;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  font-weight: 900;
+}
+
+.voice-button.active {
+  background: #14b8a6;
+  color: #061614;
+  border-color: rgba(20, 184, 166, 0.7);
+}
+
+.voice-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #b8f5ec;
+  font-size: 12px;
 }
 
 .messages {

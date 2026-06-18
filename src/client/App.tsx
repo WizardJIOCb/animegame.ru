@@ -1,4 +1,4 @@
-import { Coins, DoorOpen, Hammer, Home, LogOut, MessageCircle, RotateCcw, RotateCw, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
+import { Coins, DoorOpen, Hammer, Home, LogOut, MessageCircle, Mic, MicOff, RotateCcw, RotateCw, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { AuthScreen } from "./components/AuthScreen";
@@ -7,6 +7,16 @@ import { GameScene } from "./game/GameScene";
 import type { Activity, CatalogItem, ChatMessage, HomeState, PlacedItem, PublicUser, RemotePlayer } from "./types";
 
 type Tab = "shop" | "work" | "visit" | "inventory";
+type VoiceState = "off" | "connecting" | "on";
+type VoiceSignal =
+  | { type: "description"; description: RTCSessionDescriptionInit }
+  | { type: "candidate"; candidate: RTCIceCandidateInit };
+
+const voiceRtcConfig: RTCConfiguration = {
+  iceServers: [
+    { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }
+  ]
+};
 
 const floorSwatches = ["#9b6a3c", "#6f472a", "#c08a4a", "#8f7a5d", "#4f4a43", "#2f3437"];
 const wallSwatches = ["#d8d1c3", "#b7c7b0", "#aebdca", "#c7b1a8", "#8f7356", "#3f4448"];
@@ -36,13 +46,22 @@ export default function App() {
   const [selectedPlacedId, setSelectedPlacedId] = useState("");
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
+  const [voiceState, setVoiceState] = useState<VoiceState>("off");
+  const [voiceError, setVoiceError] = useState("");
+  const [remoteVoiceUsers, setRemoteVoiceUsers] = useState<string[]>([]);
   const socketRef = useRef<Socket | null>(null);
+  const localVoiceStreamRef = useRef<MediaStream | null>(null);
+  const voicePeersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const voiceAudioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const voiceCandidateQueueRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  const voiceActiveRef = useRef(false);
 
   const ownHome = user?.username === homeOwner;
 
   useEffect(() => {
     void bootstrap();
     return () => {
+      stopVoice(false);
       socketRef.current?.disconnect();
     };
   }, []);
@@ -126,8 +145,204 @@ export default function App() {
     socket.on("world:interaction", ({ username, action }: { username: string; action: string }) => {
       showToast(`${username}: ${action}`);
     });
+    socket.on("voice:users", ({ users }: { users: string[] }) => {
+      users.forEach((username) => {
+        void createVoicePeer(username, true);
+      });
+    });
+    socket.on("voice:userJoined", ({ username }: { username: string }) => {
+      setRemoteVoiceUsers((current) => current.includes(username) ? current : [...current, username]);
+      showToast(`${username} joined voice`);
+    });
+    socket.on("voice:userLeft", ({ username }: { username: string }) => {
+      closeVoicePeer(username);
+      showToast(`${username} left voice`);
+    });
+    socket.on("voice:signal", ({ from, signal }: { from: string; signal: VoiceSignal }) => {
+      void handleVoiceSignal(from, signal);
+    });
 
     socketRef.current = socket;
+  }
+
+  async function toggleVoice() {
+    if (voiceState === "connecting") {
+      return;
+    }
+
+    if (voiceActiveRef.current) {
+      stopVoice();
+      return;
+    }
+
+    await startVoice();
+  }
+
+  async function startVoice() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setVoiceError("Voice is not supported in this browser");
+      return;
+    }
+
+    try {
+      setVoiceError("");
+      setVoiceState("connecting");
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+        video: false
+      });
+      localVoiceStreamRef.current = stream;
+      voiceActiveRef.current = true;
+      setVoiceState("on");
+      socketRef.current?.emit("voice:join");
+      showToast("Voice chat enabled");
+    } catch {
+      voiceActiveRef.current = false;
+      setVoiceState("off");
+      setVoiceError("Microphone access denied");
+    }
+  }
+
+  function stopVoice(notifyServer = true) {
+    if (notifyServer) {
+      socketRef.current?.emit("voice:leave");
+    }
+
+    voiceActiveRef.current = false;
+    localVoiceStreamRef.current?.getTracks().forEach((track) => track.stop());
+    localVoiceStreamRef.current = null;
+    voicePeersRef.current.forEach((peer) => peer.close());
+    voicePeersRef.current.clear();
+    voiceCandidateQueueRef.current.clear();
+    voiceAudioRefs.current.forEach((audio) => {
+      audio.pause();
+      audio.srcObject = null;
+      audio.remove();
+    });
+    voiceAudioRefs.current.clear();
+    setRemoteVoiceUsers([]);
+    setVoiceState("off");
+  }
+
+  function closeVoicePeer(username: string) {
+    voicePeersRef.current.get(username)?.close();
+    voicePeersRef.current.delete(username);
+    voiceCandidateQueueRef.current.delete(username);
+    const audio = voiceAudioRefs.current.get(username);
+    if (audio) {
+      audio.pause();
+      audio.srcObject = null;
+      audio.remove();
+      voiceAudioRefs.current.delete(username);
+    }
+    setRemoteVoiceUsers((current) => current.filter((entry) => entry !== username));
+  }
+
+  async function createVoicePeer(remoteUsername: string, initiator: boolean) {
+    if (!voiceActiveRef.current || remoteUsername === user?.username) {
+      return null;
+    }
+
+    const existingPeer = voicePeersRef.current.get(remoteUsername);
+    if (existingPeer) {
+      return existingPeer;
+    }
+
+    const peer = new RTCPeerConnection(voiceRtcConfig);
+    voicePeersRef.current.set(remoteUsername, peer);
+    localVoiceStreamRef.current?.getTracks().forEach((track) => {
+      peer.addTrack(track, localVoiceStreamRef.current!);
+    });
+
+    peer.onicecandidate = (event) => {
+      if (event.candidate) {
+        socketRef.current?.emit("voice:signal", {
+          to: remoteUsername,
+          signal: { type: "candidate", candidate: event.candidate.toJSON() } satisfies VoiceSignal
+        });
+      }
+    };
+
+    peer.ontrack = (event) => {
+      const [stream] = event.streams;
+      if (!stream) {
+        return;
+      }
+
+      let audio = voiceAudioRefs.current.get(remoteUsername);
+      if (!audio) {
+        audio = document.createElement("audio");
+        audio.autoplay = true;
+        audio.setAttribute("playsinline", "true");
+        audio.dataset.voiceUser = remoteUsername;
+        audio.style.display = "none";
+        document.body.appendChild(audio);
+        voiceAudioRefs.current.set(remoteUsername, audio);
+      }
+      if (audio.srcObject !== stream) {
+        audio.srcObject = stream;
+      }
+      void audio.play().catch(() => undefined);
+      setRemoteVoiceUsers((current) => current.includes(remoteUsername) ? current : [...current, remoteUsername]);
+    };
+
+    peer.onconnectionstatechange = () => {
+      if (["closed", "disconnected", "failed"].includes(peer.connectionState)) {
+        closeVoicePeer(remoteUsername);
+      }
+    };
+
+    if (initiator) {
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      socketRef.current?.emit("voice:signal", {
+        to: remoteUsername,
+        signal: { type: "description", description: offer } satisfies VoiceSignal
+      });
+    }
+
+    return peer;
+  }
+
+  async function handleVoiceSignal(from: string, signal: VoiceSignal) {
+    if (!voiceActiveRef.current) {
+      return;
+    }
+
+    const peer = await createVoicePeer(from, false);
+    if (!peer) {
+      return;
+    }
+
+    if (signal.type === "description") {
+      await peer.setRemoteDescription(signal.description);
+      const queuedCandidates = voiceCandidateQueueRef.current.get(from) ?? [];
+      voiceCandidateQueueRef.current.delete(from);
+      await Promise.all(queuedCandidates.map((candidate) => peer.addIceCandidate(candidate).catch(() => undefined)));
+
+      if (signal.description.type === "offer") {
+        const answer = await peer.createAnswer();
+        await peer.setLocalDescription(answer);
+        socketRef.current?.emit("voice:signal", {
+          to: from,
+          signal: { type: "description", description: answer } satisfies VoiceSignal
+        });
+      }
+      return;
+    }
+
+    if (!peer.remoteDescription) {
+      const queue = voiceCandidateQueueRef.current.get(from) ?? [];
+      queue.push(signal.candidate);
+      voiceCandidateQueueRef.current.set(from, queue);
+      return;
+    }
+
+    await peer.addIceCandidate(signal.candidate).catch(() => undefined);
   }
 
   async function loadHome(owner: string) {
@@ -139,6 +354,9 @@ export default function App() {
   }
 
   async function visit(owner: string) {
+    if (owner !== homeOwner) {
+      stopVoice();
+    }
     await loadHome(owner);
     socketRef.current?.emit("home:join", owner);
   }
@@ -265,6 +483,7 @@ export default function App() {
   }
 
   function logout() {
+    stopVoice();
     setToken(null);
     socketRef.current?.disconnect();
     setUser(null);
@@ -297,6 +516,7 @@ export default function App() {
   }, [catalog, selectedPlaced]);
 
   const selectedSellValue = selectedPlacedCatalogItem ? Math.floor(selectedPlacedCatalogItem.price * 0.7) : 0;
+  const voiceLabel = voiceState === "connecting" ? "Connecting" : voiceState === "on" ? "Voice on" : "Voice";
 
   if (!user || !home) {
     return <AuthScreen onSubmit={handleAuth} error={error} />;
@@ -469,6 +689,22 @@ export default function App() {
 
           <div className="chat-box">
             <div className="chat-title"><MessageCircle size={17} /> Чат дома</div>
+            <div className="voice-row">
+              <button
+                className={voiceState === "on" ? "voice-button active" : "voice-button"}
+                onClick={toggleVoice}
+                disabled={voiceState === "connecting"}
+                title={voiceState === "on" ? "Turn voice off" : "Turn voice on"}
+              >
+                {voiceState === "on" ? <Mic size={16} /> : <MicOff size={16} />}
+                {voiceLabel}
+              </button>
+              {(voiceError || voiceState === "on" || remoteVoiceUsers.length > 0) ? (
+                <span className="voice-status">
+                  {voiceError || (remoteVoiceUsers.length > 0 ? `Speaking: ${remoteVoiceUsers.join(", ")}` : "Voice room is open")}
+                </span>
+              ) : null}
+            </div>
             <div className="messages">
               {messages.slice(-8).map((message) => (
                 <div key={message.id} className="message">

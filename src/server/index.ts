@@ -2,7 +2,7 @@ import cors from "@fastify/cors";
 import bcrypt from "bcryptjs";
 import Fastify from "fastify";
 import jwt from "jsonwebtoken";
-import { Server } from "socket.io";
+import { Server, type Socket } from "socket.io";
 import { activities, catalog, starterItems } from "./data/catalog";
 import { findUserByName, readDb, toPublicUser, writeDb } from "./db";
 import type { ChatMessage, PlacedItem, User } from "./types";
@@ -16,6 +16,7 @@ const io = new Server(fastify.server, {
     credentials: true
   }
 });
+const voiceRooms = new Map<string, Map<string, string>>();
 
 type AuthedRequest = {
   headers: { authorization?: string };
@@ -102,6 +103,28 @@ function getPlacedItemValue(itemId: string) {
 function clampHomeCoordinate(value: unknown) {
   const numberValue = Number(value ?? 0);
   return Math.max(-4.1, Math.min(4.1, Number.isFinite(numberValue) ? numberValue : 0));
+}
+
+function leaveVoiceRoom(socket: Socket) {
+  const homeOwner = socket.data.voiceHomeOwner as string | undefined;
+  if (!homeOwner) {
+    return;
+  }
+
+  const roomUsers = voiceRooms.get(homeOwner);
+  if (!roomUsers) {
+    socket.data.voiceHomeOwner = undefined;
+    return;
+  }
+
+  if (roomUsers.get(socket.data.username) === socket.id) {
+    roomUsers.delete(socket.data.username);
+    if (roomUsers.size === 0) {
+      voiceRooms.delete(homeOwner);
+    }
+    socket.to(`home:${homeOwner}`).emit("voice:userLeft", { username: socket.data.username });
+  }
+  socket.data.voiceHomeOwner = undefined;
 }
 
 await fastify.register(cors, {
@@ -395,6 +418,13 @@ io.use((socket, next) => {
 
 io.on("connection", (socket) => {
   socket.on("home:join", (homeOwner: string) => {
+    const previousHomeOwner = socket.data.homeOwner as string | undefined;
+    if (previousHomeOwner && previousHomeOwner !== homeOwner) {
+      leaveVoiceRoom(socket);
+      socket.leave(`home:${previousHomeOwner}`);
+      socket.to(`home:${previousHomeOwner}`).emit("player:left", { username: socket.data.username });
+    }
+
     const room = `home:${homeOwner}`;
     socket.join(room);
     socket.data.homeOwner = homeOwner;
@@ -440,7 +470,42 @@ io.on("connection", (socket) => {
     });
   });
 
+  socket.on("voice:join", () => {
+    const homeOwner = String(socket.data.homeOwner ?? socket.data.username);
+    leaveVoiceRoom(socket);
+    const roomUsers = voiceRooms.get(homeOwner) ?? new Map<string, string>();
+    const users = [...roomUsers.keys()].filter((username) => username !== socket.data.username);
+    roomUsers.set(socket.data.username, socket.id);
+    voiceRooms.set(homeOwner, roomUsers);
+    socket.data.voiceHomeOwner = homeOwner;
+    socket.emit("voice:users", { users });
+    socket.to(`home:${homeOwner}`).emit("voice:userJoined", { username: socket.data.username });
+  });
+
+  socket.on("voice:leave", () => {
+    leaveVoiceRoom(socket);
+  });
+
+  socket.on("voice:signal", (payload: { to?: string; signal?: unknown }) => {
+    const homeOwner = socket.data.voiceHomeOwner as string | undefined;
+    const targetUsername = String(payload.to ?? "");
+    if (!homeOwner || !targetUsername || !payload.signal) {
+      return;
+    }
+
+    const targetSocketId = voiceRooms.get(homeOwner)?.get(targetUsername);
+    if (!targetSocketId) {
+      return;
+    }
+
+    io.to(targetSocketId).emit("voice:signal", {
+      from: socket.data.username,
+      signal: payload.signal
+    });
+  });
+
   socket.on("disconnect", () => {
+    leaveVoiceRoom(socket);
     if (socket.data.homeOwner) {
       socket.to(`home:${socket.data.homeOwner}`).emit("player:left", { username: socket.data.username });
     }
