@@ -798,6 +798,100 @@ function makeClothCanvasTexture(item?: CatalogItem, scale = 1) {
   return texture;
 }
 
+type OutfitDecalKind = "top" | "bottom" | "skirt" | "sleeve";
+
+function roundedRectPath(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.lineTo(x + width - radius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + radius);
+  context.lineTo(x + width, y + height - radius);
+  context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  context.lineTo(x + radius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - radius);
+  context.lineTo(x, y + radius);
+  context.quadraticCurveTo(x, y, x + radius, y);
+  context.closePath();
+}
+
+function makeOutfitDecalTexture(item: CatalogItem | undefined, kind: OutfitDecalKind) {
+  const cloth = makeClothCanvasTexture(item, kind === "sleeve" ? 1.1 : 1.7);
+  const source = cloth.image as HTMLCanvasElement;
+  const colors = outfitColors(item);
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext("2d")!;
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.save();
+  if (kind === "top") {
+    roundedRectPath(context, 48, 24, 160, 190, 28);
+    context.moveTo(96, 24);
+    context.arc(128, 28, 34, 0, Math.PI, false);
+  } else if (kind === "bottom") {
+    roundedRectPath(context, 44, 32, 168, 170, 22);
+    context.clearRect(115, 128, 26, 92);
+  } else if (kind === "skirt") {
+    context.beginPath();
+    context.moveTo(76, 42);
+    context.lineTo(180, 42);
+    context.lineTo(220, 218);
+    context.lineTo(36, 218);
+    context.closePath();
+  } else {
+    roundedRectPath(context, 82, 20, 92, 214, 42);
+  }
+  context.clip();
+  context.drawImage(source, 0, 0);
+
+  context.globalCompositeOperation = "source-atop";
+  context.strokeStyle = colors.trim;
+  context.lineWidth = kind === "sleeve" ? 8 : 5;
+  if (kind === "top") {
+    context.beginPath();
+    context.moveTo(58, 58);
+    context.lineTo(198, 58);
+    context.stroke();
+    context.beginPath();
+    context.moveTo(128, 68);
+    context.lineTo(128, 208);
+    context.strokeStyle = colors.accent;
+    context.stroke();
+  } else if (kind === "bottom") {
+    context.beginPath();
+    context.moveTo(52, 52);
+    context.lineTo(204, 52);
+    context.stroke();
+    context.strokeStyle = colors.accent;
+    context.beginPath();
+    context.moveTo(128, 84);
+    context.lineTo(128, 204);
+    context.stroke();
+  } else if (kind === "skirt") {
+    for (let x = 72; x <= 184; x += 28) {
+      context.beginPath();
+      context.moveTo(x, 54);
+      context.lineTo(x + (x < 128 ? -18 : 18), 214);
+      context.stroke();
+    }
+  } else {
+    context.beginPath();
+    context.moveTo(88, 38);
+    context.lineTo(168, 38);
+    context.stroke();
+  }
+  context.restore();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 function makeOutfitTexture(source: THREE.Texture, item?: CatalogItem) {
   if (!item) {
     return source;
@@ -898,7 +992,10 @@ function outfitShape(item?: CatalogItem) {
 
 function OutfitOverlay({ outfit, character }: { outfit?: CatalogItem; character: CatalogItem }) {
   const clothTexture = useMemo(() => makeClothCanvasTexture(outfit, 1.45), [outfit?.id]);
-  const trimTexture = useMemo(() => makeClothCanvasTexture(outfit, 2.2), [outfit?.id]);
+  const topTexture = useMemo(() => makeOutfitDecalTexture(outfit, "top"), [outfit?.id]);
+  const bottomTexture = useMemo(() => makeOutfitDecalTexture(outfit, "bottom"), [outfit?.id]);
+  const skirtTexture = useMemo(() => makeOutfitDecalTexture(outfit, "skirt"), [outfit?.id]);
+  const sleeveTexture = useMemo(() => makeOutfitDecalTexture(outfit, "sleeve"), [outfit?.id]);
   if (!outfit) {
     return null;
   }
@@ -907,50 +1004,70 @@ function OutfitOverlay({ outfit, character }: { outfit?: CatalogItem; character:
   const colors = outfitColors(outfit);
   const characterId = character.id.toLowerCase();
   const isMale = characterId.endsWith("-male") || characterId.includes("superhero-male");
-  const torsoY = isMale ? 1.04 : 1.0;
-  const torsoHeight = shape.dress ? 0.58 : 0.54;
-  const torsoRadiusTop = isMale ? 0.3 : 0.255;
-  const torsoRadiusBottom = isMale ? 0.235 : 0.22;
-  const materialProps = {
-    map: clothTexture,
-    roughness: shape.armor ? 0.42 : 0.72,
-    metalness: shape.armor ? 0.24 : 0.02
+  const torsoY = isMale ? 1.03 : 1.0;
+  const torsoWidth = isMale ? 0.62 : 0.52;
+  const torsoHeight = shape.dress || shape.hoodie || shape.jacket ? 0.66 : 0.56;
+  const frontZ = -0.292;
+  const backZ = 0.205;
+  const decalMaterial = {
+    color: "#ffffff",
+    transparent: true,
+    alphaTest: 0.08,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    roughness: shape.armor ? 0.38 : 0.72,
+    metalness: shape.armor ? 0.18 : 0.02
   };
+  const isAccessoryOnly = shape.shoes || shape.hat || shape.hair || shape.mask || shape.wings || shape.scarf;
 
   return (
     <group renderOrder={8}>
-      {!shape.shoes && !shape.hat && !shape.hair && !shape.mask && !shape.wings ? (
+      {!isAccessoryOnly ? (
         <>
-          <mesh castShadow position={[0, torsoY, -0.012]} scale={[1.04, 1, 0.82]}>
-            <cylinderGeometry args={[torsoRadiusTop, torsoRadiusBottom, torsoHeight, 28, 1, true]} />
-            <meshStandardMaterial {...materialProps} color="#ffffff" side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1} />
+          <mesh castShadow position={[0, torsoY, frontZ]}>
+            <planeGeometry args={[torsoWidth, torsoHeight]} />
+            <meshStandardMaterial {...decalMaterial} map={topTexture} />
           </mesh>
-          <mesh castShadow position={[0, torsoY + torsoHeight / 2 + 0.025, -0.012]} scale={[1.04, 1, 0.82]}>
-            <torusGeometry args={[torsoRadiusTop * 0.82, 0.018, 8, 28]} />
-            <meshStandardMaterial color={colors.trim} roughness={0.58} />
+          <mesh castShadow position={[0, torsoY, backZ]} rotation={[0, Math.PI, 0]}>
+            <planeGeometry args={[torsoWidth * 0.95, torsoHeight * 0.94]} />
+            <meshStandardMaterial {...decalMaterial} map={topTexture} />
           </mesh>
           {(shape.hoodie || shape.jacket || shape.dress || shape.armor) ? (
             <>
-              <mesh castShadow position={[-0.35, 1.02, -0.005]} rotation={[0.05, 0, -0.18]}>
-                <capsuleGeometry args={[shape.dress ? 0.075 : 0.068, shape.dress ? 0.5 : 0.44, 8, 14]} />
-                <meshStandardMaterial map={trimTexture} color="#ffffff" roughness={0.74} />
+              <mesh castShadow position={[-0.34, 0.98, -0.15]} rotation={[0.04, 0.08, -0.22]}>
+                <planeGeometry args={[0.18, shape.dress ? 0.58 : 0.5]} />
+                <meshStandardMaterial {...decalMaterial} map={sleeveTexture} />
               </mesh>
-              <mesh castShadow position={[0.35, 1.02, -0.005]} rotation={[0.05, 0, 0.18]}>
-                <capsuleGeometry args={[shape.dress ? 0.075 : 0.068, shape.dress ? 0.5 : 0.44, 8, 14]} />
-                <meshStandardMaterial map={trimTexture} color="#ffffff" roughness={0.74} />
+              <mesh castShadow position={[0.34, 0.98, -0.15]} rotation={[0.04, -0.08, 0.22]}>
+                <planeGeometry args={[0.18, shape.dress ? 0.58 : 0.5]} />
+                <meshStandardMaterial {...decalMaterial} map={sleeveTexture} />
               </mesh>
             </>
           ) : null}
           {shape.dress ? (
-            <mesh castShadow position={[0, 0.63, -0.005]} scale={[1, 0.9, 0.82]}>
-              <coneGeometry args={[isMale ? 0.36 : 0.42, isMale ? 0.22 : 0.26, 32, 1, true]} />
-              <meshStandardMaterial map={clothTexture} color="#ffffff" side={THREE.DoubleSide} roughness={0.76} />
-            </mesh>
+            <>
+              <mesh castShadow position={[0, 0.66, frontZ - 0.006]}>
+                <planeGeometry args={[isMale ? 0.56 : 0.64, isMale ? 0.32 : 0.38]} />
+                <meshStandardMaterial {...decalMaterial} map={skirtTexture} />
+              </mesh>
+              <mesh castShadow position={[0, 0.66, backZ + 0.006]} rotation={[0, Math.PI, 0]}>
+                <planeGeometry args={[isMale ? 0.52 : 0.6, isMale ? 0.3 : 0.35]} />
+                <meshStandardMaterial {...decalMaterial} map={skirtTexture} />
+              </mesh>
+            </>
           ) : (
-            <mesh castShadow position={[0, 0.64, -0.005]} scale={[1.02, 1, 0.78]}>
-              <cylinderGeometry args={[isMale ? 0.235 : 0.22, isMale ? 0.25 : 0.235, 0.22, 28, 1, true]} />
-              <meshStandardMaterial map={trimTexture} color="#ffffff" side={THREE.DoubleSide} roughness={0.76} />
-            </mesh>
+            <>
+              <mesh castShadow position={[0, 0.64, frontZ - 0.006]}>
+                <planeGeometry args={[isMale ? 0.48 : 0.44, 0.28]} />
+                <meshStandardMaterial {...decalMaterial} map={bottomTexture} />
+              </mesh>
+              <mesh castShadow position={[0, 0.64, backZ + 0.006]} rotation={[0, Math.PI, 0]}>
+                <planeGeometry args={[isMale ? 0.46 : 0.42, 0.26]} />
+                <meshStandardMaterial {...decalMaterial} map={bottomTexture} />
+              </mesh>
+            </>
           )}
           {shape.hoodie ? (
             <mesh castShadow position={[0, 1.32, 0.085]} rotation={[0.35, 0, 0]} scale={[1.15, 0.7, 0.78]}>
@@ -959,24 +1076,30 @@ function OutfitOverlay({ outfit, character }: { outfit?: CatalogItem; character:
             </mesh>
           ) : null}
           {shape.jacket ? (
-            <mesh castShadow position={[0, 1.02, -0.225]} scale={[0.64, 1.2, 0.08]}>
-              <boxGeometry args={[0.12, 0.5, 0.03]} />
-              <meshStandardMaterial color={colors.accent} emissive={colors.accent} emissiveIntensity={0.18} roughness={0.54} />
+            <mesh castShadow position={[0, 1.02, frontZ - 0.012]}>
+              <planeGeometry args={[0.11, 0.55]} />
+              <meshStandardMaterial {...decalMaterial} color={colors.accent} emissive={colors.accent} emissiveIntensity={0.18} />
             </mesh>
           ) : null}
           {shape.armor ? (
             <>
-              <mesh castShadow position={[0, 1.08, -0.255]} scale={[0.75, 1, 0.12]}>
-                <boxGeometry args={[0.42, 0.34, 0.04]} />
-                <meshStandardMaterial color={colors.main} metalness={0.35} roughness={0.36} />
+              <mesh castShadow position={[0, 1.08, frontZ - 0.014]}>
+                <planeGeometry args={[0.42, 0.36]} />
+                <meshStandardMaterial {...decalMaterial} color={colors.main} metalness={0.35} roughness={0.36} />
               </mesh>
-              <mesh castShadow position={[0, 1.09, -0.282]} scale={[0.7, 1, 0.08]}>
-                <boxGeometry args={[0.08, 0.42, 0.03]} />
-                <meshStandardMaterial color={colors.accent} emissive={colors.accent} emissiveIntensity={0.35} />
+              <mesh castShadow position={[0, 1.09, frontZ - 0.02]}>
+                <planeGeometry args={[0.08, 0.42]} />
+                <meshStandardMaterial {...decalMaterial} color={colors.accent} emissive={colors.accent} emissiveIntensity={0.35} />
               </mesh>
             </>
           ) : null}
         </>
+      ) : null}
+      {shape.scarf ? (
+        <mesh castShadow position={[0, 1.32, -0.02]} rotation={[Math.PI / 2, 0, 0]} scale={[1.12, 0.8, 1]}>
+          <torusGeometry args={[0.23, 0.035, 8, 28]} />
+          <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.78} />
+        </mesh>
       ) : null}
       {shape.shoes ? (
         <>
@@ -1001,12 +1124,6 @@ function OutfitOverlay({ outfit, character }: { outfit?: CatalogItem; character:
             <meshStandardMaterial color={colors.accent} roughness={0.7} />
           </mesh>
         </>
-      ) : null}
-      {shape.scarf ? (
-        <mesh castShadow position={[0, 1.32, -0.02]} rotation={[Math.PI / 2, 0, 0]} scale={[1.12, 0.8, 1]}>
-          <torusGeometry args={[0.23, 0.035, 8, 28]} />
-          <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.78} />
-        </mesh>
       ) : null}
       {shape.wings ? (
         <>
