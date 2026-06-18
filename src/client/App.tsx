@@ -104,6 +104,18 @@ export default function App() {
     }
   }
 
+  function upsertRemotePlayer(players: RemotePlayer[], nextPlayer: RemotePlayer) {
+    const matches = (player: RemotePlayer) => nextPlayer.id && player.id
+      ? player.id === nextPlayer.id
+      : player.username === nextPlayer.username;
+    const exists = players.some(matches);
+    if (!exists) {
+      return [...players, nextPlayer];
+    }
+
+    return players.map((player) => matches(player) ? { ...nextPlayer, avatar: nextPlayer.avatar ?? player.avatar } : player);
+  }
+
   function connectSocket(owner: string) {
     socketRef.current?.disconnect();
     const socket = io("/", {
@@ -113,21 +125,20 @@ export default function App() {
     socket.on("connect", () => {
       socket.emit("home:join", owner);
     });
-    socket.on("player:joined", ({ username, avatar }: { username: string; avatar?: PublicUser["avatar"] }) => {
-      setRemotePlayers((current) => current.map((player) => player.username === username ? { ...player, avatar: avatar ?? player.avatar } : player));
+    socket.on("player:present", ({ players }: { players: RemotePlayer[] }) => {
+      setRemotePlayers((current) => players.reduce((nextPlayers, player) => upsertRemotePlayer(nextPlayers, player), current));
+    });
+    socket.on("player:joined", (player: RemotePlayer) => {
+      const username = player.username;
+      setRemotePlayers((current) => upsertRemotePlayer(current, player));
       showToast(`${username} зашел в дом`);
     });
-    socket.on("player:left", ({ username }: { username: string }) => {
-      setRemotePlayers((current) => current.filter((player) => player.username !== username));
+    socket.on("player:left", ({ id, username }: { id?: string; username: string }) => {
+      setRemotePlayers((current) => current.filter((player) => id ? player.id !== id : player.username !== username));
       showToast(`${username} вышел`);
     });
     socket.on("player:moved", (payload: RemotePlayer) => {
-      setRemotePlayers((current) => {
-        const exists = current.some((player) => player.username === payload.username);
-        return exists
-          ? current.map((player) => (player.username === payload.username ? { ...payload, avatar: payload.avatar ?? player.avatar } : player))
-          : [...current, payload];
-      });
+      setRemotePlayers((current) => upsertRemotePlayer(current, payload));
     });
     socket.on("chat:message", (message: ChatMessage) => {
       setMessages((current) => [...current.slice(-80), message]);

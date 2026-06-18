@@ -17,6 +17,13 @@ const io = new Server(fastify.server, {
   }
 });
 const voiceRooms = new Map<string, Map<string, string>>();
+type LivePlayer = {
+  id: string;
+  username: string;
+  position: { x: number; y: number; z: number; rotation?: number };
+  avatar?: User["avatar"];
+};
+const homePlayers = new Map<string, Map<string, LivePlayer>>();
 
 type AuthedRequest = {
   headers: { authorization?: string };
@@ -108,6 +115,25 @@ function clampHomeCoordinate(value: unknown) {
 function getPublicAvatar(username: string) {
   const user = findUserByName(username);
   return user?.avatar;
+}
+
+function defaultPlayerPosition() {
+  return { x: 0, y: 0, z: 1.2, rotation: 0 };
+}
+
+function leaveHomePresence(socket: Socket) {
+  const homeOwner = socket.data.homeOwner as string | undefined;
+  if (!homeOwner) {
+    return;
+  }
+
+  const players = homePlayers.get(homeOwner);
+  if (players?.delete(socket.id)) {
+    if (players.size === 0) {
+      homePlayers.delete(homeOwner);
+    }
+    socket.to(`home:${homeOwner}`).emit("player:left", { id: socket.id, username: socket.data.username });
+  }
 }
 
 function leaveVoiceRoom(socket: Socket) {
@@ -426,23 +452,41 @@ io.on("connection", (socket) => {
     const previousHomeOwner = socket.data.homeOwner as string | undefined;
     if (previousHomeOwner && previousHomeOwner !== homeOwner) {
       leaveVoiceRoom(socket);
+      leaveHomePresence(socket);
       socket.leave(`home:${previousHomeOwner}`);
-      socket.to(`home:${previousHomeOwner}`).emit("player:left", { username: socket.data.username });
     }
 
     const room = `home:${homeOwner}`;
     socket.join(room);
     socket.data.homeOwner = homeOwner;
-    socket.to(room).emit("player:joined", { username: socket.data.username, avatar: getPublicAvatar(socket.data.username) });
+
+    const players = homePlayers.get(homeOwner) ?? new Map<string, LivePlayer>();
+    players.delete(socket.id);
+    const currentPlayer: LivePlayer = {
+      id: socket.id,
+      username: socket.data.username,
+      position: defaultPlayerPosition(),
+      avatar: getPublicAvatar(socket.data.username)
+    };
+    socket.emit("player:present", { players: [...players.values()] });
+    players.set(socket.id, currentPlayer);
+    homePlayers.set(homeOwner, players);
+    socket.to(room).emit("player:joined", currentPlayer);
   });
 
   socket.on("player:move", (position: { x: number; y: number; z: number; rotation?: number }) => {
-    const room = `home:${socket.data.homeOwner}`;
-    socket.to(room).emit("player:moved", {
+    const homeOwner = String(socket.data.homeOwner ?? socket.data.username);
+    const room = `home:${homeOwner}`;
+    const player: LivePlayer = {
+      id: socket.id,
       username: socket.data.username,
       position,
       avatar: getPublicAvatar(socket.data.username)
-    });
+    };
+    const players = homePlayers.get(homeOwner) ?? new Map<string, LivePlayer>();
+    players.set(socket.id, player);
+    homePlayers.set(homeOwner, players);
+    socket.to(room).emit("player:moved", player);
   });
 
   socket.on("chat:send", (text: string) => {
@@ -513,9 +557,7 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     leaveVoiceRoom(socket);
-    if (socket.data.homeOwner) {
-      socket.to(`home:${socket.data.homeOwner}`).emit("player:left", { username: socket.data.username });
-    }
+    leaveHomePresence(socket);
   });
 });
 

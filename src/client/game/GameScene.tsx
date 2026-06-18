@@ -1205,7 +1205,7 @@ function World({
       />
       {remoteVectors.map((player) => (
         <Player
-          key={player.username}
+          key={player.id ?? player.username}
           username={player.username}
           color={player.outfit?.color ?? "#8b5cf6"}
           position={player.vector}
