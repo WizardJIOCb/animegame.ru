@@ -333,14 +333,31 @@ function World({
       {remoteVectors.map((player) => (
         <Player key={player.username} username={player.username} color="#8b5cf6" position={player.vector} />
       ))}
-      <OrbitControls makeDefault enablePan={false} maxPolarAngle={Math.PI / 2.25} minDistance={5.2} maxDistance={11} />
+      <OrbitControls
+        makeDefault
+        enablePan
+        screenSpacePanning
+        panSpeed={0.75}
+        mouseButtons={{
+          LEFT: THREE.MOUSE.ROTATE,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN
+        }}
+        maxPolarAngle={Math.PI / 2.25}
+        minDistance={5.2}
+        maxDistance={11}
+      />
     </>
   );
 }
 
 export function GameScene(props: GameSceneProps) {
   return (
-    <Canvas shadows camera={{ position: [5.2, 5.1, 6.8], fov: 42 }}>
+    <Canvas
+      shadows
+      camera={{ position: [5.2, 5.1, 6.8], fov: 42 }}
+      onContextMenu={(event) => event.preventDefault()}
+    >
       <World {...props} />
     </Canvas>
   );
