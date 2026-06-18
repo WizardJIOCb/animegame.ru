@@ -107,12 +107,12 @@ def make_skinned_mesh(name, verts, faces, material, armature, weight_fn):
 def build_torso(armature, material):
     segments = 40
     ring_specs = [
-        (0.88, 0.260, 0.112, 0.000),
-        (0.96, 0.292, 0.128, 0.000),
-        (1.08, 0.326, 0.144, -0.002),
-        (1.20, 0.356, 0.154, -0.004),
-        (1.31, 0.388, 0.148, -0.006),
-        (1.37, 0.310, 0.122, -0.010),
+        (0.90, 0.225, 0.102, 0.000),
+        (0.99, 0.255, 0.116, 0.000),
+        (1.10, 0.292, 0.132, -0.002),
+        (1.21, 0.326, 0.142, -0.004),
+        (1.31, 0.354, 0.138, -0.006),
+        (1.38, 0.276, 0.108, -0.010),
     ]
     verts = []
     for z, rx, ry, cy in ring_specs:
@@ -135,6 +135,46 @@ def build_torso(armature, material):
             ))
 
     return make_skinned_mesh("hoodie_pink_smooth_body", verts, faces, material, armature, torso_weights)
+
+
+def build_short_sleeve(armature, material, side):
+    sign = -1 if side == "l" else 1
+    segments = 20
+    ring_specs = [
+        (sign * 0.345, 1.285, 0.090, 0.080),
+        (sign * 0.370, 1.205, 0.088, 0.078),
+        (sign * 0.385, 1.115, 0.080, 0.072),
+    ]
+    verts = []
+    for center_x, z, rx, ry in ring_specs:
+        for i in range(segments):
+            angle = (i / segments) * math.tau
+            x = center_x + math.cos(angle) * rx
+            y = -0.002 + math.sin(angle) * ry
+            verts.append((x, y, z))
+
+    faces = []
+    for r in range(len(ring_specs) - 1):
+        for i in range(segments):
+            faces.append((
+                r * segments + i,
+                r * segments + (i + 1) % segments,
+                (r + 1) * segments + (i + 1) % segments,
+                (r + 1) * segments + i,
+            ))
+
+    return make_skinned_mesh(
+        f"hoodie_pink_short_sleeve_{side}",
+        verts,
+        faces,
+        material,
+        armature,
+        lambda co: normalize_weights({
+            "spine_03": 0.46,
+            f"clavicle_{side}": 0.38,
+            f"upperarm_{side}": 0.16,
+        }),
+    )
 
 
 def build_band(name, armature, material, z, rx, ry, height, weights):
@@ -180,7 +220,7 @@ def build_shoulder_cap(armature, material, side):
 
 def build_front_texture_decals(armature, star_mat, stripe_mat):
     # Lightweight geometry decals: they behave like a stylized texture but stay inside the GLB.
-    for index, x in enumerate([-0.18, -0.09, 0.09, 0.18]):
+    for index, x in enumerate([-0.135, -0.055, 0.055, 0.135]):
         z = 1.185 + (0.035 if index % 2 else 0)
         size = 0.028
         verts = [
@@ -204,10 +244,10 @@ def build_front_texture_decals(armature, star_mat, stripe_mat):
         )
 
     stripe_verts = [
-        (-0.245, -0.207, 1.105),
-        (0.245, -0.207, 1.105),
-        (0.245, -0.209, 1.125),
-        (-0.245, -0.209, 1.125),
+        (-0.185, -0.186, 1.105),
+        (0.185, -0.186, 1.105),
+        (0.185, -0.188, 1.125),
+        (-0.185, -0.188, 1.125),
     ]
     build_flat_panel(
         "hoodie_pink_chest_stripe",
@@ -225,21 +265,21 @@ def build_details(armature, rib, trim):
         armature,
         rib,
         0.885,
-        0.265,
-        0.116,
+        0.232,
+        0.106,
         0.045,
         normalize_weights({"pelvis": 0.35, "spine_01": 0.65}),
     )
 
     pocket_verts = [
-        (-0.18, -0.192, 0.945),
-        (0.18, -0.192, 0.945),
-        (0.205, -0.196, 1.055),
-        (-0.205, -0.196, 1.055),
-        (-0.09, -0.202, 0.975),
-        (0.09, -0.202, 0.975),
-        (0.11, -0.204, 1.035),
-        (-0.11, -0.204, 1.035),
+        (-0.145, -0.178, 0.955),
+        (0.145, -0.178, 0.955),
+        (0.168, -0.182, 1.045),
+        (-0.168, -0.182, 1.045),
+        (-0.073, -0.188, 0.982),
+        (0.073, -0.188, 0.982),
+        (0.090, -0.190, 1.030),
+        (-0.090, -0.190, 1.030),
     ]
     pocket_faces = [(0, 1, 2, 3), (4, 5, 6, 7)]
     build_flat_panel(
@@ -256,8 +296,8 @@ def build_details(armature, rib, trim):
         armature,
         trim,
         1.355,
-        0.185,
-        0.082,
+        0.150,
+        0.068,
         0.025,
         normalize_weights({"spine_03": 0.9, "clavicle_l": 0.05, "clavicle_r": 0.05}),
     )
@@ -300,6 +340,8 @@ def create_hoodie():
     stripe = make_mat("hoodie_neon_chest_print", (0.96, 0.16, 0.58, 1.0), 0.7)
 
     build_torso(armature, fabric)
+    build_short_sleeve(armature, fabric, "l")
+    build_short_sleeve(armature, fabric, "r")
     build_front_texture_decals(armature, star, stripe)
     build_details(armature, rib, trim)
     export_hoodie(armature)
