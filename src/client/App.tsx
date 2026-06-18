@@ -1,4 +1,4 @@
-import { Coins, DoorOpen, Hammer, Home, LogOut, MessageCircle, RotateCw, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
+import { Coins, DoorOpen, Hammer, Home, LogOut, MessageCircle, RotateCcw, RotateCw, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { AuthScreen } from "./components/AuthScreen";
@@ -211,12 +211,12 @@ export default function App() {
     updatePlacedItem(response.placed);
   }
 
-  async function handleRotateSelected() {
+  async function handleRotateSelected(direction: -1 | 1) {
     if (!selectedPlaced || !ownHome) {
       return;
     }
 
-    const response = await rotatePlacedItem(selectedPlaced.instanceId, selectedPlaced.rotation + Math.PI / 12);
+    const response = await rotatePlacedItem(selectedPlaced.instanceId, selectedPlaced.rotation + direction * Math.PI / 12);
     updatePlacedItem(response.placed);
   }
 
@@ -350,8 +350,11 @@ export default function App() {
                 <b>{selectedPlacedCatalogItem ? selectedPlacedCatalogItem.name : "Select item"}</b>
                 <span>{selectedPlacedCatalogItem ? `Sell value: ${selectedSellValue}` : "Click an object in your home"}</span>
               </div>
-              <button onClick={handleRotateSelected} disabled={!selectedPlaced}>
-                <RotateCw size={16} /> Rotate
+              <button onClick={() => handleRotateSelected(-1)} disabled={!selectedPlaced} title="Rotate left">
+                <RotateCcw size={16} /> Left
+              </button>
+              <button onClick={() => handleRotateSelected(1)} disabled={!selectedPlaced} title="Rotate right">
+                <RotateCw size={16} /> Right
               </button>
               <button className="sell-button" onClick={handleSellSelected} disabled={!selectedPlaced}>
                 <Trash2 size={16} /> Sell

@@ -428,32 +428,38 @@ function makePaintTexture(color: string, kind: "floor" | "wall") {
       }
     }
   } else {
-    const gradient = context.createLinearGradient(0, 0, 256, 256);
-    gradient.addColorStop(0, light);
-    gradient.addColorStop(0.55, base.getStyle());
-    gradient.addColorStop(1, dark);
-    context.fillStyle = gradient;
+    context.fillStyle = mid;
     context.fillRect(0, 0, 256, 256);
-    context.fillStyle = "rgba(255,255,255,0.035)";
-    for (let i = 0; i < 900; i += 1) {
-      context.fillRect((i * 47) % 256, (i * 83) % 256, 1, 1);
+    for (let y = 0; y < 256; y += 1) {
+      const shade = Math.sin((y / 256) * Math.PI * 2) * 0.018;
+      context.fillStyle = shade > 0 ? `rgba(255,255,255,${shade})` : `rgba(0,0,0,${Math.abs(shade)})`;
+      context.fillRect(0, y, 256, 1);
     }
-    context.strokeStyle = "rgba(255,255,255,0.11)";
-    context.lineWidth = 1;
-    for (let y = 64; y < 256; y += 64) {
+    for (let x = 0; x < 256; x += 4) {
+      context.strokeStyle = x % 8 === 0 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.026)";
+      context.lineWidth = 1;
       context.beginPath();
-      context.moveTo(0, y);
-      context.lineTo(256, y + Math.sin(y) * 3);
+      context.moveTo(x + 0.5, 0);
+      context.lineTo(x + 0.5, 256);
       context.stroke();
+    }
+    for (let i = 0; i < 700; i += 1) {
+      const x = (i * 73) % 256;
+      const y = (i * 151) % 256;
+      const alpha = i % 2 === 0 ? 0.025 : 0.018;
+      context.fillStyle = i % 2 === 0 ? `rgba(255,255,255,${alpha})` : `rgba(0,0,0,${alpha})`;
+      context.fillRect(x, y, 1, 1);
     }
   }
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(kind === "floor" ? 3.2 : 2.4, kind === "floor" ? 3.2 : 1.3);
+  texture.repeat.set(kind === "floor" ? 3.2 : 1, kind === "floor" ? 3.2 : 1);
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
+  texture.anisotropy = kind === "floor" ? 4 : 8;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
   return texture;
 }
 
