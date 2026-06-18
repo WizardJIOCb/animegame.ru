@@ -9,8 +9,12 @@ type GameSceneProps = {
   home: HomeState;
   catalog: CatalogItem[];
   remotePlayers: RemotePlayer[];
+  buildMode: boolean;
+  selectedPlacedId: string;
   onMove: (position: { x: number; y: number; z: number; rotation?: number }) => void;
   onInteract: (itemId: string, action: string) => void;
+  onSelectPlaced: (instanceId: string) => void;
+  onBuildMove: (x: number, z: number) => void;
 };
 
 const floorSize = 9;
@@ -150,17 +154,25 @@ function Player({
 }
 
 function PlacedObject({
+  instanceId,
   item,
   x,
   z,
   rotation,
-  onInteract
+  selected,
+  buildMode,
+  onInteract,
+  onSelect
 }: {
+  instanceId: string;
   item: CatalogItem;
   x: number;
   z: number;
   rotation: number;
+  selected: boolean;
+  buildMode: boolean;
   onInteract: (itemId: string, action: string) => void;
+  onSelect: (instanceId: string) => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const size = item.size ?? [0.9, 0.9, 0.9];
@@ -176,9 +188,19 @@ function PlacedObject({
       onPointerLeave={() => setHovered(false)}
       onClick={(event) => {
         event.stopPropagation();
+        if (buildMode) {
+          onSelect(instanceId);
+          return;
+        }
         onInteract(item.id, item.type === "furniture" ? "use" : "look");
       }}
     >
+      {selected ? (
+        <mesh position={[0, 0.03 - size[1] / 2, 0]}>
+          <boxGeometry args={[size[0] + 0.18, 0.05, size[2] + 0.18]} />
+          <meshBasicMaterial color="#14b8a6" transparent opacity={0.42} />
+        </mesh>
+      ) : null}
       {item.modelUrl ? (
         <Suspense fallback={<ModelFallback item={item} size={size} />}>
           <RuntimeModel item={item} size={size} />
@@ -231,8 +253,12 @@ function World({
   home,
   catalog,
   remotePlayers,
+  buildMode,
+  selectedPlacedId,
   onMove,
-  onInteract
+  onInteract,
+  onSelectPlaced,
+  onBuildMove
 }: GameSceneProps) {
   const target = useRef(new THREE.Vector3(0, 0, 1.2));
   const selfPosition = useRef(new THREE.Vector3(0, 0, 1.2));
@@ -271,6 +297,14 @@ function World({
     next.x = THREE.MathUtils.clamp(next.x, -floorSize / 2 + 0.4, floorSize / 2 - 0.4);
     next.z = THREE.MathUtils.clamp(next.z, -floorSize / 2 + 0.4, floorSize / 2 - 0.4);
     next.y = 0;
+
+    if (buildMode) {
+      if (selectedPlacedId) {
+        onBuildMove(next.x, next.z);
+      }
+      return;
+    }
+
     target.current = next;
     onMove({ x: next.x, y: next.y, z: next.z });
   }
@@ -314,11 +348,15 @@ function World({
         return (
           <PlacedObject
             key={placed.instanceId}
+            instanceId={placed.instanceId}
             item={item}
             x={placed.x}
             z={placed.z}
             rotation={placed.rotation}
+            selected={selectedPlacedId === placed.instanceId}
+            buildMode={buildMode}
             onInteract={onInteract}
+            onSelect={onSelectPlaced}
           />
         );
       })}

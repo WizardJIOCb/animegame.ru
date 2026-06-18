@@ -1,8 +1,8 @@
-import { Coins, DoorOpen, Hammer, Home, LogOut, MessageCircle, Shirt, ShoppingBag, Users } from "lucide-react";
+import { Coins, DoorOpen, Hammer, Home, LogOut, MessageCircle, RotateCw, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { AuthScreen } from "./components/AuthScreen";
-import { buy, earn, getCatalog, getHome, getPlayers, getToken, login, me, place, register, setToken } from "./api";
+import { buy, earn, getCatalog, getHome, getPlayers, getToken, login, me, movePlacedItem, place, register, rotatePlacedItem, sellPlacedItem, setToken } from "./api";
 import { GameScene } from "./game/GameScene";
 import type { Activity, CatalogItem, ChatMessage, HomeState, PlacedItem, PublicUser, RemotePlayer } from "./types";
 
@@ -29,6 +29,8 @@ export default function App() {
   const [chatText, setChatText] = useState("");
   const [tab, setTab] = useState<Tab>("shop");
   const [filter, setFilter] = useState<CatalogItem["type"] | "all">("all");
+  const [buildMode, setBuildMode] = useState(false);
+  const [selectedPlacedId, setSelectedPlacedId] = useState("");
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const socketRef = useRef<Socket | null>(null);
@@ -108,6 +110,13 @@ export default function App() {
     socket.on("home:placed", (placed: PlacedItem) => {
       setHome((current) => current ? { ...current, placedItems: [...current.placedItems, placed] } : current);
     });
+    socket.on("home:itemUpdated", (placed: PlacedItem) => {
+      updatePlacedItem(placed);
+    });
+    socket.on("home:itemSold", ({ instanceId }: { instanceId: string }) => {
+      setHome((current) => current ? { ...current, placedItems: current.placedItems.filter((item) => item.instanceId !== instanceId) } : current);
+      setSelectedPlacedId((current) => current === instanceId ? "" : current);
+    });
     socket.on("world:interaction", ({ username, action }: { username: string; action: string }) => {
       showToast(`${username}: ${action}`);
     });
@@ -157,6 +166,52 @@ export default function App() {
     showToast("Предмет поставлен дома");
   }
 
+  function updatePlacedItem(placed: PlacedItem) {
+    setHome((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const exists = current.placedItems.some((item) => item.instanceId === placed.instanceId);
+      return {
+        ...current,
+        placedItems: exists
+          ? current.placedItems.map((item) => item.instanceId === placed.instanceId ? placed : item)
+          : [...current.placedItems, placed]
+      };
+    });
+  }
+
+  async function handleBuildMove(x: number, z: number) {
+    if (!selectedPlacedId || !ownHome) {
+      return;
+    }
+
+    const response = await movePlacedItem(selectedPlacedId, x, z);
+    updatePlacedItem(response.placed);
+  }
+
+  async function handleRotateSelected() {
+    if (!selectedPlaced || !ownHome) {
+      return;
+    }
+
+    const response = await rotatePlacedItem(selectedPlaced.instanceId, selectedPlaced.rotation + Math.PI / 4);
+    updatePlacedItem(response.placed);
+  }
+
+  async function handleSellSelected() {
+    if (!selectedPlaced || !ownHome) {
+      return;
+    }
+
+    const response = await sellPlacedItem(selectedPlaced.instanceId);
+    setUser(response.user);
+    setHome((current) => current ? { ...current, placedItems: current.placedItems.filter((item) => item.instanceId !== response.placed.instanceId) } : current);
+    setSelectedPlacedId("");
+    showToast(`Sold +${response.refund}`);
+  }
+
   function handleMove(position: { x: number; y: number; z: number; rotation?: number }) {
     socketRef.current?.emit("player:move", position);
   }
@@ -199,6 +254,16 @@ export default function App() {
     return user.inventory.map((itemId) => catalog.find((item) => item.id === itemId)).filter(Boolean) as CatalogItem[];
   }, [catalog, user]);
 
+  const selectedPlaced = useMemo(() => {
+    return home?.placedItems.find((item) => item.instanceId === selectedPlacedId);
+  }, [home, selectedPlacedId]);
+
+  const selectedPlacedCatalogItem = useMemo(() => {
+    return selectedPlaced ? catalog.find((item) => item.id === selectedPlaced.itemId) : undefined;
+  }, [catalog, selectedPlaced]);
+
+  const selectedSellValue = selectedPlacedCatalogItem ? Math.floor(selectedPlacedCatalogItem.price * 0.7) : 0;
+
   if (!user || !home) {
     return <AuthScreen onSubmit={handleAuth} error={error} />;
   }
@@ -210,6 +275,17 @@ export default function App() {
         <div className="home-title">
           <span>{ownHome ? "Мой дом" : `В гостях у ${homeOwner}`}</span>
           {!ownHome ? <button className="ghost-button" onClick={goOwnHome}><DoorOpen size={16} /> Домой</button> : null}
+          {ownHome ? (
+            <button
+              className={buildMode ? "ghost-button active-build" : "ghost-button"}
+              onClick={() => {
+                setBuildMode((current) => !current);
+                setSelectedPlacedId("");
+              }}
+            >
+              <Hammer size={16} /> Build
+            </button>
+          ) : null}
         </div>
         <div className="wallet"><Coins size={18} /> {user.coins}</div>
         <button className="icon-button" onClick={logout} title="Выйти"><LogOut size={18} /></button>
@@ -217,8 +293,37 @@ export default function App() {
 
       <section className="game-layout">
         <div className="scene-wrap">
-          <GameScene user={user} home={home} catalog={catalog} remotePlayers={remotePlayers} onMove={handleMove} onInteract={handleInteract} />
-          <div className="scene-hint">Клик по полу: идти. Клик по предмету: взаимодействовать.</div>
+          <GameScene
+            user={user}
+            home={home}
+            catalog={catalog}
+            remotePlayers={remotePlayers}
+            buildMode={buildMode && ownHome}
+            selectedPlacedId={selectedPlacedId}
+            onMove={handleMove}
+            onInteract={handleInteract}
+            onSelectPlaced={setSelectedPlacedId}
+            onBuildMove={handleBuildMove}
+          />
+          <div className="scene-hint">
+            {buildMode && ownHome
+              ? "Build: click an item, click floor to move it. Right mouse pans camera."
+              : "Клик по полу: идти. Клик по предмету: взаимодействовать."}
+          </div>
+          {buildMode && ownHome ? (
+            <div className="build-toolbar">
+              <div className="build-selection">
+                <b>{selectedPlacedCatalogItem ? selectedPlacedCatalogItem.name : "Select item"}</b>
+                <span>{selectedPlacedCatalogItem ? `Sell value: ${selectedSellValue}` : "Click an object in your home"}</span>
+              </div>
+              <button onClick={handleRotateSelected} disabled={!selectedPlaced}>
+                <RotateCw size={16} /> Rotate
+              </button>
+              <button className="sell-button" onClick={handleSellSelected} disabled={!selectedPlaced}>
+                <Trash2 size={16} /> Sell
+              </button>
+            </div>
+          ) : null}
           {toast ? <div className="toast">{toast}</div> : null}
         </div>
 

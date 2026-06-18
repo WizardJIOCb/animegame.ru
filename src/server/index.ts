@@ -55,6 +55,16 @@ function starterPlacedItems(): PlacedItem[] {
   ];
 }
 
+function getPlacedItemValue(itemId: string) {
+  const item = catalog.find((entry) => entry.id === itemId);
+  return item ? Math.floor(item.price * 0.7) : 0;
+}
+
+function clampHomeCoordinate(value: unknown) {
+  const numberValue = Number(value ?? 0);
+  return Math.max(-4.1, Math.min(4.1, Number.isFinite(numberValue) ? numberValue : 0));
+}
+
 await fastify.register(cors, {
   origin: true,
   credentials: true
@@ -221,11 +231,84 @@ fastify.post("/api/place", async (request, reply) => {
 
     const db = readDb();
     const dbUser = db.users.find((entry) => entry.id === user.id)!;
+    const inventoryIndex = dbUser.inventory.indexOf(item.id);
+    if (inventoryIndex === -1) {
+      return reply.code(400).send({ error: "Предмета нет в инвентаре" });
+    }
+
+    dbUser.inventory.splice(inventoryIndex, 1);
     dbUser.placedItems.push(placed);
     writeDb(db);
     io.to(`home:${dbUser.username}`).emit("home:placed", placed);
 
     return { user: toPublicUser(dbUser), placed };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/placed/move", async (request, reply) => {
+  try {
+    const user = requireUser(request);
+    const body = request.body as { instanceId?: string; x?: number; z?: number };
+    const db = readDb();
+    const dbUser = db.users.find((entry) => entry.id === user.id)!;
+    const placed = dbUser.placedItems.find((entry) => entry.instanceId === body.instanceId);
+    if (!placed) {
+      return reply.code(404).send({ error: "Предмет не найден" });
+    }
+
+    placed.x = clampHomeCoordinate(body.x);
+    placed.z = clampHomeCoordinate(body.z);
+    placed.y = 0;
+    writeDb(db);
+    io.to(`home:${dbUser.username}`).emit("home:itemUpdated", placed);
+
+    return { user: toPublicUser(dbUser), placed };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/placed/rotate", async (request, reply) => {
+  try {
+    const user = requireUser(request);
+    const body = request.body as { instanceId?: string; rotation?: number };
+    const db = readDb();
+    const dbUser = db.users.find((entry) => entry.id === user.id)!;
+    const placed = dbUser.placedItems.find((entry) => entry.instanceId === body.instanceId);
+    if (!placed) {
+      return reply.code(404).send({ error: "Предмет не найден" });
+    }
+
+    placed.rotation = Number(body.rotation ?? placed.rotation);
+    writeDb(db);
+    io.to(`home:${dbUser.username}`).emit("home:itemUpdated", placed);
+
+    return { user: toPublicUser(dbUser), placed };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/placed/sell", async (request, reply) => {
+  try {
+    const user = requireUser(request);
+    const body = request.body as { instanceId?: string };
+    const db = readDb();
+    const dbUser = db.users.find((entry) => entry.id === user.id)!;
+    const placedIndex = dbUser.placedItems.findIndex((entry) => entry.instanceId === body.instanceId);
+    if (placedIndex === -1) {
+      return reply.code(404).send({ error: "Предмет не найден" });
+    }
+
+    const [placed] = dbUser.placedItems.splice(placedIndex, 1);
+    const refund = getPlacedItemValue(placed.itemId);
+    dbUser.coins += refund;
+    writeDb(db);
+    io.to(`home:${dbUser.username}`).emit("home:itemSold", { instanceId: placed.instanceId, refund });
+
+    return { user: toPublicUser(dbUser), placed, refund };
   } catch {
     return reply.code(401).send({ error: "Нужно войти" });
   }

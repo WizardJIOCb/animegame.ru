@@ -170,6 +170,11 @@ input:focus {
   color: #ffffff;
 }
 
+.active-build {
+  background: #14b8a6;
+  color: #061614;
+}
+
 .icon-button {
   width: 38px;
   padding: 0;
@@ -257,6 +262,59 @@ input:focus {
   bottom: 58px;
   color: #ffffff;
   border-color: rgba(249, 168, 212, 0.38);
+}
+
+.build-toolbar {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 58px;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px;
+  border-radius: 8px;
+  background: rgba(16, 17, 22, 0.82);
+  border: 1px solid rgba(20, 184, 166, 0.34);
+  backdrop-filter: blur(10px);
+}
+
+.build-selection {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.build-selection b,
+.build-selection span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.build-selection span {
+  color: #b8f5ec;
+  font-size: 12px;
+}
+
+.build-toolbar button {
+  min-height: 36px;
+  border-radius: 6px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: #ffffff;
+  color: #101116;
+  font-weight: 900;
+}
+
+.build-toolbar .sell-button {
+  background: #fb7185;
+  color: #21070d;
 }
 
 .object-tip {

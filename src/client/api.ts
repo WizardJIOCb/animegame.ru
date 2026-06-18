@@ -1,4 +1,4 @@
-import type { Activity, CatalogItem, HomeState, PublicUser } from "./types";
+import type { Activity, CatalogItem, HomeState, PlacedItem, PublicUser } from "./types";
 
 const TOKEN_KEY = "animegame_token";
 
@@ -78,9 +78,29 @@ export function buy(itemId: string) {
 }
 
 export function place(itemId: string, x: number, z: number, rotation = 0) {
-  return request<{ user: PublicUser }>("/api/place", {
+  return request<{ user: PublicUser; placed: PlacedItem }>("/api/place", {
     method: "POST",
     body: JSON.stringify({ itemId, x, z, rotation })
   });
 }
 
+export function movePlacedItem(instanceId: string, x: number, z: number) {
+  return request<{ user: PublicUser; placed: PlacedItem }>("/api/placed/move", {
+    method: "POST",
+    body: JSON.stringify({ instanceId, x, z })
+  });
+}
+
+export function rotatePlacedItem(instanceId: string, rotation: number) {
+  return request<{ user: PublicUser; placed: PlacedItem }>("/api/placed/rotate", {
+    method: "POST",
+    body: JSON.stringify({ instanceId, rotation })
+  });
+}
+
+export function sellPlacedItem(instanceId: string) {
+  return request<{ user: PublicUser; placed: PlacedItem; refund: number }>("/api/placed/sell", {
+    method: "POST",
+    body: JSON.stringify({ instanceId })
+  });
+}
