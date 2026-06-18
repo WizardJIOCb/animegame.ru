@@ -1,4 +1,4 @@
-export type ItemType = "furniture" | "clothing" | "pet" | "decor" | "activity";
+export type ItemType = "furniture" | "clothing" | "pet" | "decor" | "character" | "activity";
 
 export type CatalogItem = {
   id: string;
@@ -39,6 +39,7 @@ export type PublicUser = {
   avatar: {
     outfit: string;
     hair: string;
+    character?: string;
     pet?: string;
   };
   createdAt: number;

@@ -50,18 +50,63 @@ function ModelFallback({ item, size }: { item: CatalogItem; size: [number, numbe
   );
 }
 
+function CharacterModel({ item }: { item: CatalogItem }) {
+  const gltf = useGLTF(item.modelUrl ?? "");
+  const scene = useMemo(() => {
+    const clone = gltf.scene.clone(true);
+    clone.traverse((node) => {
+      if (node instanceof THREE.Mesh) {
+        node.castShadow = true;
+        node.receiveShadow = true;
+      }
+    });
+    return clone;
+  }, [gltf.scene]);
+
+  return <primitive object={scene} scale={item.modelScale ?? 1} />;
+}
+
+function ProceduralPlayerBody({ color, isSelf }: { color: string; isSelf: boolean }) {
+  return (
+    <>
+      <mesh castShadow position={[0, 0.74, 0]}>
+        <capsuleGeometry args={[0.28, 0.72, 8, 16]} />
+        <meshStandardMaterial color={color} roughness={0.55} metalness={0.08} />
+      </mesh>
+      <mesh castShadow position={[0, 1.34, 0]}>
+        <sphereGeometry args={[0.26, 24, 24]} />
+        <meshStandardMaterial color="#ffe1c7" roughness={0.7} />
+      </mesh>
+      <mesh castShadow position={[0, 1.57, -0.03]}>
+        <sphereGeometry args={[0.3, 24, 14]} />
+        <meshStandardMaterial color={isSelf ? "#ff8ab3" : "#8b5cf6"} roughness={0.5} />
+      </mesh>
+      <mesh castShadow position={[-0.2, 1.58, 0.03]} rotation={[0.3, 0, -0.2]}>
+        <coneGeometry args={[0.09, 0.25, 12]} />
+        <meshStandardMaterial color={isSelf ? "#ff8ab3" : "#8b5cf6"} />
+      </mesh>
+      <mesh castShadow position={[0.2, 1.58, 0.03]} rotation={[0.3, 0, 0.2]}>
+        <coneGeometry args={[0.09, 0.25, 12]} />
+        <meshStandardMaterial color={isSelf ? "#ff8ab3" : "#8b5cf6"} />
+      </mesh>
+    </>
+  );
+}
+
 function Player({
   username,
   color,
   position,
   isSelf = false,
-  petColor
+  petColor,
+  character
 }: {
   username: string;
   color: string;
   position: THREE.Vector3;
   isSelf?: boolean;
   petColor?: string;
+  character?: CatalogItem;
 }) {
   const group = useRef<THREE.Group>(null);
   const bob = useRef(0);
@@ -77,26 +122,13 @@ function Player({
   return (
     <group ref={group} position={position}>
       <group>
-        <mesh castShadow position={[0, 0.74, 0]}>
-          <capsuleGeometry args={[0.28, 0.72, 8, 16]} />
-          <meshStandardMaterial color={color} roughness={0.55} metalness={0.08} />
-        </mesh>
-        <mesh castShadow position={[0, 1.34, 0]}>
-          <sphereGeometry args={[0.26, 24, 24]} />
-          <meshStandardMaterial color="#ffe1c7" roughness={0.7} />
-        </mesh>
-        <mesh castShadow position={[0, 1.57, -0.03]}>
-          <sphereGeometry args={[0.3, 24, 14]} />
-          <meshStandardMaterial color={isSelf ? "#ff8ab3" : "#8b5cf6"} roughness={0.5} />
-        </mesh>
-        <mesh castShadow position={[-0.2, 1.58, 0.03]} rotation={[0.3, 0, -0.2]}>
-          <coneGeometry args={[0.09, 0.25, 12]} />
-          <meshStandardMaterial color={isSelf ? "#ff8ab3" : "#8b5cf6"} />
-        </mesh>
-        <mesh castShadow position={[0.2, 1.58, 0.03]} rotation={[0.3, 0, 0.2]}>
-          <coneGeometry args={[0.09, 0.25, 12]} />
-          <meshStandardMaterial color={isSelf ? "#ff8ab3" : "#8b5cf6"} />
-        </mesh>
+        {character?.modelUrl ? (
+          <Suspense fallback={<ProceduralPlayerBody color={color} isSelf={isSelf} />}>
+            <CharacterModel item={character} />
+          </Suspense>
+        ) : (
+          <ProceduralPlayerBody color={color} isSelf={isSelf} />
+        )}
       </group>
       {petColor ? (
         <group position={[0.55, 0, 0.45]}>
@@ -207,6 +239,7 @@ function World({
   const floorPointerDown = useRef<{ x: number; y: number } | null>(null);
   const [renderPosition, setRenderPosition] = useState(new THREE.Vector3(0, 0, 1.2));
   const outfit = getItem(catalog, user.avatar.outfit);
+  const character = user.avatar.character ? getItem(catalog, user.avatar.character) : undefined;
   const pet = user.avatar.pet ? getItem(catalog, user.avatar.pet) : undefined;
 
   const remoteVectors = useMemo(
@@ -289,7 +322,14 @@ function World({
           />
         );
       })}
-      <Player username={user.username} color={outfit?.color ?? "#ff8ab3"} position={renderPosition} isSelf petColor={pet?.color} />
+      <Player
+        username={user.username}
+        color={outfit?.color ?? "#ff8ab3"}
+        position={renderPosition}
+        isSelf
+        petColor={pet?.color}
+        character={character}
+      />
       {remoteVectors.map((player) => (
         <Player key={player.username} username={player.username} color="#8b5cf6" position={player.vector} />
       ))}

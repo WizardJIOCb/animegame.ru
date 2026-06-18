@@ -88,6 +88,7 @@ fastify.post("/api/auth/register", async (request, reply) => {
     inventory: [...starterItems],
     placedItems: starterPlacedItems(),
     avatar: {
+      character: "quaternius-superhero-female",
       outfit: "hoodie-pink",
       hair: "hair-rose"
     },
@@ -172,12 +173,20 @@ fastify.post("/api/buy", async (request, reply) => {
 
     const db = readDb();
     const dbUser = db.users.find((entry) => entry.id === user.id)!;
-    if (dbUser.coins < item.price) {
+    const alreadyOwned = dbUser.inventory.includes(item.id);
+    const equipOnly = alreadyOwned && ["character", "clothing", "pet"].includes(item.type);
+
+    if (!equipOnly && dbUser.coins < item.price) {
       return reply.code(400).send({ error: "Не хватает монет" });
     }
 
-    dbUser.coins -= item.price;
-    dbUser.inventory.push(item.id);
+    if (!alreadyOwned) {
+      dbUser.coins -= item.price;
+      dbUser.inventory.push(item.id);
+    }
+    if (item.type === "character") {
+      dbUser.avatar.character = item.id;
+    }
     if (item.type === "clothing") {
       dbUser.avatar.outfit = item.id;
     }

@@ -18,7 +18,8 @@
 - Quaternius Universal Base Characters
   - Source: https://quaternius.com/packs/universalbasecharacters.html
   - License: Creative Commons CC0
-  - Status: not bundled yet; itch.io download flow needs the standard ZIP to be downloaded and placed under `public/assets/models/characters/quaternius`.
+  - Runtime files used: `public/assets/models/quaternius-characters/Superhero_*_FullBody.gltf`, `*.bin`, character textures
+  - Source drop folder ignored by git: `public/assets/models/Universal Base Characters[Standard]/`
 
 - VRoid Studio
   - Source: https://vroid.com/en/studio/guidelines

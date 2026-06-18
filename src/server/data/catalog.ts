@@ -1,4 +1,5 @@
 import type { CatalogItem, ItemType } from "../types";
+import { generatedCharacterCatalog } from "./generatedCharacterCatalog";
 import { generatedModelCatalog } from "./generatedModelCatalog";
 
 const palette = [
@@ -32,6 +33,7 @@ const makeItems = (
   }));
 
 export const catalog: CatalogItem[] = [
+  ...generatedCharacterCatalog,
   ...generatedModelCatalog,
   ...makeItems("furniture", [
     ["bed-cloud", "Кровать Облако", 260, "common", "🛏", [2.6, 0.7, 1.7]],
@@ -110,7 +112,15 @@ export const catalog: CatalogItem[] = [
   ])
 ];
 
-export const starterItems = ["kenney-beddouble", "kenney-desk", "kaykit-armchair", "kenney-rugrectangle", "hoodie-pink"];
+export const starterItems = [
+  "quaternius-superhero-female",
+  "quaternius-superhero-male",
+  "kenney-beddouble",
+  "kenney-desk",
+  "kaykit-armchair",
+  "kenney-rugrectangle",
+  "hoodie-pink"
+];
 
 export const activities = [
   { id: "job-stream", name: "Стримить", reward: 90, seconds: 30 },

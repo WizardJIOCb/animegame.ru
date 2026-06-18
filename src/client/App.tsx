@@ -233,7 +233,7 @@ export default function App() {
           {tab === "shop" ? (
             <div className="panel-body">
               <div className="filter-row">
-                {(["all", "furniture", "decor", "clothing", "pet"] as const).map((nextFilter) => (
+                {(["all", "furniture", "decor", "clothing", "character", "pet"] as const).map((nextFilter) => (
                   <button key={nextFilter} className={filter === nextFilter ? "active" : ""} onClick={() => setFilter(nextFilter)}>
                     {nextFilter === "all" ? "всё" : nextFilter}
                   </button>
@@ -242,11 +242,17 @@ export default function App() {
               <div className="item-grid">
                 {shopItems.map((item) => {
                   const owned = user.inventory.includes(item.id);
+                  const selectable = ["character", "clothing", "pet"].includes(item.type);
                   return (
-                    <button key={item.id} className="shop-card" onClick={() => handleBuy(item.id)} disabled={owned || user.coins < item.price}>
+                    <button
+                      key={item.id}
+                      className="shop-card"
+                      onClick={() => handleBuy(item.id)}
+                      disabled={(owned && !selectable) || user.coins < item.price}
+                    >
                       <span className="item-emoji">{item.emoji}</span>
                       <span className="item-name">{item.name}</span>
-                      <span className="item-meta">{rarityLabel(item.rarity)} · {item.price} монет</span>
+                      <span className="item-meta">{owned && selectable ? "выбрать" : `${rarityLabel(item.rarity)} · ${item.price} монет`}</span>
                     </button>
                   );
                 })}
@@ -313,4 +319,3 @@ export default function App() {
     </main>
   );
 }
-
