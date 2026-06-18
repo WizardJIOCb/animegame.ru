@@ -464,7 +464,20 @@ function RuntimeModel({ item, size }: { item: CatalogItem; size: [number, number
     clone.traverse((node) => {
       if (node instanceof THREE.Mesh) {
         node.castShadow = true;
-        node.receiveShadow = true;
+        node.receiveShadow = false;
+        const materials = Array.isArray(node.material) ? node.material : [node.material];
+        for (const material of materials) {
+          if (material instanceof THREE.MeshStandardMaterial) {
+            for (const texture of [material.map, material.emissiveMap, material.roughnessMap, material.metalnessMap]) {
+              if (texture) {
+                texture.anisotropy = 8;
+                texture.magFilter = THREE.LinearFilter;
+                texture.minFilter = THREE.LinearMipmapLinearFilter;
+                texture.needsUpdate = true;
+              }
+            }
+          }
+        }
       }
     });
     clone.updateMatrixWorld(true);
