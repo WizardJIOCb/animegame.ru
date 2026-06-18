@@ -9,6 +9,8 @@ export type CatalogItem = {
   rarity: "common" | "rare" | "epic" | "legendary";
   emoji: string;
   size?: [number, number, number];
+  modelUrl?: string;
+  modelScale?: number;
 };
 
 export type PlacedItem = {
@@ -49,4 +51,3 @@ export type DbShape = {
   users: User[];
   chats: ChatMessage[];
 };
-

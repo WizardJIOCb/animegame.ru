@@ -1,6 +1,6 @@
-import { Html, OrbitControls, Sparkles, Text } from "@react-three/drei";
+import { Html, OrbitControls, Sparkles, Text, useGLTF } from "@react-three/drei";
 import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { CatalogItem, HomeState, PublicUser, RemotePlayer } from "../types";
 
@@ -17,6 +17,37 @@ const floorSize = 9;
 
 function getItem(catalog: CatalogItem[], itemId: string) {
   return catalog.find((item) => item.id === itemId);
+}
+
+function RuntimeModel({ item, size }: { item: CatalogItem; size: [number, number, number] }) {
+  const gltf = useGLTF(item.modelUrl ?? "");
+  const scene = useMemo(() => {
+    const clone = gltf.scene.clone(true);
+    clone.traverse((node) => {
+      if (node instanceof THREE.Mesh) {
+        node.castShadow = true;
+        node.receiveShadow = true;
+      }
+    });
+    return clone;
+  }, [gltf.scene]);
+
+  return (
+    <primitive
+      object={scene}
+      position={[0, -size[1] / 2, 0]}
+      scale={item.modelScale ?? 1}
+    />
+  );
+}
+
+function ModelFallback({ item, size }: { item: CatalogItem; size: [number, number, number] }) {
+  return (
+    <mesh castShadow receiveShadow>
+      <boxGeometry args={size} />
+      <meshStandardMaterial color={item.color} roughness={0.55} metalness={0.04} opacity={0.55} transparent />
+    </mesh>
+  );
 }
 
 function Player({
@@ -116,7 +147,11 @@ function PlacedObject({
         onInteract(item.id, item.type === "furniture" ? "use" : "look");
       }}
     >
-      {isRug ? (
+      {item.modelUrl ? (
+        <Suspense fallback={<ModelFallback item={item} size={size} />}>
+          <RuntimeModel item={item} size={size} />
+        </Suspense>
+      ) : isRug ? (
         <mesh receiveShadow position={[0, -size[1] / 2 + 0.04, 0]}>
           <boxGeometry args={size} />
           <meshStandardMaterial color={item.color} roughness={0.9} />

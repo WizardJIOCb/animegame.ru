@@ -48,10 +48,10 @@ function requireUser(request: AuthedRequest) {
 
 function starterPlacedItems(): PlacedItem[] {
   return [
-    { instanceId: crypto.randomUUID(), itemId: "bed-cloud", x: -2.8, y: 0, z: -2.5, rotation: 0 },
-    { instanceId: crypto.randomUUID(), itemId: "desk-streamer", x: 2.4, y: 0, z: -2.6, rotation: Math.PI },
-    { instanceId: crypto.randomUUID(), itemId: "chair-cat", x: 2.4, y: 0, z: -1.7, rotation: 0 },
-    { instanceId: crypto.randomUUID(), itemId: "rug-sakura", x: 0, y: 0.01, z: 0.4, rotation: 0 }
+    { instanceId: crypto.randomUUID(), itemId: "kenney-beddouble", x: -2.8, y: 0, z: -2.5, rotation: 0 },
+    { instanceId: crypto.randomUUID(), itemId: "kenney-desk", x: 2.4, y: 0, z: -2.6, rotation: Math.PI },
+    { instanceId: crypto.randomUUID(), itemId: "kaykit-armchair", x: 2.4, y: 0, z: -1.7, rotation: 0 },
+    { instanceId: crypto.randomUUID(), itemId: "kenney-rugrectangle", x: 0, y: 0.01, z: 0.4, rotation: 0 }
   ];
 }
 

@@ -1,4 +1,5 @@
 import type { CatalogItem, ItemType } from "../types";
+import { generatedModelCatalog } from "./generatedModelCatalog";
 
 const palette = [
   "#f97316",
@@ -31,6 +32,7 @@ const makeItems = (
   }));
 
 export const catalog: CatalogItem[] = [
+  ...generatedModelCatalog,
   ...makeItems("furniture", [
     ["bed-cloud", "Кровать Облако", 260, "common", "🛏", [2.6, 0.7, 1.7]],
     ["bed-neon", "Неоновая кровать", 820, "epic", "🛏", [2.8, 0.8, 1.8]],
@@ -108,7 +110,7 @@ export const catalog: CatalogItem[] = [
   ])
 ];
 
-export const starterItems = ["bed-cloud", "desk-streamer", "chair-cat", "rug-sakura", "hoodie-pink"];
+export const starterItems = ["kenney-beddouble", "kenney-desk", "kaykit-armchair", "kenney-rugrectangle", "hoodie-pink"];
 
 export const activities = [
   { id: "job-stream", name: "Стримить", reward: 90, seconds: 30 },
@@ -117,4 +119,3 @@ export const activities = [
   { id: "job-code", name: "Фриланс-кодинг", reward: 220, seconds: 90 },
   { id: "job-idol", name: "Выступить на сцене", reward: 320, seconds: 120 }
 ];
-

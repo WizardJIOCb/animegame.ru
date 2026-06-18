@@ -9,6 +9,8 @@ export type CatalogItem = {
   rarity: "common" | "rare" | "epic" | "legendary";
   emoji: string;
   size?: [number, number, number];
+  modelUrl?: string;
+  modelScale?: number;
 };
 
 export type PlacedItem = {
@@ -61,4 +63,3 @@ export type RemotePlayer = {
   username: string;
   position: { x: number; y: number; z: number; rotation?: number };
 };
-
