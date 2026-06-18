@@ -909,7 +909,16 @@ function petPalette(item: CatalogItem) {
   return { body: item.color, accent: "#ffffff", dark: "#111827", glow: "#f0abfc", kind: "dog" };
 }
 
-function PetCompanion({ item, ownerMoving }: { item?: CatalogItem; ownerMoving: boolean }) {
+function shortestAngleDelta(from: number, to: number) {
+  return Math.atan2(Math.sin(to - from), Math.cos(to - from));
+}
+
+function stablePetSeed(item?: CatalogItem) {
+  const id = item?.id ?? "pet";
+  return [...id].reduce((seed, char) => seed + char.charCodeAt(0), 0);
+}
+
+function PetCompanion({ item, ownerMoving, ownerRotation }: { item?: CatalogItem; ownerMoving: boolean; ownerRotation: number }) {
   const root = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
   const frontLeft = useRef<THREE.Group>(null);
@@ -920,24 +929,61 @@ function PetCompanion({ item, ownerMoving }: { item?: CatalogItem; ownerMoving: 
   const wingLeft = useRef<THREE.Group>(null);
   const wingRight = useRef<THREE.Group>(null);
   const time = useRef(0);
+  const localTarget = useRef(new THREE.Vector3(0.62, 0, 0.45));
+  const nextWanderAt = useRef(0);
+  const seed = useMemo(() => stablePetSeed(item), [item?.id]);
 
   useFrame((_, delta) => {
     if (!root.current) {
       return;
     }
-    time.current += delta * (ownerMoving ? 8.5 : 2.2);
+
+    const current = root.current.position;
+    const distanceToTarget = Math.hypot(current.x - localTarget.current.x, current.z - localTarget.current.z);
+    const petMoving = ownerMoving || distanceToTarget > 0.045;
+    time.current += delta * (petMoving ? 8.5 : 2.2);
+
+    if (ownerMoving) {
+      const forward = new THREE.Vector2(Math.sin(ownerRotation), Math.cos(ownerRotation));
+      const right = new THREE.Vector2(Math.cos(ownerRotation), -Math.sin(ownerRotation));
+      const side = seed % 2 === 0 ? 1 : -1;
+      const sway = Math.sin(time.current * 0.55 + seed) * 0.18;
+      localTarget.current.set(
+        right.x * (0.52 * side + sway) - forward.x * 0.68,
+        0,
+        right.y * (0.52 * side + sway) - forward.y * 0.68
+      );
+    } else if (time.current >= nextWanderAt.current) {
+      const angle = time.current * 0.75 + seed * 0.37;
+      const radius = 0.48 + (seed % 5) * 0.06 + Math.sin(time.current * 0.9 + seed) * 0.08;
+      localTarget.current.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+      nextWanderAt.current = time.current + 1.25 + (seed % 4) * 0.32;
+    }
+
+    const beforeX = current.x;
+    const beforeZ = current.z;
     const phase = Math.sin(time.current);
     const counter = Math.sin(time.current + Math.PI);
-    root.current.position.y = (ownerMoving ? Math.abs(phase) * 0.045 : Math.sin(time.current) * 0.012) + 0.01;
-    root.current.rotation.z = ownerMoving ? phase * 0.055 : 0;
+    const nextPosition = localTarget.current.clone();
+    nextPosition.y = (petMoving ? Math.abs(phase) * 0.045 : Math.sin(time.current) * 0.012) + 0.01;
+    current.lerp(nextPosition, Math.min(1, delta * (ownerMoving ? 4.2 : 1.55)));
+
+    const velocityX = current.x - beforeX;
+    const velocityZ = current.z - beforeZ;
+    if (Math.hypot(velocityX, velocityZ) > 0.002) {
+      const visualForwardOffset = Math.PI;
+      const targetYaw = Math.atan2(velocityX, velocityZ) + visualForwardOffset;
+      root.current.rotation.y += shortestAngleDelta(root.current.rotation.y, targetYaw) * Math.min(1, delta * 8);
+    }
+    root.current.rotation.z = petMoving ? phase * 0.055 : Math.sin(time.current) * 0.018;
     if (body.current) {
-      body.current.rotation.x = ownerMoving ? Math.sin(time.current * 0.5) * 0.05 : Math.sin(time.current) * 0.025;
+      body.current.rotation.x = petMoving ? Math.sin(time.current * 0.5) * 0.05 : Math.sin(time.current) * 0.025;
     }
     if (frontLeft.current) frontLeft.current.rotation.x = phase * 0.55;
     if (frontRight.current) frontRight.current.rotation.x = counter * 0.55;
     if (backLeft.current) backLeft.current.rotation.x = counter * 0.55;
     if (backRight.current) backRight.current.rotation.x = phase * 0.55;
-    if (tail.current) tail.current.rotation.y = Math.sin(time.current * 1.8) * (ownerMoving ? 0.45 : 0.22);
+    if (tail.current) tail.current.rotation.y = Math.sin(time.current * 1.8) * (petMoving ? 0.45 : 0.22);
     if (wingLeft.current) wingLeft.current.rotation.z = -0.55 - Math.abs(phase) * 0.45;
     if (wingRight.current) wingRight.current.rotation.z = 0.55 + Math.abs(phase) * 0.45;
   });
@@ -1121,17 +1167,17 @@ function Player({
       bob.current += delta * (actuallyMoving ? 9 : 1.8);
       const lerpSpeed = actuallyMoving ? 10 : 7;
       group.current.position.lerp(position, Math.min(1, delta * lerpSpeed));
-      group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, rotation, Math.min(1, delta * 9));
       if (body.current) {
         body.current.position.y = playerVisualYOffset;
+        body.current.rotation.y += shortestAngleDelta(body.current.rotation.y, rotation) * Math.min(1, delta * 9);
         body.current.rotation.z = actuallyMoving ? Math.sin(bob.current) * 0.035 : 0;
       }
     }
   });
 
   return (
-    <group ref={group} position={initialPosition.current} rotation={[0, initialRotation.current, 0]}>
-      <group ref={body} position={[0, playerVisualYOffset, 0]}>
+    <group ref={group} position={initialPosition.current}>
+      <group ref={body} position={[0, playerVisualYOffset, 0]} rotation={[0, initialRotation.current, 0]}>
         {character?.modelUrl ? (
           <Suspense fallback={<ProceduralPlayerBody color={color} isSelf={isSelf} />}>
             <CharacterModel item={character} moving={isActuallyMoving} outfit={outfit} />
@@ -1140,7 +1186,7 @@ function Player({
           <ProceduralPlayerBody color={color} isSelf={isSelf} />
         )}
       </group>
-      <PetCompanion item={pet} ownerMoving={isActuallyMoving} />
+      <PetCompanion item={pet} ownerMoving={isActuallyMoving} ownerRotation={rotation} />
       <Html center position={[0, 1.95, 0]} distanceFactor={7}>
         <div className="name-tag">{username}</div>
       </Html>
