@@ -22,7 +22,7 @@ const floorSize = 9;
 const walkLimit = floorSize / 2 - 0.45;
 const walkStep = 0.45;
 const gridCount = Math.round((walkLimit * 2) / walkStep) + 1;
-const playerVisualYOffset = -0.055;
+const playerVisualYOffset = -0.025;
 
 type Blocker = {
   x: number;
