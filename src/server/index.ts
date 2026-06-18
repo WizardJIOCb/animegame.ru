@@ -55,6 +55,45 @@ function starterPlacedItems(): PlacedItem[] {
   ];
 }
 
+const legacyPlacedItemMap: Record<string, string> = {
+  "bed-cloud": "kenney-beddouble",
+  "bed-neon": "kaykit-bed-double-b",
+  "sofa-mochi": "kaykit-couch-pillows",
+  "sofa-starlight": "kenney-loungedesignsofa",
+  "desk-streamer": "kenney-desk",
+  "pc-rgb": "kenney-computerscreen",
+  "fridge-mini": "kenney-kitchenfridgesmall",
+  "kitchen-cute": "kenney-kitchencabinet",
+  "bath-round": "kenney-bathtub",
+  "wardrobe-glass": "kenney-cabinetbed",
+  "mirror-heart": "kenney-bathroommirror",
+  "table-boba": "kaykit-table-medium",
+  "chair-cat": "kaykit-armchair",
+  "chair-royal": "kenney-loungechairrelax",
+  "arcade-pixel": "kenney-computerscreen",
+  "piano-dream": "kenney-tablecross",
+  "plant-luna": "kenney-pottedplant",
+  "lamp-orbit": "kaykit-lamp-standing",
+  "rug-sakura": "kenney-rugrectangle",
+  "shelf-figure": "kaykit-shelf-b-large-decorated"
+};
+
+function upgradedItemId(itemId: string) {
+  return legacyPlacedItemMap[itemId] ?? itemId;
+}
+
+function upgradeLegacyPlacedItems(user: User) {
+  let changed = false;
+  for (const placed of user.placedItems) {
+    const nextItemId = upgradedItemId(placed.itemId);
+    if (nextItemId !== placed.itemId && catalog.some((item) => item.id === nextItemId)) {
+      placed.itemId = nextItemId;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function getPlacedItemValue(itemId: string) {
   const item = catalog.find((entry) => entry.id === itemId);
   return item ? Math.floor(item.price * 0.7) : 0;
@@ -143,9 +182,14 @@ fastify.get("/api/players", async () => {
 
 fastify.get("/api/home/:username", async (request, reply) => {
   const params = request.params as { username: string };
-  const user = findUserByName(params.username);
+  const db = readDb();
+  const user = db.users.find((entry) => entry.username.toLowerCase() === params.username.toLowerCase());
   if (!user) {
     return reply.code(404).send({ error: "Дом не найден" });
+  }
+
+  if (upgradeLegacyPlacedItems(user)) {
+    writeDb(db);
   }
 
   return {
@@ -154,7 +198,7 @@ fastify.get("/api/home/:username", async (request, reply) => {
     homeStyle: user.homeStyle ?? { floorColor: "#9b6a3c", wallColor: "#d8d1c3" },
     placedItems: user.placedItems,
     inventory: user.inventory,
-    chats: readDb().chats.filter((message) => message.homeOwner === user.username).slice(-50)
+    chats: db.chats.filter((message) => message.homeOwner === user.username).slice(-50)
   };
 });
 
@@ -245,7 +289,7 @@ fastify.post("/api/place", async (request, reply) => {
 
     const placed: PlacedItem = {
       instanceId: crypto.randomUUID(),
-      itemId: item.id,
+      itemId: upgradedItemId(item.id),
       x: Number(body.x ?? 0),
       y: 0,
       z: Number(body.z ?? 0),

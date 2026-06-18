@@ -158,6 +158,20 @@ export default function App() {
 
   async function handleBuy(itemId: string) {
     const response = await buy(itemId);
+    const placeable = ["furniture", "decor", "outdoor"].includes(response.item.type);
+    if (placeable && ownHome) {
+      const x = Number((Math.random() * 6 - 3).toFixed(2));
+      const z = Number((Math.random() * 5 - 1.5).toFixed(2));
+      const placedResponse = await place(response.item.id, x, z, Math.random() * Math.PI);
+      setUser(placedResponse.user);
+      await loadHome(placedResponse.user.username);
+      socketRef.current?.emit("home:join", placedResponse.user.username);
+      setSelectedPlacedId(placedResponse.placed.instanceId);
+      setBuildMode(true);
+      showToast(`Куплено и поставлено: ${response.item.name}`);
+      return;
+    }
+
     setUser(response.user);
     showToast(`Куплено: ${response.item.name}`);
   }
