@@ -116,8 +116,10 @@ export const catalog: CatalogItem[] = [
 
 const hoodiePink = catalog.find((item) => item.id === "hoodie-pink");
 if (hoodiePink) {
-  hoodiePink.clothingModelUrl = "/assets/models/clothing/hoodie-pink.glb?v=8";
-  hoodiePink.clothingModelScale = 0.9;
+  hoodiePink.name = "Pink Street Top";
+  hoodiePink.clothingModelUrl = undefined;
+  hoodiePink.clothingModelScale = undefined;
+  hoodiePink.clothingPaintStyle = "pink-street-top";
 }
 
 export const starterItems = [

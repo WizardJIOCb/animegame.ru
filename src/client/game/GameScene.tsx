@@ -944,6 +944,54 @@ function poseCharacterBones(
   }
 }
 
+function applyPaintedClothingMaterial(material: THREE.MeshStandardMaterial, style?: string) {
+  if (style !== "pink-street-top") {
+    return;
+  }
+
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = `varying vec3 vClothingPosition;
+${shader.vertexShader}`.replace(
+      "#include <begin_vertex>",
+      "#include <begin_vertex>\nvClothingPosition = position;"
+    );
+    shader.fragmentShader = `varying vec3 vClothingPosition;
+float clothingBand(float value, float start, float end, float softness) {
+  return smoothstep(start, start + softness, value) * (1.0 - smoothstep(end - softness, end, value));
+}
+${shader.fragmentShader}`.replace(
+      "#include <color_fragment>",
+      `#include <color_fragment>
+vec3 p = vClothingPosition;
+float ax = abs(p.x);
+float ay = abs(p.y);
+float topZ = clothingBand(p.z, 0.925, 1.405, 0.035);
+float torsoWidth = 1.0 - smoothstep(0.220, 0.315, ax);
+float torsoDepth = 1.0 - smoothstep(0.105, 0.190, ay);
+float topMask = clamp(topZ * torsoWidth * torsoDepth, 0.0, 1.0);
+float front = smoothstep(-0.020, -0.130, p.y);
+float neckCut = smoothstep(1.285, 1.390, p.z) * (1.0 - smoothstep(0.055, 0.145, ax)) * front;
+topMask *= 1.0 - neckCut;
+float sidePanel = smoothstep(0.145, 0.245, ax);
+float weave = sin(p.x * 190.0) * 0.025 + sin(p.z * 230.0) * 0.018 + sin((p.x + p.z) * 90.0) * 0.012;
+vec3 pink = vec3(0.95, 0.08, 0.42) + weave;
+vec3 dark = vec3(0.035, 0.018, 0.035) + weave * 0.35;
+vec3 fabric = mix(pink, dark, sidePanel);
+float lowerRib = clothingBand(p.z, 0.925, 0.985, 0.012);
+float upperRib = clothingBand(p.z, 1.365, 1.405, 0.010) * (1.0 - neckCut);
+fabric = mix(fabric, vec3(0.045, 0.016, 0.040), clamp(lowerRib + upperRib, 0.0, 1.0));
+float chestStripe = clothingBand(p.z, 1.150, 1.175, 0.006) * front * (1.0 - smoothstep(0.125, 0.165, ax));
+fabric = mix(fabric, vec3(1.0, 0.62, 0.86), chestStripe);
+float centerMark = clothingBand(p.z, 1.060, 1.110, 0.010) * front * (1.0 - smoothstep(0.060, 0.110, ax));
+fabric = mix(fabric, vec3(0.98, 0.70, 0.92), centerMark);
+diffuseColor.rgb = mix(diffuseColor.rgb, fabric, topMask);
+`
+    );
+  };
+  material.customProgramCacheKey = () => `painted-clothing:${style}`;
+  material.needsUpdate = true;
+}
+
 function prepareClonedSkinnedScene(scene: THREE.Object3D) {
   scene.traverse((node) => {
     if (node instanceof THREE.Mesh) {
@@ -1228,6 +1276,8 @@ function CharacterModel({ item, moving, outfit }: { item: CatalogItem; moving: b
   const initialRotations = useRef<Record<string, THREE.Euler>>({});
   const time = useRef(0);
   const scene = useMemo(() => {
+    bones.current = {};
+    initialRotations.current = {};
     const clone = cloneSkeleton(gltf.scene);
     prepareClonedSkinnedScene(clone);
     clone.traverse((node) => {
@@ -1243,6 +1293,9 @@ function CharacterModel({ item, moving, outfit }: { item: CatalogItem; moving: b
             material.normalScale.set(0, 0);
             material.roughness = 0.9;
             material.metalness = 0;
+            if (outfit?.clothingPaintStyle && node.name.toLowerCase().includes("superhero")) {
+              applyPaintedClothingMaterial(material, outfit.clothingPaintStyle);
+            }
             material.needsUpdate = true;
           }
         }
@@ -1267,7 +1320,7 @@ function CharacterModel({ item, moving, outfit }: { item: CatalogItem; moving: b
   return (
     <>
       <primitive object={scene} scale={item.modelScale ?? 1} />
-      {outfit?.clothingModelUrl ? (
+      {outfit?.clothingModelUrl && !outfit.clothingPaintStyle ? (
         <Suspense fallback={null}>
           <SkinnedOutfitModel outfit={outfit} moving={moving} />
         </Suspense>

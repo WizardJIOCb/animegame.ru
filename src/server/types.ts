@@ -13,6 +13,7 @@ export type CatalogItem = {
   modelScale?: number;
   clothingModelUrl?: string;
   clothingModelScale?: number;
+  clothingPaintStyle?: string;
 };
 
 export type PlacedItem = {
