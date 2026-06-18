@@ -624,7 +624,7 @@ function Player({
       group.current.position.lerp(position, Math.min(1, delta * 7));
       group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, rotation, Math.min(1, delta * 9));
       if (body.current) {
-        body.current.position.y = actuallyMoving ? Math.abs(Math.sin(bob.current)) * 0.07 : Math.sin(bob.current) * 0.014;
+        body.current.position.y = actuallyMoving ? Math.abs(Math.sin(bob.current)) * 0.07 : 0;
         body.current.rotation.z = actuallyMoving ? Math.sin(bob.current) * 0.035 : 0;
       }
     }
