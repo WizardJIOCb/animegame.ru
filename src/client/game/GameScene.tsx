@@ -488,6 +488,17 @@ function CharacterModel({ item, moving }: { item: CatalogItem; moving: boolean }
       if (node instanceof THREE.Mesh) {
         node.castShadow = true;
         node.receiveShadow = true;
+        const materials = Array.isArray(node.material) ? node.material : [node.material];
+        for (const material of materials) {
+          if (material instanceof THREE.MeshStandardMaterial) {
+            material.normalMap = null;
+            material.roughnessMap = null;
+            material.normalScale.set(0, 0);
+            material.roughness = 0.9;
+            material.metalness = 0;
+            material.needsUpdate = true;
+          }
+        }
       }
       if (node instanceof THREE.Bone) {
         bones.current[node.name] = node;
@@ -510,8 +521,8 @@ function CharacterModel({ item, moving }: { item: CatalogItem; moving: boolean }
     const phase = Math.sin(time.current);
     const counterPhase = Math.sin(time.current + Math.PI);
     const idle = Math.sin(time.current) * 0.035;
-    const leftArmDown = 1.28;
-    const rightArmDown = -1.28;
+    const leftArmDown = -1.18;
+    const rightArmDown = 1.18;
 
     const setBone = (name: string, x = 0, y = 0, z = 0) => {
       const bone = bones.current[name];
@@ -523,12 +534,12 @@ function CharacterModel({ item, moving }: { item: CatalogItem; moving: boolean }
     };
 
     if (moving) {
-      setBone("upperarm_l", phase * 0.28, 0.06, leftArmDown + phase * 0.08);
-      setBone("lowerarm_l", 0.22 + Math.max(0, counterPhase) * 0.18, 0, 0.18);
-      setBone("hand_l", -0.12, 0, 0.04);
-      setBone("upperarm_r", counterPhase * 0.28, -0.06, rightArmDown + counterPhase * 0.08);
-      setBone("lowerarm_r", 0.22 + Math.max(0, phase) * 0.18, 0, -0.18);
-      setBone("hand_r", -0.12, 0, -0.04);
+      setBone("upperarm_l", phase * 0.24, 0.04, leftArmDown + phase * 0.05);
+      setBone("lowerarm_l", 0.16 + Math.max(0, counterPhase) * 0.14, 0, -0.08);
+      setBone("hand_l", -0.08, 0, -0.02);
+      setBone("upperarm_r", counterPhase * 0.24, -0.04, rightArmDown + counterPhase * 0.05);
+      setBone("lowerarm_r", 0.16 + Math.max(0, phase) * 0.14, 0, 0.08);
+      setBone("hand_r", -0.08, 0, 0.02);
       setBone("thigh_l", counterPhase * 0.62, 0, 0);
       setBone("calf_l", Math.max(0, phase) * 0.52, 0, 0);
       setBone("foot_l", Math.max(0, phase) * -0.22, 0, 0);
@@ -538,11 +549,11 @@ function CharacterModel({ item, moving }: { item: CatalogItem; moving: boolean }
       setBone("spine_01", 0.04, phase * 0.035, phase * 0.025);
     } else {
       setBone("upperarm_l", idle, 0.08, leftArmDown);
-      setBone("lowerarm_l", 0.24, 0, 0.18);
-      setBone("hand_l", -0.12, 0, 0.04);
+      setBone("lowerarm_l", 0.16, 0, -0.08);
+      setBone("hand_l", -0.08, 0, -0.02);
       setBone("upperarm_r", idle, -0.08, rightArmDown);
-      setBone("lowerarm_r", 0.24, 0, -0.18);
-      setBone("hand_r", -0.12, 0, -0.04);
+      setBone("lowerarm_r", 0.16, 0, 0.08);
+      setBone("hand_r", -0.08, 0, 0.02);
       setBone("spine_01", idle * 0.35, 0, 0);
       setBone("thigh_l");
       setBone("thigh_r");
