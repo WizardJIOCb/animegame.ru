@@ -658,12 +658,22 @@ function Player({
   const group = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
   const bob = useRef(0);
+  const initialPosition = useRef(position.clone());
+  const initialRotation = useRef(rotation);
+  const [isActuallyMoving, setIsActuallyMoving] = useState(moving);
+  const movingRef = useRef(moving);
 
   useFrame((_, delta) => {
     if (group.current) {
-      const actuallyMoving = moving || group.current.position.distanceTo(position) > 0.04;
+      const distance = group.current.position.distanceTo(position);
+      const actuallyMoving = moving || distance > 0.035;
+      if (movingRef.current !== actuallyMoving) {
+        movingRef.current = actuallyMoving;
+        setIsActuallyMoving(actuallyMoving);
+      }
       bob.current += delta * (actuallyMoving ? 9 : 1.8);
-      group.current.position.lerp(position, Math.min(1, delta * 7));
+      const lerpSpeed = actuallyMoving ? 10 : 7;
+      group.current.position.lerp(position, Math.min(1, delta * lerpSpeed));
       group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, rotation, Math.min(1, delta * 9));
       if (body.current) {
         body.current.position.y = 0;
@@ -673,11 +683,11 @@ function Player({
   });
 
   return (
-    <group ref={group} position={position} rotation={[0, rotation, 0]}>
+    <group ref={group} position={initialPosition.current} rotation={[0, initialRotation.current, 0]}>
       <group ref={body} position={[0, -0.08, 0]}>
         {character?.modelUrl ? (
           <Suspense fallback={<ProceduralPlayerBody color={color} isSelf={isSelf} />}>
-            <CharacterModel item={character} moving={moving} />
+            <CharacterModel item={character} moving={isActuallyMoving} />
           </Suspense>
         ) : (
           <ProceduralPlayerBody color={color} isSelf={isSelf} />
