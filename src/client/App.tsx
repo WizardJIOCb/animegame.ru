@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { AuthScreen } from "./components/AuthScreen";
 import { buy, earn, getCatalog, getHome, getPlayers, getToken, login, me, movePlacedItem, place, register, rotatePlacedItem, sellPlacedItem, setToken, updateHomeStyle } from "./api";
+import { trackGoal, trackItemGoal, trackPurchase } from "./analytics";
 import { GameScene } from "./game/GameScene";
 import type { Activity, CatalogItem, ChatMessage, HomeState, PlacedItem, PublicUser, RemotePlayer } from "./types";
 
@@ -106,6 +107,7 @@ export default function App() {
       connectSocket(response.user.username);
       const playersResponse = await getPlayers();
       setPlayers(playersResponse.players);
+      trackGoal(mode === "register" ? "auth_register" : "auth_login", { mode });
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "Не получилось войти");
     }
@@ -222,6 +224,7 @@ export default function App() {
       voiceActiveRef.current = true;
       setVoiceState("on");
       socketRef.current?.emit("voice:join");
+      trackGoal("voice_start");
       showToast("Voice chat enabled");
     } catch {
       voiceActiveRef.current = false;
@@ -250,6 +253,9 @@ export default function App() {
     voiceAudioRefs.current.clear();
     setRemoteVoicePeers([]);
     setVoiceState("off");
+    if (notifyServer) {
+      trackGoal("voice_stop");
+    }
   }
 
   function rememberVoicePeer(peer: VoicePeerInfo) {
@@ -395,6 +401,7 @@ export default function App() {
     }
     await loadHome(owner);
     socketRef.current?.emit("home:join", owner);
+    trackGoal("visit_home", { own_home: owner === userRef.current?.username });
   }
 
   async function goOwnHome() {
@@ -407,12 +414,29 @@ export default function App() {
   async function handleEarn(activityId: string) {
     const response = await earn(activityId);
     setUser(response.user);
+    trackGoal("earn_activity", {
+      activity_id: response.activity.id,
+      reward: response.activity.reward,
+      duration_seconds: response.activity.seconds
+    });
     showToast(`+${response.activity.reward} монет: ${response.activity.name}`);
   }
 
   async function handleBuy(itemId: string) {
+    const ownedBefore = Boolean(user?.inventory.includes(itemId));
+    const equippedBefore = itemId === user?.avatar.outfit || itemId === user?.avatar.character || itemId === user?.avatar.pet;
     const response = await buy(itemId);
     const placeable = ["furniture", "decor", "outdoor"].includes(response.item.type);
+    const selectable = ["character", "clothing", "pet"].includes(response.item.type);
+    if (!ownedBefore) {
+      trackItemGoal("item_purchase", response.item, { placeable, selectable });
+      trackPurchase(response.item, `buy-${Date.now()}-${response.item.id}`);
+    } else if (selectable && equippedBefore && response.item.type !== "character") {
+      trackItemGoal("item_unequip", response.item);
+    } else if (selectable) {
+      trackItemGoal("item_equip", response.item);
+    }
+
     if (placeable && ownHome) {
       const x = Number((Math.random() * 6 - 3).toFixed(2));
       const z = Number((Math.random() * 5 - 1.5).toFixed(2));
@@ -422,6 +446,7 @@ export default function App() {
       socketRef.current?.emit("home:join", placedResponse.user.username);
       setSelectedPlacedId(placedResponse.placed.instanceId);
       setBuildMode(true);
+      trackItemGoal("item_place", response.item, { source: "purchase", auto_place: true });
       showToast(`Куплено и поставлено: ${response.item.name}`);
       return;
     }
@@ -437,6 +462,10 @@ export default function App() {
     setUser(response.user);
     await loadHome(response.user.username);
     socketRef.current?.emit("home:join", response.user.username);
+    const item = catalog.find((entry) => entry.id === itemId);
+    if (item) {
+      trackItemGoal("item_place", item, { source: "inventory", auto_place: false });
+    }
     showToast("Предмет поставлен дома");
   }
 
@@ -463,6 +492,10 @@ export default function App() {
 
     const response = await movePlacedItem(selectedPlacedId, x, z);
     updatePlacedItem(response.placed);
+    const item = catalog.find((entry) => entry.id === response.placed.itemId);
+    if (item) {
+      trackItemGoal("item_move", item);
+    }
   }
 
   async function handleRotateSelected(direction: -1 | 1) {
@@ -472,6 +505,9 @@ export default function App() {
 
     const response = await rotatePlacedItem(selectedPlaced.instanceId, selectedPlaced.rotation + direction * Math.PI / 12);
     updatePlacedItem(response.placed);
+    if (selectedPlacedCatalogItem) {
+      trackItemGoal("item_rotate", selectedPlacedCatalogItem, { direction });
+    }
   }
 
   async function handleSellSelected() {
@@ -483,6 +519,9 @@ export default function App() {
     setUser(response.user);
     setHome((current) => current ? { ...current, placedItems: current.placedItems.filter((item) => item.instanceId !== response.placed.instanceId) } : current);
     setSelectedPlacedId("");
+    if (selectedPlacedCatalogItem) {
+      trackItemGoal("item_sell", selectedPlacedCatalogItem, { refund: response.refund });
+    }
     showToast(`Sold +${response.refund}`);
   }
 
@@ -498,6 +537,10 @@ export default function App() {
     );
     setUser(response.user);
     setHome((current) => current ? { ...current, homeStyle: response.homeStyle } : current);
+    trackGoal("home_style_change", {
+      floor_changed: Boolean(nextStyle.floorColor),
+      wall_changed: Boolean(nextStyle.wallColor)
+    });
   }
 
   function handleMove(position: { x: number; y: number; z: number; rotation?: number }) {
@@ -506,6 +549,11 @@ export default function App() {
 
   function handleInteract(itemId: string, action: string) {
     const item = catalog.find((entry) => entry.id === itemId);
+    trackGoal("object_interaction", {
+      item_id: item?.id ?? itemId,
+      item_type: item?.type,
+      action
+    });
     socketRef.current?.emit("world:interact", { itemId, action: item ? `использует ${item.name}` : action });
     showToast(item ? `Вы используете: ${item.name}` : "Взаимодействие");
   }
@@ -515,11 +563,13 @@ export default function App() {
       return;
     }
     socketRef.current?.emit("chat:send", chatText);
+    trackGoal("chat_send", { own_home: ownHome, length: chatText.trim().length });
     setChatText("");
   }
 
   function logout() {
     stopVoice();
+    trackGoal("auth_logout");
     setToken(null);
     socketRef.current?.disconnect();
     setUser(null);
@@ -569,7 +619,9 @@ export default function App() {
             <button
               className={buildMode ? "ghost-button active-build" : "ghost-button"}
               onClick={() => {
-                setBuildMode((current) => !current);
+                const nextBuildMode = !buildMode;
+                setBuildMode(nextBuildMode);
+                trackGoal("build_mode", { enabled: nextBuildMode });
                 setSelectedPlacedId("");
               }}
             >
