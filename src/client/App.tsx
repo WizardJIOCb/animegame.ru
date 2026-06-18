@@ -105,9 +105,11 @@ export default function App() {
   }
 
   function upsertRemotePlayer(players: RemotePlayer[], nextPlayer: RemotePlayer) {
-    const matches = (player: RemotePlayer) => nextPlayer.id && player.id
-      ? player.id === nextPlayer.id
-      : player.username === nextPlayer.username;
+    if (nextPlayer.username === user?.username) {
+      return players;
+    }
+
+    const matches = (player: RemotePlayer) => player.username === nextPlayer.username;
     const exists = players.some(matches);
     if (!exists) {
       return [...players, nextPlayer];
@@ -133,8 +135,8 @@ export default function App() {
       setRemotePlayers((current) => upsertRemotePlayer(current, player));
       showToast(`${username} зашел в дом`);
     });
-    socket.on("player:left", ({ id, username }: { id?: string; username: string }) => {
-      setRemotePlayers((current) => current.filter((player) => id ? player.id !== id : player.username !== username));
+    socket.on("player:left", ({ username }: { id?: string; username: string }) => {
+      setRemotePlayers((current) => current.filter((player) => player.username !== username));
       showToast(`${username} вышел`);
     });
     socket.on("player:moved", (payload: RemotePlayer) => {

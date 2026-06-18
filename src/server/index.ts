@@ -129,10 +129,13 @@ function leaveHomePresence(socket: Socket) {
 
   const players = homePlayers.get(homeOwner);
   if (players?.delete(socket.id)) {
+    const sameUserStillPresent = [...players.values()].some((player) => player.username === socket.data.username);
     if (players.size === 0) {
       homePlayers.delete(homeOwner);
     }
-    socket.to(`home:${homeOwner}`).emit("player:left", { id: socket.id, username: socket.data.username });
+    if (!sameUserStillPresent) {
+      socket.to(`home:${homeOwner}`).emit("player:left", { id: socket.id, username: socket.data.username });
+    }
   }
 }
 
