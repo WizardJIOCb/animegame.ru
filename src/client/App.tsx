@@ -668,6 +668,7 @@ export default function App() {
                   const owned = user.inventory.includes(item.id);
                   const selectable = ["character", "clothing", "pet"].includes(item.type);
                   const equipped = item.id === user.avatar.outfit || item.id === user.avatar.character || item.id === user.avatar.pet;
+                  const removableEquipped = equipped && item.type !== "character";
                   return (
                     <button
                       key={item.id}
@@ -677,7 +678,7 @@ export default function App() {
                     >
                       <span className="item-emoji">{item.emoji}</span>
                       <span className="item-name">{item.name}</span>
-                      {equipped ? <span className="item-meta equipped">выбрано</span> : null}
+                      {equipped ? <span className="item-meta equipped">{removableEquipped ? "снять" : "выбрано"}</span> : null}
                       <span className="item-meta">{owned && selectable ? "выбрать" : `${rarityLabel(item.rarity)} · ${item.price} монет`}</span>
                     </button>
                   );

@@ -38,7 +38,7 @@ export type User = {
   inventory: string[];
   placedItems: PlacedItem[];
   avatar: {
-    outfit: string;
+    outfit?: string;
     hair: string;
     character?: string;
     pet?: string;

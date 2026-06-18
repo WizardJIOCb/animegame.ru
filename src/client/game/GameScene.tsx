@@ -41,7 +41,11 @@ type PendingInteraction = {
   action: string;
 } | null;
 
-function getItem(catalog: CatalogItem[], itemId: string) {
+function getItem(catalog: CatalogItem[], itemId?: string) {
+  if (!itemId) {
+    return undefined;
+  }
+
   return catalog.find((item) => item.id === itemId);
 }
 

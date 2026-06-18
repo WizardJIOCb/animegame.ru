@@ -322,10 +322,18 @@ fastify.post("/api/buy", async (request, reply) => {
       dbUser.avatar.character = item.id;
     }
     if (item.type === "clothing") {
-      dbUser.avatar.outfit = item.id;
+      if (alreadyOwned && dbUser.avatar.outfit === item.id) {
+        delete dbUser.avatar.outfit;
+      } else {
+        dbUser.avatar.outfit = item.id;
+      }
     }
     if (item.type === "pet") {
-      dbUser.avatar.pet = item.id;
+      if (alreadyOwned && dbUser.avatar.pet === item.id) {
+        delete dbUser.avatar.pet;
+      } else {
+        dbUser.avatar.pet = item.id;
+      }
     }
     writeDb(db);
 
