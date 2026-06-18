@@ -103,8 +103,8 @@ fastify.post("/api/auth/register", async (request, reply) => {
       hair: "hair-rose"
     },
     homeStyle: {
-      floorColor: "#252633",
-      wallColor: "#303346"
+      floorColor: "#9b6a3c",
+      wallColor: "#d8d1c3"
     },
     createdAt: Date.now()
   };
@@ -151,7 +151,7 @@ fastify.get("/api/home/:username", async (request, reply) => {
   return {
     owner: user.username,
     avatar: user.avatar,
-    homeStyle: user.homeStyle ?? { floorColor: "#252633", wallColor: "#303346" },
+    homeStyle: user.homeStyle ?? { floorColor: "#9b6a3c", wallColor: "#d8d1c3" },
     placedItems: user.placedItems,
     inventory: user.inventory,
     chats: readDb().chats.filter((message) => message.homeOwner === user.username).slice(-50)
@@ -165,8 +165,8 @@ fastify.post("/api/home/style", async (request, reply) => {
     const db = readDb();
     const dbUser = db.users.find((entry) => entry.id === user.id)!;
     dbUser.homeStyle = {
-      floorColor: /^#[0-9a-fA-F]{6}$/.test(body.floorColor ?? "") ? body.floorColor! : dbUser.homeStyle?.floorColor ?? "#252633",
-      wallColor: /^#[0-9a-fA-F]{6}$/.test(body.wallColor ?? "") ? body.wallColor! : dbUser.homeStyle?.wallColor ?? "#303346"
+      floorColor: /^#[0-9a-fA-F]{6}$/.test(body.floorColor ?? "") ? body.floorColor! : dbUser.homeStyle?.floorColor ?? "#9b6a3c",
+      wallColor: /^#[0-9a-fA-F]{6}$/.test(body.wallColor ?? "") ? body.wallColor! : dbUser.homeStyle?.wallColor ?? "#d8d1c3"
     };
     writeDb(db);
     io.to(`home:${dbUser.username}`).emit("home:styleUpdated", dbUser.homeStyle);

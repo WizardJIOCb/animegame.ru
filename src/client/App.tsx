@@ -8,8 +8,8 @@ import type { Activity, CatalogItem, ChatMessage, HomeState, PlacedItem, PublicU
 
 type Tab = "shop" | "work" | "visit" | "inventory";
 
-const floorSwatches = ["#252633", "#29333f", "#24362e", "#463b31", "#302b46", "#3b2d35"];
-const wallSwatches = ["#303346", "#263849", "#2c4039", "#4a3941", "#3b3453", "#44382f"];
+const floorSwatches = ["#9b6a3c", "#6f472a", "#c08a4a", "#8f7a5d", "#4f4a43", "#2f3437"];
+const wallSwatches = ["#d8d1c3", "#b7c7b0", "#aebdca", "#c7b1a8", "#8f7356", "#3f4448"];
 
 function rarityLabel(rarity: CatalogItem["rarity"]) {
   return {

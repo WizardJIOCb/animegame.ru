@@ -2,6 +2,7 @@ import { Html, OrbitControls, Sparkles, useGLTF } from "@react-three/drei";
 import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { CatalogItem, HomeState, PublicUser, RemotePlayer } from "../types";
 
 type GameSceneProps = {
@@ -352,55 +353,78 @@ function CameraControls() {
   );
 }
 
+function normalizePaintColor(color: string, kind: "floor" | "wall") {
+  if (kind === "floor" && ["#252633", "#29333f", "#302b46"].includes(color.toLowerCase())) {
+    return "#9b6a3c";
+  }
+
+  if (kind === "wall" && ["#303346", "#263849", "#3b3453"].includes(color.toLowerCase())) {
+    return "#d8d1c3";
+  }
+
+  return color;
+}
+
 function makePaintTexture(color: string, kind: "floor" | "wall") {
   const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 128;
+  canvas.width = 256;
+  canvas.height = 256;
   const context = canvas.getContext("2d")!;
-  const base = new THREE.Color(color);
-  const light = base.clone().offsetHSL(0, -0.04, 0.14).getStyle();
-  const dark = base.clone().offsetHSL(0, 0.04, -0.12).getStyle();
+  const base = new THREE.Color(normalizePaintColor(color, kind));
+  const light = base.clone().offsetHSL(0.015, -0.05, 0.18).getStyle();
+  const mid = base.clone().offsetHSL(0, -0.02, 0.06).getStyle();
+  const dark = base.clone().offsetHSL(-0.01, 0.08, -0.18).getStyle();
+  const line = base.clone().offsetHSL(0, 0.06, -0.28).getStyle();
   context.fillStyle = base.getStyle();
   context.fillRect(0, 0, canvas.width, canvas.height);
 
   if (kind === "floor") {
-    context.strokeStyle = dark;
-    context.lineWidth = 3;
-    for (let x = 0; x <= 128; x += 32) {
-      context.beginPath();
-      context.moveTo(x, 0);
-      context.lineTo(x, 128);
-      context.stroke();
-    }
-    for (let y = 0; y <= 128; y += 32) {
+    const plankHeight = 32;
+    for (let y = 0; y < 256; y += plankHeight) {
+      const offset = (y / plankHeight) % 2 === 0 ? 0 : 48;
+      context.fillStyle = (y / plankHeight) % 3 === 0 ? light : (y / plankHeight) % 3 === 1 ? mid : base.getStyle();
+      context.fillRect(0, y, 256, plankHeight);
+      context.strokeStyle = line;
+      context.lineWidth = 2;
       context.beginPath();
       context.moveTo(0, y);
-      context.lineTo(128, y);
+      context.lineTo(256, y);
       context.stroke();
-    }
-    context.fillStyle = light;
-    for (let y = 8; y < 128; y += 32) {
-      for (let x = 8; x < 128; x += 32) {
-        context.fillRect(x, y, 10, 10);
+      for (let x = -offset; x < 256; x += 96) {
+        context.beginPath();
+        context.moveTo(x, y);
+        context.lineTo(x, y + plankHeight);
+        context.stroke();
+      }
+      for (let grain = 0; grain < 6; grain += 1) {
+        const gy = y + 6 + grain * 4;
+        context.strokeStyle = grain % 2 === 0 ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.12)";
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(8, gy);
+        for (let x = 8; x <= 248; x += 24) {
+          context.lineTo(x, gy + Math.sin((x + y + grain * 17) * 0.045) * 2.5);
+        }
+        context.stroke();
       }
     }
   } else {
-    context.fillStyle = light;
-    for (let x = -32; x < 160; x += 32) {
-      context.beginPath();
-      context.moveTo(x, 0);
-      context.lineTo(x + 18, 0);
-      context.lineTo(x + 50, 128);
-      context.lineTo(x + 32, 128);
-      context.closePath();
-      context.fill();
+    const gradient = context.createLinearGradient(0, 0, 256, 256);
+    gradient.addColorStop(0, light);
+    gradient.addColorStop(0.55, base.getStyle());
+    gradient.addColorStop(1, dark);
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 256, 256);
+    context.fillStyle = "rgba(255,255,255,0.035)";
+    for (let i = 0; i < 900; i += 1) {
+      context.fillRect((i * 47) % 256, (i * 83) % 256, 1, 1);
     }
-    context.strokeStyle = dark;
-    context.lineWidth = 2;
-    for (let y = 24; y < 128; y += 32) {
+    context.strokeStyle = "rgba(255,255,255,0.11)";
+    context.lineWidth = 1;
+    for (let y = 64; y < 256; y += 64) {
       context.beginPath();
       context.moveTo(0, y);
-      context.lineTo(128, y + 12);
+      context.lineTo(256, y + Math.sin(y) * 3);
       context.stroke();
     }
   }
@@ -408,8 +432,9 @@ function makePaintTexture(color: string, kind: "floor" | "wall") {
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(kind === "floor" ? 6 : 3, kind === "floor" ? 6 : 2);
+  texture.repeat.set(kind === "floor" ? 3.2 : 2.4, kind === "floor" ? 3.2 : 1.3);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
   return texture;
 }
 
@@ -444,23 +469,73 @@ function ModelFallback({ item, size }: { item: CatalogItem; size: [number, numbe
   );
 }
 
-function CharacterModel({ item }: { item: CatalogItem }) {
+function CharacterModel({ item, moving }: { item: CatalogItem; moving: boolean }) {
   const gltf = useGLTF(item.modelUrl ?? "");
+  const bones = useRef<Record<string, THREE.Bone>>({});
+  const initialRotations = useRef<Record<string, THREE.Euler>>({});
+  const time = useRef(0);
   const scene = useMemo(() => {
-    const clone = gltf.scene.clone(true);
+    const clone = cloneSkeleton(gltf.scene);
     clone.traverse((node) => {
       if (node instanceof THREE.Mesh) {
         node.castShadow = true;
         node.receiveShadow = true;
       }
+      if (node instanceof THREE.Bone) {
+        bones.current[node.name] = node;
+        initialRotations.current[node.name] = node.rotation.clone();
+      }
     });
+    clone.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(clone);
     if (Number.isFinite(box.min.x) && Number.isFinite(box.min.y) && Number.isFinite(box.min.z)) {
       const center = box.getCenter(new THREE.Vector3());
-      clone.position.set(-center.x, -box.min.y, -center.z);
+      clone.position.x = -center.x;
+      clone.position.y = -box.min.y;
+      clone.position.z = -center.z;
     }
     return clone;
   }, [gltf.scene]);
+
+  useFrame((_, delta) => {
+    time.current += delta * (moving ? 8.5 : 1.4);
+    const phase = Math.sin(time.current);
+    const counterPhase = Math.sin(time.current + Math.PI);
+    const idle = Math.sin(time.current) * 0.035;
+
+    const setBone = (name: string, x = 0, y = 0, z = 0) => {
+      const bone = bones.current[name];
+      const initial = initialRotations.current[name];
+      if (!bone || !initial) {
+        return;
+      }
+      bone.rotation.set(initial.x + x, initial.y + y, initial.z + z);
+    };
+
+    if (moving) {
+      setBone("upperarm_l", phase * 0.55, 0, 0.18);
+      setBone("lowerarm_l", Math.max(0, counterPhase) * 0.32, 0, 0);
+      setBone("upperarm_r", counterPhase * 0.55, 0, -0.18);
+      setBone("lowerarm_r", Math.max(0, phase) * 0.32, 0, 0);
+      setBone("thigh_l", counterPhase * 0.62, 0, 0);
+      setBone("calf_l", Math.max(0, phase) * 0.52, 0, 0);
+      setBone("foot_l", Math.max(0, phase) * -0.22, 0, 0);
+      setBone("thigh_r", phase * 0.62, 0, 0);
+      setBone("calf_r", Math.max(0, counterPhase) * 0.52, 0, 0);
+      setBone("foot_r", Math.max(0, counterPhase) * -0.22, 0, 0);
+      setBone("spine_01", 0.04, phase * 0.035, phase * 0.025);
+    } else {
+      setBone("upperarm_l", idle, 0, 0.1);
+      setBone("upperarm_r", idle, 0, -0.1);
+      setBone("spine_01", idle * 0.35, 0, 0);
+      setBone("thigh_l");
+      setBone("thigh_r");
+      setBone("calf_l");
+      setBone("calf_r");
+      setBone("foot_l");
+      setBone("foot_r");
+    }
+  });
 
   return <primitive object={scene} scale={item.modelScale ?? 1} />;
 }
@@ -533,7 +608,7 @@ function Player({
       <group ref={body}>
         {character?.modelUrl ? (
           <Suspense fallback={<ProceduralPlayerBody color={color} isSelf={isSelf} />}>
-            <CharacterModel item={character} />
+            <CharacterModel item={character} moving={moving} />
           </Suspense>
         ) : (
           <ProceduralPlayerBody color={color} isSelf={isSelf} />
@@ -759,9 +834,12 @@ function World({
     const finalPoint = isPointWalkable(next.x, next.z, blockers)
       ? next
       : path[path.length - 1] ?? selfPosition.current;
-    const fullPath = appendUniqueWaypoint(path.slice(1), finalPoint);
+    const waypoints = path.length > 1 ? path.slice(1) : [];
+    const fullPath = appendUniqueWaypoint(waypoints, finalPoint);
     pathQueue.current = fullPath;
     target.current = finalPoint;
+    walkingRef.current = fullPath.length > 0;
+    setIsWalking(fullPath.length > 0);
     if (fullPath.length === 0) {
       onMove({ x: finalPoint.x, y: finalPoint.y, z: finalPoint.z, rotation: selfRotation.current });
     }
@@ -794,7 +872,7 @@ function World({
         <planeGeometry args={[floorSize, floorSize]} />
         <meshStandardMaterial map={floorTexture} roughness={0.82} />
       </mesh>
-      <gridHelper args={[floorSize, 9, "#3b82f6", "#3a3a48"]} position={[0, 0.015, 0]} />
+      <gridHelper args={[floorSize, 9, "#ffffff", "#ffffff"]} position={[0, 0.015, 0]} raycast={() => null} visible={false} />
       <mesh receiveShadow position={[0, 1.25, -floorSize / 2]}>
         <boxGeometry args={[floorSize, 2.5, 0.18]} />
         <meshStandardMaterial map={wallTexture} roughness={0.75} />
