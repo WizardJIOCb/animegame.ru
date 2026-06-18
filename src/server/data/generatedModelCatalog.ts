@@ -42,9 +42,9 @@ export const generatedModelCatalog = [
     "rarity": "common",
     "emoji": "3D",
     "size": [
-      2.2,
-      1.1,
-      1.25
+      2.8,
+      1,
+      1.9
     ],
     "modelUrl": "/assets/models/kaykit-furniture/bed_double_A.gltf",
     "modelScale": 0.72
@@ -58,9 +58,9 @@ export const generatedModelCatalog = [
     "rarity": "common",
     "emoji": "3D",
     "size": [
-      2.2,
-      1.1,
-      1.25
+      2.8,
+      1,
+      1.9
     ],
     "modelUrl": "/assets/models/kaykit-furniture/bed_double_B.gltf",
     "modelScale": 0.72
@@ -74,8 +74,8 @@ export const generatedModelCatalog = [
     "rarity": "common",
     "emoji": "3D",
     "size": [
-      2.2,
-      1.1,
+      2.45,
+      0.95,
       1.25
     ],
     "modelUrl": "/assets/models/kaykit-furniture/bed_single_A.gltf",
@@ -90,8 +90,8 @@ export const generatedModelCatalog = [
     "rarity": "common",
     "emoji": "3D",
     "size": [
-      2.2,
-      1.1,
+      2.45,
+      0.95,
       1.25
     ],
     "modelUrl": "/assets/models/kaykit-furniture/bed_single_B.gltf",
@@ -970,9 +970,9 @@ export const generatedModelCatalog = [
     "rarity": "common",
     "emoji": "3D",
     "size": [
-      2.2,
-      1.1,
-      1.25
+      2.6,
+      1.55,
+      1.55
     ],
     "modelUrl": "/assets/models/kenney-furniture/bedBunk.glb",
     "modelScale": 1
@@ -986,9 +986,9 @@ export const generatedModelCatalog = [
     "rarity": "common",
     "emoji": "3D",
     "size": [
-      2.2,
-      1.1,
-      1.25
+      2.8,
+      1.05,
+      1.9
     ],
     "modelUrl": "/assets/models/kenney-furniture/bedDouble.glb",
     "modelScale": 1
@@ -1002,8 +1002,8 @@ export const generatedModelCatalog = [
     "rarity": "common",
     "emoji": "3D",
     "size": [
-      2.2,
-      1.1,
+      2.45,
+      0.95,
       1.25
     ],
     "modelUrl": "/assets/models/kenney-furniture/bedSingle.glb",

@@ -479,16 +479,14 @@ function RuntimeModel({ item, size }: { item: CatalogItem; size: [number, number
     const box = new THREE.Box3().setFromObject(clone);
     const dimensions = box.getSize(new THREE.Vector3());
     const baseScale = item.modelScale ?? 1;
-    const scaleX = dimensions.x > 0 ? (size[0] / dimensions.x) * baseScale : baseScale;
-    const scaleY = dimensions.y > 0 ? (size[1] / dimensions.y) * baseScale : baseScale;
-    const scaleZ = dimensions.z > 0 ? (size[2] / dimensions.z) * baseScale : baseScale;
+    const footprintScale = Math.min(
+      dimensions.x > 0 ? size[0] / dimensions.x : baseScale,
+      dimensions.z > 0 ? size[2] / dimensions.z : baseScale
+    ) * baseScale;
+    const uniformScale = THREE.MathUtils.clamp(footprintScale, 0.45, 3.4);
     return {
       scene: clone,
-      scale: [
-        THREE.MathUtils.clamp(scaleX, 0.35, 4),
-        THREE.MathUtils.clamp(scaleY, 0.35, 4),
-        THREE.MathUtils.clamp(scaleZ, 0.35, 4)
-      ] as [number, number, number]
+      scale: uniformScale
     };
   }, [gltf.scene, item.modelScale, size]);
 
@@ -657,7 +655,7 @@ function Player({
       group.current.position.lerp(position, Math.min(1, delta * 7));
       group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, rotation, Math.min(1, delta * 9));
       if (body.current) {
-        body.current.position.y = actuallyMoving ? Math.abs(Math.sin(bob.current)) * 0.07 : 0;
+        body.current.position.y = 0;
         body.current.rotation.z = actuallyMoving ? Math.sin(bob.current) * 0.035 : 0;
       }
     }
