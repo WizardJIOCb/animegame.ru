@@ -612,145 +612,67 @@ function outfitColors(item?: CatalogItem) {
   return { main: item?.color ?? "#ec4899", accent: "#ffffff", trim: "#111827" };
 }
 
-function OutfitLayer({ item, modelScale = 1 }: { item?: CatalogItem; modelScale?: number }) {
+function makeOutfitTexture(source: THREE.Texture, item?: CatalogItem) {
   if (!item) {
-    return null;
+    return source;
   }
 
-  const id = item.id;
-  const colors = outfitColors(item);
-  const isDress = id.includes("dress") || id.includes("kimono") || id.includes("idol");
-  const isJacket = id.includes("hoodie") || id.includes("jacket") || id.includes("school") || id.includes("armor") || id.includes("kimono");
-  const isShoes = id.includes("sneakers") || id.includes("boots");
-  const isHat = id.includes("hat") || id.includes("cap");
-  const isGlasses = id.includes("glasses");
-  const isWings = id.includes("wings");
-  const isScarf = id.includes("scarf");
-  const isMask = id.includes("mask");
+  const image = source.image as CanvasImageSource & { naturalWidth?: number; naturalHeight?: number; width?: number; height?: number };
+  const width = Number(image.naturalWidth ?? image.width ?? 0);
+  const height = Number(image.naturalHeight ?? image.height ?? 0);
+  if (!width || !height) {
+    return source;
+  }
 
-  return (
-    <group scale={modelScale}>
-      {isJacket || isDress ? (
-        <>
-          <mesh castShadow position={[0, 1.07, 0]}>
-            <cylinderGeometry args={[0.34, 0.43, 0.58, 28]} />
-            <meshStandardMaterial color={colors.main} roughness={0.72} metalness={id.includes("armor") ? 0.22 : 0.02} />
-          </mesh>
-          <mesh castShadow position={[0, 1.38, 0.005]}>
-            <cylinderGeometry args={[0.24, 0.29, 0.18, 24]} />
-            <meshStandardMaterial color={colors.main} roughness={0.74} />
-          </mesh>
-          <mesh castShadow position={[0, 1.02, 0.24]}>
-            <boxGeometry args={[0.64, 0.08, 0.035]} />
-            <meshStandardMaterial color={colors.accent} roughness={0.65} emissive={id.includes("cyber") ? colors.accent : "#000000"} emissiveIntensity={id.includes("cyber") ? 0.35 : 0} />
-          </mesh>
-        </>
-      ) : null}
-      {isDress ? (
-        <mesh castShadow position={[0, 0.68, 0]}>
-          <cylinderGeometry args={[0.53, 0.34, 0.48, 28]} />
-          <meshStandardMaterial color={colors.main} roughness={0.78} />
-        </mesh>
-      ) : null}
-      {id.includes("armor") ? (
-        <>
-          <mesh castShadow position={[0, 1.18, 0.28]}>
-            <boxGeometry args={[0.48, 0.34, 0.05]} />
-            <meshStandardMaterial color={colors.accent} roughness={0.35} metalness={0.55} />
-          </mesh>
-          <mesh castShadow position={[0, 0.9, 0.29]}>
-            <boxGeometry args={[0.42, 0.16, 0.045]} />
-            <meshStandardMaterial color={colors.trim} roughness={0.4} metalness={0.45} />
-          </mesh>
-        </>
-      ) : null}
-      {isShoes ? (
-        <>
-          <mesh castShadow position={[-0.13, 0.045, 0.08]}>
-            <boxGeometry args={[0.18, 0.08, 0.34]} />
-            <meshStandardMaterial color={colors.main} roughness={0.58} />
-          </mesh>
-          <mesh castShadow position={[0.13, 0.045, 0.08]}>
-            <boxGeometry args={[0.18, 0.08, 0.34]} />
-            <meshStandardMaterial color={colors.main} roughness={0.58} />
-          </mesh>
-        </>
-      ) : null}
-      {isHat ? (
-        <>
-          <mesh castShadow position={[0, 1.7, 0]}>
-            <sphereGeometry args={[0.28, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
-            <meshStandardMaterial color={colors.main} roughness={0.7} />
-          </mesh>
-          <mesh castShadow position={[0, 1.66, 0.22]}>
-            <boxGeometry args={[0.46, 0.035, 0.18]} />
-            <meshStandardMaterial color={colors.accent} roughness={0.65} />
-          </mesh>
-          {id.includes("bunny") ? (
-            <>
-              <mesh castShadow position={[-0.13, 1.96, 0]} rotation={[0.2, 0, -0.18]}>
-                <capsuleGeometry args={[0.055, 0.32, 8, 12]} />
-                <meshStandardMaterial color={colors.main} roughness={0.76} />
-              </mesh>
-              <mesh castShadow position={[0.13, 1.96, 0]} rotation={[0.2, 0, 0.18]}>
-                <capsuleGeometry args={[0.055, 0.32, 8, 12]} />
-                <meshStandardMaterial color={colors.main} roughness={0.76} />
-              </mesh>
-            </>
-          ) : null}
-        </>
-      ) : null}
-      {isGlasses ? (
-        <group position={[0, 1.5, 0.235]}>
-          <mesh castShadow position={[-0.09, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[0.07, 0.008, 8, 18]} />
-            <meshStandardMaterial color="#111827" roughness={0.45} />
-          </mesh>
-          <mesh castShadow position={[0.09, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[0.07, 0.008, 8, 18]} />
-            <meshStandardMaterial color="#111827" roughness={0.45} />
-          </mesh>
-          <mesh castShadow position={[0, 0, 0]}>
-            <boxGeometry args={[0.08, 0.012, 0.012]} />
-            <meshStandardMaterial color="#111827" roughness={0.45} />
-          </mesh>
-        </group>
-      ) : null}
-      {isScarf ? (
-        <>
-          <mesh castShadow position={[0, 1.35, 0.03]} rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[0.28, 0.035, 10, 30]} />
-            <meshStandardMaterial color={colors.main} roughness={0.82} />
-          </mesh>
-          <mesh castShadow position={[0.18, 1.1, 0.24]} rotation={[0.35, 0, -0.18]}>
-            <boxGeometry args={[0.12, 0.42, 0.04]} />
-            <meshStandardMaterial color={colors.accent} roughness={0.82} />
-          </mesh>
-        </>
-      ) : null}
-      {isMask ? (
-        <mesh castShadow position={[0, 1.48, 0.27]}>
-          <boxGeometry args={[0.3, 0.16, 0.035]} />
-          <meshStandardMaterial color={colors.main} roughness={0.68} />
-        </mesh>
-      ) : null}
-      {isWings ? (
-        <>
-          <mesh castShadow position={[-0.34, 1.18, -0.2]} rotation={[0.2, 0.32, 0.52]}>
-            <boxGeometry args={[0.12, 0.7, 0.035]} />
-            <meshStandardMaterial color={colors.trim} emissive={colors.accent} emissiveIntensity={0.22} roughness={0.48} transparent opacity={0.82} />
-          </mesh>
-          <mesh castShadow position={[0.34, 1.18, -0.2]} rotation={[0.2, -0.32, -0.52]}>
-            <boxGeometry args={[0.12, 0.7, 0.035]} />
-            <meshStandardMaterial color={colors.trim} emissive={colors.accent} emissiveIntensity={0.22} roughness={0.48} transparent opacity={0.82} />
-          </mesh>
-        </>
-      ) : null}
-    </group>
-  );
+  const colors = outfitColors(item);
+  const main = new THREE.Color(colors.main);
+  const accent = new THREE.Color(colors.accent);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    return source;
+  }
+
+  context.drawImage(image, 0, 0, width, height);
+  const imageData = context.getImageData(0, 0, width, height);
+  const data = imageData.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const alpha = data[i + 3];
+    const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
+
+    if (alpha > 0 && luminance < 92) {
+      const shade = THREE.MathUtils.clamp(luminance / 96, 0.18, 0.95);
+      const target = luminance < 42 ? main : accent;
+      data[i] = Math.round(target.r * 255 * shade);
+      data[i + 1] = Math.round(target.g * 255 * shade);
+      data[i + 2] = Math.round(target.b * 255 * shade);
+    }
+  }
+
+  context.putImageData(imageData, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = source.colorSpace;
+  texture.flipY = source.flipY;
+  texture.wrapS = source.wrapS;
+  texture.wrapT = source.wrapT;
+  texture.repeat.copy(source.repeat);
+  texture.offset.copy(source.offset);
+  texture.rotation = source.rotation;
+  texture.center.copy(source.center);
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.anisotropy = Math.max(source.anisotropy, 8);
+  texture.needsUpdate = true;
+  return texture;
 }
 
-function CharacterModel({ item, moving }: { item: CatalogItem; moving: boolean }) {
+function CharacterModel({ item, moving, outfit }: { item: CatalogItem; moving: boolean; outfit?: CatalogItem }) {
   const gltf = useGLTF(item.modelUrl ?? "");
   const bones = useRef<Record<string, THREE.Bone>>({});
   const initialRotations = useRef<Record<string, THREE.Euler>>({});
@@ -761,9 +683,15 @@ function CharacterModel({ item, moving }: { item: CatalogItem; moving: boolean }
       if (node instanceof THREE.Mesh) {
         node.castShadow = true;
         node.receiveShadow = false;
+        node.material = Array.isArray(node.material)
+          ? node.material.map((material) => material.clone())
+          : node.material.clone();
         const materials = Array.isArray(node.material) ? node.material : [node.material];
         for (const material of materials) {
           if (material instanceof THREE.MeshStandardMaterial) {
+            if (material.map && material.name.toLowerCase().includes("superhero")) {
+              material.map = makeOutfitTexture(material.map, outfit);
+            }
             material.normalMap = null;
             material.roughnessMap = null;
             material.normalScale.set(0, 0);
@@ -787,7 +715,7 @@ function CharacterModel({ item, moving }: { item: CatalogItem; moving: boolean }
       clone.position.z = -center.z;
     }
     return clone;
-  }, [gltf.scene]);
+  }, [gltf.scene, outfit?.id]);
 
   useFrame((_, delta) => {
     time.current += delta * (moving ? 8.5 : 1.4);
@@ -920,12 +848,11 @@ function Player({
       <group ref={body} position={[0, playerVisualYOffset, 0]}>
         {character?.modelUrl ? (
           <Suspense fallback={<ProceduralPlayerBody color={color} isSelf={isSelf} />}>
-            <CharacterModel item={character} moving={isActuallyMoving} />
+            <CharacterModel item={character} moving={isActuallyMoving} outfit={outfit} />
           </Suspense>
         ) : (
           <ProceduralPlayerBody color={color} isSelf={isSelf} />
         )}
-        <OutfitLayer item={outfit} modelScale={character?.modelScale ?? 1} />
       </group>
       {petColor ? (
         <group position={[0.55, 0, 0.45]}>

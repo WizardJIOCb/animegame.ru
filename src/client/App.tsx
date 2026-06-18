@@ -50,6 +50,7 @@ export default function App() {
   const [voiceState, setVoiceState] = useState<VoiceState>("off");
   const [voiceError, setVoiceError] = useState("");
   const [remoteVoicePeers, setRemoteVoicePeers] = useState<VoicePeerInfo[]>([]);
+  const userRef = useRef<PublicUser | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const localVoiceStreamRef = useRef<MediaStream | null>(null);
   const voicePeersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
@@ -59,6 +60,10 @@ export default function App() {
   const voiceActiveRef = useRef(false);
 
   const ownHome = user?.username === homeOwner;
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   useEffect(() => {
     void bootstrap();
@@ -80,6 +85,7 @@ export default function App() {
     if (getToken()) {
       try {
         const response = await me();
+        userRef.current = response.user;
         setUser(response.user);
         await loadHome(response.user.username);
         connectSocket(response.user.username);
@@ -94,6 +100,7 @@ export default function App() {
     try {
       const response = mode === "register" ? await register(username, password) : await login(username, password);
       setToken(response.token);
+      userRef.current = response.user;
       setUser(response.user);
       await loadHome(response.user.username);
       connectSocket(response.user.username);
@@ -105,7 +112,7 @@ export default function App() {
   }
 
   function upsertRemotePlayer(players: RemotePlayer[], nextPlayer: RemotePlayer) {
-    if (nextPlayer.username === user?.username) {
+    if (nextPlayer.username === userRef.current?.username) {
       return players;
     }
 
@@ -660,15 +667,17 @@ export default function App() {
                 {shopItems.map((item) => {
                   const owned = user.inventory.includes(item.id);
                   const selectable = ["character", "clothing", "pet"].includes(item.type);
+                  const equipped = item.id === user.avatar.outfit || item.id === user.avatar.character || item.id === user.avatar.pet;
                   return (
                     <button
                       key={item.id}
-                      className="shop-card"
+                      className={equipped ? "shop-card equipped" : "shop-card"}
                       onClick={() => handleBuy(item.id)}
                       disabled={(owned && !selectable) || user.coins < item.price}
                     >
                       <span className="item-emoji">{item.emoji}</span>
                       <span className="item-name">{item.name}</span>
+                      {equipped ? <span className="item-meta equipped">выбрано</span> : null}
                       <span className="item-meta">{owned && selectable ? "выбрать" : `${rarityLabel(item.rarity)} · ${item.price} монет`}</span>
                     </button>
                   );
