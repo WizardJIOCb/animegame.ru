@@ -465,14 +465,6 @@ function RuntimeModel({ item, size }: { item: CatalogItem; size: [number, number
       if (node instanceof THREE.Mesh) {
         node.castShadow = true;
         node.receiveShadow = true;
-        const materials = Array.isArray(node.material) ? node.material : [node.material];
-        for (const material of materials) {
-          if (material instanceof THREE.MeshStandardMaterial) {
-            material.normalMap = null;
-            material.roughness = Math.max(material.roughness ?? 0.7, 0.82);
-            material.needsUpdate = true;
-          }
-        }
       }
     });
     clone.updateMatrixWorld(true);
@@ -663,7 +655,7 @@ function Player({
 
   return (
     <group ref={group} position={position} rotation={[0, rotation, 0]}>
-      <group ref={body}>
+      <group ref={body} position={[0, -0.08, 0]}>
         {character?.modelUrl ? (
           <Suspense fallback={<ProceduralPlayerBody color={color} isSelf={isSelf} />}>
             <CharacterModel item={character} moving={moving} />
