@@ -445,7 +445,7 @@ function RuntimeModel({ item, size }: { item: CatalogItem; size: [number, number
     clone.traverse((node) => {
       if (node instanceof THREE.Mesh) {
         node.castShadow = true;
-        node.receiveShadow = true;
+        node.receiveShadow = false;
         const materials = Array.isArray(node.material) ? node.material : [node.material];
         for (const material of materials) {
           if (material instanceof THREE.MeshStandardMaterial) {
@@ -882,7 +882,14 @@ function World({
       <color attach="background" args={["#14151c"]} />
       <fog attach="fog" args={["#14151c", 10, 22]} />
       <ambientLight intensity={0.72} />
-      <directionalLight castShadow intensity={2.7} position={[3, 7, 5]} shadow-mapSize={[2048, 2048]} />
+      <directionalLight
+        castShadow
+        intensity={2.35}
+        position={[3, 7, 5]}
+        shadow-mapSize={[2048, 2048]}
+        shadow-bias={0.0008}
+        shadow-normalBias={0.045}
+      />
       <pointLight color="#f8b4d9" intensity={1.2} position={[-3.5, 3.5, -2.8]} />
       <Sparkles count={42} scale={[8, 2, 8]} size={1.7} speed={0.25} color="#ffd1e8" />
       <mesh
