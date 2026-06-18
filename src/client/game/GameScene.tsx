@@ -1021,10 +1021,11 @@ function OutfitOverlay({ outfit, character }: { outfit?: CatalogItem; character:
     metalness: shape.armor ? 0.18 : 0.02
   };
   const isAccessoryOnly = shape.shoes || shape.hat || shape.hair || shape.mask || shape.wings || shape.scarf;
+  const showExperimentalClothingDecals = false;
 
   return (
     <group renderOrder={8}>
-      {!isAccessoryOnly ? (
+      {showExperimentalClothingDecals && !isAccessoryOnly ? (
         <>
           <mesh castShadow position={[0, torsoY, frontZ]}>
             <planeGeometry args={[torsoWidth, torsoHeight]} />
