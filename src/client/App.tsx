@@ -1,8 +1,8 @@
-import { Coins, DoorOpen, Hammer, Home, LogOut, MessageCircle, Mic, MicOff, RotateCcw, RotateCw, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
+import { Coins, DoorOpen, Hammer, Home, LogOut, MessageCircle, Mic, MicOff, Minus, Plus, RotateCcw, RotateCw, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { AuthScreen } from "./components/AuthScreen";
-import { buy, earn, getCatalog, getHome, getPlayers, getToken, login, me, movePlacedItem, place, register, rotatePlacedItem, sellPlacedItem, setToken, updateHomeStyle } from "./api";
+import { buy, earn, getCatalog, getHome, getPlayers, getToken, login, me, movePlacedItem, place, register, rotatePlacedItem, scalePlacedItem, sellPlacedItem, setToken, updateHomeStyle } from "./api";
 import { trackGoal, trackItemGoal, trackPurchase } from "./analytics";
 import { GameScene } from "./game/GameScene";
 import type { Activity, CatalogItem, ChatMessage, HomeState, PlacedItem, PublicUser, RemotePlayer } from "./types";
@@ -510,6 +510,20 @@ export default function App() {
     }
   }
 
+  async function handleScaleSelected(direction: -1 | 1) {
+    if (!selectedPlaced || !ownHome) {
+      return;
+    }
+
+    const currentScale = selectedPlaced.scale ?? 1;
+    const nextScale = Math.max(0.5, Math.min(2.5, Number((currentScale + direction * 0.1).toFixed(2))));
+    const response = await scalePlacedItem(selectedPlaced.instanceId, nextScale);
+    updatePlacedItem(response.placed);
+    if (selectedPlacedCatalogItem) {
+      trackItemGoal("item_scale", selectedPlacedCatalogItem, { scale: nextScale });
+    }
+  }
+
   async function handleSellSelected() {
     if (!selectedPlaced || !ownHome) {
       return;
@@ -602,6 +616,7 @@ export default function App() {
   }, [catalog, selectedPlaced]);
 
   const selectedSellValue = selectedPlacedCatalogItem ? Math.floor(selectedPlacedCatalogItem.price * 0.7) : 0;
+  const selectedScale = selectedPlaced ? selectedPlaced.scale ?? 1 : 1;
   const voiceLabel = voiceState === "connecting" ? "Connecting" : voiceState === "on" ? "Voice on" : "Voice";
 
   if (!user || !home) {
@@ -663,6 +678,12 @@ export default function App() {
               </button>
               <button onClick={() => handleRotateSelected(1)} disabled={!selectedPlaced} title="Rotate right">
                 <RotateCw size={16} /> Right
+              </button>
+              <button onClick={() => handleScaleSelected(-1)} disabled={!selectedPlaced || selectedScale <= 0.5} title="Scale down">
+                <Minus size={16} /> Scale
+              </button>
+              <button onClick={() => handleScaleSelected(1)} disabled={!selectedPlaced || selectedScale >= 2.5} title="Scale up">
+                <Plus size={16} /> {Math.round(selectedScale * 100)}%
               </button>
               <button className="sell-button" onClick={handleSellSelected} disabled={!selectedPlaced}>
                 <Trash2 size={16} /> Sell

@@ -90,6 +90,12 @@ function upgradedItemId(itemId: string) {
   return legacyPlacedItemMap[itemId] ?? itemId;
 }
 
+function clampPlacedScale(value: unknown) {
+  const numberValue = Number(value ?? 1);
+  const finiteValue = Number.isFinite(numberValue) ? numberValue : 1;
+  return Math.max(0.5, Math.min(2.5, Number(finiteValue.toFixed(2))));
+}
+
 function upgradeLegacyPlacedItems(user: User) {
   let changed = false;
   for (const placed of user.placedItems) {
@@ -109,7 +115,7 @@ function getPlacedItemValue(itemId: string) {
 
 function clampHomeCoordinate(value: unknown) {
   const numberValue = Number(value ?? 0);
-  return Math.max(-4.1, Math.min(4.1, Number.isFinite(numberValue) ? numberValue : 0));
+  return Math.max(-7.6, Math.min(7.6, Number.isFinite(numberValue) ? numberValue : 0));
 }
 
 function getPublicAvatar(username: string) {
@@ -355,10 +361,11 @@ fastify.post("/api/place", async (request, reply) => {
     const placed: PlacedItem = {
       instanceId: crypto.randomUUID(),
       itemId: upgradedItemId(item.id),
-      x: Number(body.x ?? 0),
+      x: clampHomeCoordinate(body.x),
       y: 0,
-      z: Number(body.z ?? 0),
-      rotation: Number(body.rotation ?? 0)
+      z: clampHomeCoordinate(body.z),
+      rotation: Number(body.rotation ?? 0),
+      scale: 1
     };
 
     const db = readDb();
@@ -420,6 +427,27 @@ fastify.post("/api/placed/rotate", async (request, reply) => {
     return { user: toPublicUser(dbUser), placed };
   } catch {
     return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/placed/scale", async (request, reply) => {
+  try {
+    const user = requireUser(request);
+    const body = request.body as { instanceId?: string; scale?: number };
+    const db = readDb();
+    const dbUser = db.users.find((entry) => entry.id === user.id)!;
+    const placed = dbUser.placedItems.find((entry) => entry.instanceId === body.instanceId);
+    if (!placed) {
+      return reply.code(404).send({ error: "РџСЂРµРґРјРµС‚ РЅРµ РЅР°Р№РґРµРЅ" });
+    }
+
+    placed.scale = clampPlacedScale(body.scale);
+    writeDb(db);
+    io.to(`home:${dbUser.username}`).emit("home:itemUpdated", placed);
+
+    return { user: toPublicUser(dbUser), placed };
+  } catch {
+    return reply.code(401).send({ error: "РќСѓР¶РЅРѕ РІРѕР№С‚Рё" });
   }
 });
 

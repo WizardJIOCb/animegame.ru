@@ -36,7 +36,11 @@ button:disabled {
 .auth-screen {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-columns: minmax(320px, 520px);
+  align-content: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 28px;
   background:
     radial-gradient(circle at 18% 22%, rgba(236, 72, 153, 0.28), transparent 32%),
     radial-gradient(circle at 70% 58%, rgba(20, 184, 166, 0.22), transparent 30%),
@@ -44,11 +48,13 @@ button:disabled {
 }
 
 .auth-hero {
-  min-height: 100vh;
-  padding: 56px;
+  min-height: auto;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: center;
 }
 
 .brand-mark,
@@ -66,23 +72,23 @@ button:disabled {
 }
 
 .auth-hero h1 {
-  margin: 20px 0 14px;
-  font-size: clamp(48px, 7vw, 104px);
-  line-height: 0.95;
+  margin: 16px 0 10px;
+  font-size: clamp(44px, 6vw, 72px);
+  line-height: 1;
   letter-spacing: 0;
 }
 
 .auth-hero p {
   margin: 0;
-  max-width: 560px;
+  max-width: 440px;
   color: #d6d3e6;
-  font-size: 20px;
-  line-height: 1.55;
+  font-size: 16px;
+  line-height: 1.45;
 }
 
 .auth-card {
-  align-self: center;
-  margin-right: 38px;
+  width: 100%;
+  margin: 0;
   padding: 22px;
   background: rgba(26, 27, 38, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -281,8 +287,8 @@ input:focus {
   right: 16px;
   bottom: 58px;
   min-height: 54px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) repeat(5, auto);
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 9px;
@@ -294,6 +300,7 @@ input:focus {
 
 .build-selection {
   min-width: 0;
+  flex: 1 1 190px;
   display: grid;
   gap: 2px;
 }
@@ -572,15 +579,17 @@ input:focus {
 
   .auth-screen {
     grid-template-columns: 1fr;
+    min-height: 100vh;
+    padding: 28px 18px;
   }
 
   .auth-hero {
     min-height: auto;
-    padding: 42px 20px 22px;
+    padding: 0;
   }
 
   .auth-card {
-    margin: 0 20px 28px;
+    margin: 0;
   }
 
   .app-shell {
@@ -607,11 +616,10 @@ input:focus {
   }
 
   .build-toolbar {
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: stretch;
   }
 
   .style-swatches {
-    grid-column: 1 / -1;
     justify-content: flex-start;
     overflow-x: auto;
   }

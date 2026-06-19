@@ -75,7 +75,9 @@ function makeBlockers(home: HomeState, catalog: CatalogItem[]) {
       return [];
     }
 
-    const size = item.size ?? [0.9, 0.9, 0.9];
+    const baseSize = item.size ?? [0.9, 0.9, 0.9];
+    const itemScale = placed.scale ?? 1;
+    const size: [number, number, number] = [baseSize[0] * itemScale, baseSize[1] * itemScale, baseSize[2] * itemScale];
     const cos = Math.abs(Math.cos(placed.rotation));
     const sin = Math.abs(Math.sin(placed.rotation));
     const halfX = (size[0] * cos + size[2] * sin) / 2 + 0.22;
@@ -628,6 +630,8 @@ function RuntimeModel({ item, size }: { item: CatalogItem; size: [number, number
     clone.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(clone);
     const dimensions = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    clone.position.set(-center.x, -box.min.y, -center.z);
     const baseScale = item.modelScale ?? 1;
     const footprintScale = Math.min(
       dimensions.x > 0 ? size[0] / dimensions.x : baseScale,
@@ -1829,6 +1833,7 @@ function PlacedObject({
   x,
   z,
   rotation,
+  itemScale,
   selected,
   buildMode,
   onInteract,
@@ -1839,13 +1844,15 @@ function PlacedObject({
   x: number;
   z: number;
   rotation: number;
+  itemScale: number;
   selected: boolean;
   buildMode: boolean;
   onInteract: (item: CatalogItem, x: number, z: number, size: [number, number, number]) => void;
   onSelect: (instanceId: string) => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  const size = item.size ?? [0.9, 0.9, 0.9];
+  const baseSize = item.size ?? [0.9, 0.9, 0.9];
+  const size: [number, number, number] = [baseSize[0] * itemScale, baseSize[1] * itemScale, baseSize[2] * itemScale];
   const isTerrainTile = item.id.includes("terrain") || item.id.includes("platform") || item.id.includes("deck") || item.id.includes("lawn") || item.id.includes("grass");
   const isBuildWall = item.id.includes("build-wall");
   const isBuildDoor = item.id.includes("build-door");
@@ -2266,6 +2273,7 @@ function World({
             x={placed.x}
             z={placed.z}
             rotation={placed.rotation}
+            itemScale={placed.scale ?? 1}
             selected={selectedPlacedId === placed.instanceId}
             buildMode={buildMode}
             onInteract={handleObjectInteract}

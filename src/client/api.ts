@@ -98,6 +98,13 @@ export function rotatePlacedItem(instanceId: string, rotation: number) {
   });
 }
 
+export function scalePlacedItem(instanceId: string, scale: number) {
+  return request<{ user: PublicUser; placed: PlacedItem }>("/api/placed/scale", {
+    method: "POST",
+    body: JSON.stringify({ instanceId, scale })
+  });
+}
+
 export function sellPlacedItem(instanceId: string) {
   return request<{ user: PublicUser; placed: PlacedItem; refund: number }>("/api/placed/sell", {
     method: "POST",

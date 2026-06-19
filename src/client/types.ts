@@ -23,6 +23,7 @@ export type PlacedItem = {
   y: number;
   z: number;
   rotation: number;
+  scale?: number;
 };
 
 export type ChatMessage = {
