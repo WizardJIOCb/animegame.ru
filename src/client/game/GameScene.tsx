@@ -18,7 +18,7 @@ type GameSceneProps = {
   onBuildMove: (x: number, z: number) => void;
 };
 
-const floorSize = 9;
+const floorSize = 16;
 const walkLimit = floorSize / 2 - 0.45;
 const walkStep = 0.45;
 const gridCount = Math.round((walkLimit * 2) / walkStep) + 1;
@@ -61,7 +61,11 @@ function blocksPath(item: CatalogItem) {
     && !id.includes("grass")
     && !id.includes("flower")
     && !id.includes("path")
-    && !id.includes("water");
+    && !id.includes("water")
+    && !id.includes("terrain")
+    && !id.includes("platform")
+    && !id.includes("deck")
+    && !id.includes("lawn");
 }
 
 function makeBlockers(home: HomeState, catalog: CatalogItem[]) {
@@ -526,7 +530,7 @@ function makePaintTexture(color: string, kind: "floor" | "wall") {
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(kind === "floor" ? 3.2 : 1, kind === "floor" ? 3.2 : 1);
+  texture.repeat.set(kind === "floor" ? 5.6 : 1.4, kind === "floor" ? 5.6 : 1.4);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = kind === "floor" ? 4 : 8;
   texture.magFilter = THREE.LinearFilter;
@@ -534,6 +538,70 @@ function makePaintTexture(color: string, kind: "floor" | "wall") {
   return texture;
 }
 
+function makePlacementTileTexture(id: string, color: string) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return null;
+  }
+
+  if (id.includes("grass") || id.includes("lawn")) {
+    context.fillStyle = color;
+    context.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 900; i += 1) {
+      const x = (i * 41) % 256;
+      const y = (i * 97) % 256;
+      const shade = i % 3 === 0 ? "rgba(255,255,255,0.12)" : i % 3 === 1 ? "rgba(0,0,0,0.12)" : "rgba(134,239,172,0.18)";
+      context.strokeStyle = shade;
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(x, y + 3);
+      context.lineTo(x + Math.sin(i) * 3, y - 3);
+      context.stroke();
+    }
+  } else {
+    context.fillStyle = "#a8652d";
+    context.fillRect(0, 0, 256, 256);
+    for (let y = 0; y < 256; y += 38) {
+      const plankColor = y % 76 === 0 ? "#c98a45" : "#9f612f";
+      context.fillStyle = plankColor;
+      context.fillRect(0, y, 256, 36);
+      context.strokeStyle = "rgba(30,18,8,0.78)";
+      context.lineWidth = 3;
+      context.beginPath();
+      context.moveTo(0, y + 36);
+      context.lineTo(256, y + 36);
+      context.stroke();
+      for (let x = (y / 38) % 2 === 0 ? 0 : 64; x < 256; x += 92) {
+        context.strokeStyle = "rgba(30,18,8,0.55)";
+        context.beginPath();
+        context.moveTo(x, y);
+        context.lineTo(x, y + 36);
+        context.stroke();
+      }
+      for (let g = 0; g < 4; g += 1) {
+        context.strokeStyle = "rgba(255,242,196,0.12)";
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(8, y + 8 + g * 6);
+        context.lineTo(248, y + 8 + g * 6 + Math.sin(y + g) * 1.5);
+        context.stroke();
+      }
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(2.2, 2.2);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  return texture;
+}
 function RuntimeModel({ item, size }: { item: CatalogItem; size: [number, number, number] }) {
   const gltf = useGLTF(item.modelUrl ?? "");
   const { scene, scale } = useMemo(() => {
@@ -1778,9 +1846,15 @@ function PlacedObject({
 }) {
   const [hovered, setHovered] = useState(false);
   const size = item.size ?? [0.9, 0.9, 0.9];
-  const isRug = item.id.includes("rug") || item.id.includes("floor");
+  const isTerrainTile = item.id.includes("terrain") || item.id.includes("platform") || item.id.includes("deck") || item.id.includes("lawn") || item.id.includes("grass");
+  const isBuildWall = item.id.includes("build-wall");
+  const isBuildDoor = item.id.includes("build-door");
+  const isRug = item.id.includes("rug") || item.id.includes("floor") || isTerrainTile;
   const isLamp = item.id.includes("lamp") || item.id.includes("neon");
   const isPlant = item.id.includes("plant") || item.id.includes("bonsai");
+  const terrainTexture = useMemo(() => isTerrainTile ? makePlacementTileTexture(item.id, item.color) : null, [isTerrainTile, item.id, item.color]);
+
+  useEffect(() => () => terrainTexture?.dispose(), [terrainTexture]);
 
   return (
     <group
@@ -1807,10 +1881,40 @@ function PlacedObject({
         <Suspense fallback={<ModelFallback item={item} size={size} />}>
           <RuntimeModel item={item} size={size} />
         </Suspense>
+      ) : isBuildDoor ? (
+        <>
+          <mesh castShadow receiveShadow position={[-size[0] * 0.42, 0, 0]}>
+            <boxGeometry args={[0.18, size[1], size[2]]} />
+            <meshStandardMaterial color="#5b3418" roughness={0.78} />
+          </mesh>
+          <mesh castShadow receiveShadow position={[size[0] * 0.42, 0, 0]}>
+            <boxGeometry args={[0.18, size[1], size[2]]} />
+            <meshStandardMaterial color="#5b3418" roughness={0.78} />
+          </mesh>
+          <mesh castShadow receiveShadow position={[0, size[1] * 0.42, 0]}>
+            <boxGeometry args={[size[0], 0.2, size[2]]} />
+            <meshStandardMaterial color="#5b3418" roughness={0.78} />
+          </mesh>
+          <mesh castShadow receiveShadow position={[size[0] * 0.18, -size[1] * 0.08, -size[2] * 0.12]} rotation={[0, -0.35, 0]}>
+            <boxGeometry args={[size[0] * 0.46, size[1] * 0.72, 0.055]} />
+            <meshStandardMaterial color={item.color} roughness={0.82} />
+          </mesh>
+        </>
+      ) : isBuildWall ? (
+        <>
+          <mesh castShadow receiveShadow>
+            <boxGeometry args={size} />
+            <meshStandardMaterial color={item.color} roughness={0.82} />
+          </mesh>
+          <mesh position={[0, size[1] * 0.38, -size[2] / 2 - 0.01]}>
+            <boxGeometry args={[size[0] * 0.96, 0.035, 0.035]} />
+            <meshStandardMaterial color="#ffffff" roughness={0.9} opacity={0.24} transparent />
+          </mesh>
+        </>
       ) : isRug ? (
         <mesh receiveShadow position={[0, -size[1] / 2 + 0.04, 0]}>
           <boxGeometry args={size} />
-          <meshStandardMaterial color={item.color} roughness={0.9} />
+          <meshStandardMaterial color={isTerrainTile ? "#ffffff" : item.color} map={terrainTexture ?? undefined} roughness={isTerrainTile ? 0.96 : 0.9} />
         </mesh>
       ) : isLamp ? (
         <>
@@ -2140,7 +2244,7 @@ function World({
         <planeGeometry args={[floorSize, floorSize]} />
         <meshStandardMaterial map={floorTexture} roughness={0.82} />
       </mesh>
-      <gridHelper args={[floorSize, 9, "#ffffff", "#ffffff"]} position={[0, 0.015, 0]} raycast={() => null} visible={false} />
+      <gridHelper args={[floorSize, 16, "#ffffff", "#ffffff"]} position={[0, 0.015, 0]} raycast={() => null} visible={false} />
       <mesh receiveShadow position={[0, 1.25, -floorSize / 2]}>
         <boxGeometry args={[floorSize, 2.5, 0.18]} />
         <meshStandardMaterial map={wallTexture} roughness={0.75} />

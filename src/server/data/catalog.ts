@@ -23,13 +23,63 @@ const customOutdoorCatalog: CatalogItem[] = [
     id: "custom-wooden-cabin",
     type: "outdoor",
     name: "Wooden Cabin",
-    price: 1800,
+    price: 2500,
     color: "#92400e",
     rarity: "epic",
     emoji: "3D",
-    size: [2.7, 2.55, 2.25],
+    size: [4.2, 3.6, 3.4],
     modelUrl: "/assets/models/custom/wooden-cabin.glb?v=1",
     modelScale: 1
+  },
+  {
+    id: "custom-large-wood-deck",
+    type: "outdoor",
+    name: "Large Wood Deck",
+    price: 360,
+    color: "#b7793e",
+    rarity: "common",
+    emoji: "tile",
+    size: [4, 0.06, 4]
+  },
+  {
+    id: "custom-grass-lawn",
+    type: "outdoor",
+    name: "Grass Lawn Tile",
+    price: 300,
+    color: "#2f7d32",
+    rarity: "common",
+    emoji: "tile",
+    size: [4, 0.05, 4]
+  },
+  {
+    id: "custom-build-wall-wood",
+    type: "furniture",
+    name: "Wood Wall",
+    price: 140,
+    color: "#8b5a2b",
+    rarity: "common",
+    emoji: "wall",
+    size: [2.4, 2.2, 0.18]
+  },
+  {
+    id: "custom-build-wall-white",
+    type: "furniture",
+    name: "White Wall",
+    price: 130,
+    color: "#e7e5dc",
+    rarity: "common",
+    emoji: "wall",
+    size: [2.4, 2.2, 0.18]
+  },
+  {
+    id: "custom-build-door-wood",
+    type: "furniture",
+    name: "Wood Doorway",
+    price: 220,
+    color: "#9a5a28",
+    rarity: "common",
+    emoji: "door",
+    size: [1.45, 2.2, 0.2]
   }
 ];
 
