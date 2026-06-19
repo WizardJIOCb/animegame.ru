@@ -42,7 +42,7 @@ button:disabled {
   gap: 18px;
   padding: 28px;
   background:
-    radial-gradient(circle at 18% 22%, rgba(236, 72, 153, 0.28), transparent 32%),
+    radial-gradient(circle at 18% 22%, rgba(251, 146, 60, 0.3), transparent 32%),
     radial-gradient(circle at 70% 58%, rgba(20, 184, 166, 0.22), transparent 30%),
     linear-gradient(135deg, #12131a, #191827 46%, #10151a);
 }
@@ -67,7 +67,7 @@ button:disabled {
 }
 
 .brand-mark {
-  color: #f9a8d4;
+  color: #fdba74;
   font-weight: 800;
 }
 
@@ -162,7 +162,7 @@ input {
 }
 
 input:focus {
-  border-color: #f9a8d4;
+  border-color: #fdba74;
 }
 
 .primary-button,
@@ -174,7 +174,7 @@ input:focus {
   gap: 8px;
   min-height: 42px;
   border-radius: 6px;
-  background: #f9a8d4;
+  background: #fb923c;
   color: #141116;
   font-weight: 800;
 }
