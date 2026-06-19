@@ -1,13 +1,14 @@
-import { Coins, DoorOpen, Hammer, Home, LogOut, MessageCircle, Mic, MicOff, Minus, Plus, RotateCcw, RotateCw, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
+import { Coins, DoorOpen, Hammer, Home, LogOut, MessageCircle, Mic, MicOff, Minus, Plus, RotateCcw, RotateCw, Shield, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
+import { AdminPanel } from "./components/AdminPanel";
 import { AuthScreen } from "./components/AuthScreen";
 import { buy, earn, getCatalog, getHome, getPlayers, getToken, login, me, movePlacedItem, place, register, rotatePlacedItem, scalePlacedItem, sellPlacedItem, setToken, updateHomeStyle } from "./api";
 import { trackGoal, trackItemGoal, trackPurchase } from "./analytics";
 import { GameScene } from "./game/GameScene";
 import type { Activity, CatalogItem, ChatMessage, HomeState, PlacedItem, PublicUser, RemotePlayer } from "./types";
 
-type Tab = "shop" | "work" | "visit" | "inventory";
+type Tab = "shop" | "work" | "visit" | "inventory" | "admin";
 type VoiceState = "off" | "connecting" | "on";
 type VoicePeerInfo = { id: string; username: string };
 type VoiceSignal =
@@ -725,6 +726,7 @@ export default function App() {
             <button className={tab === "work" ? "active" : ""} onClick={() => setTab("work")}><Hammer size={17} /> Работа</button>
             <button className={tab === "visit" ? "active" : ""} onClick={() => setTab("visit")}><Users size={17} /> Гости</button>
             <button className={tab === "inventory" ? "active" : ""} onClick={() => setTab("inventory")}><Shirt size={17} /> Вещи</button>
+            {user.isAdmin ? <button className={tab === "admin" ? "active" : ""} onClick={() => setTab("admin")}><Shield size={17} /> Admin</button> : null}
           </nav>
 
           {tab === "shop" ? (
@@ -796,6 +798,18 @@ export default function App() {
                   );
                 })}
               </div>
+            </div>
+          ) : null}
+
+          {tab === "admin" && user.isAdmin ? (
+            <div className="panel-body admin-body">
+              <AdminPanel
+                currentUser={user}
+                onCatalogUpdate={setCatalog}
+                onActivitiesUpdate={setActivities}
+                onCurrentUserUpdate={setUser}
+                onToast={showToast}
+              />
             </div>
           ) : null}
 

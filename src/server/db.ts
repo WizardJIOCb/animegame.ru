@@ -6,8 +6,38 @@ const dbPath = resolve(process.cwd(), "data", "db.json");
 
 const initialDb: DbShape = {
   users: [],
-  chats: []
+  chats: [],
+  content: {
+    catalogItems: {},
+    activities: {}
+  }
 };
+
+function normalizeDb(db: DbShape) {
+  let changed = false;
+
+  if (!db.content) {
+    db.content = {};
+    changed = true;
+  }
+  if (!db.content.catalogItems) {
+    db.content.catalogItems = {};
+    changed = true;
+  }
+  if (!db.content.activities) {
+    db.content.activities = {};
+    changed = true;
+  }
+
+  for (const user of db.users) {
+    if (user.username.toLowerCase() === "rodion" && !user.isAdmin) {
+      user.isAdmin = true;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
 
 export function readDb(): DbShape {
   if (!existsSync(dbPath)) {
@@ -15,7 +45,11 @@ export function readDb(): DbShape {
     writeDb(initialDb);
   }
 
-  return JSON.parse(readFileSync(dbPath, "utf8")) as DbShape;
+  const db = JSON.parse(readFileSync(dbPath, "utf8")) as DbShape;
+  if (normalizeDb(db)) {
+    writeDb(db);
+  }
+  return db;
 }
 
 export function writeDb(db: DbShape) {
@@ -32,4 +66,3 @@ export function findUserByName(username: string) {
   const db = readDb();
   return db.users.find((user) => user.username.toLowerCase() === username.toLowerCase());
 }
-

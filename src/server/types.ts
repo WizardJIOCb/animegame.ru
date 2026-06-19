@@ -26,6 +26,13 @@ export type PlacedItem = {
   scale?: number;
 };
 
+export type Activity = {
+  id: string;
+  name: string;
+  reward: number;
+  seconds: number;
+};
+
 export type ChatMessage = {
   id: string;
   homeOwner: string;
@@ -38,6 +45,7 @@ export type User = {
   id: string;
   username: string;
   passwordHash: string;
+  isAdmin?: boolean;
   coins: number;
   inventory: string[];
   placedItems: PlacedItem[];
@@ -59,4 +67,8 @@ export type PublicUser = Omit<User, "passwordHash">;
 export type DbShape = {
   users: User[];
   chats: ChatMessage[];
+  content?: {
+    catalogItems?: Record<string, Partial<CatalogItem>>;
+    activities?: Record<string, Partial<Activity>>;
+  };
 };

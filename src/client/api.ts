@@ -118,3 +118,51 @@ export function updateHomeStyle(floorColor: string, wallColor: string) {
     body: JSON.stringify({ floorColor, wallColor })
   });
 }
+
+export type AdminUser = {
+  id: string;
+  username: string;
+  coins: number;
+  isAdmin: boolean;
+  inventoryCount: number;
+  placedCount: number;
+  createdAt: number;
+  avatar: PublicUser["avatar"];
+};
+
+export type AdminOverview = {
+  users: AdminUser[];
+  catalog: CatalogItem[];
+  activities: Activity[];
+  stats: {
+    users: number;
+    chats: number;
+    catalogItems: number;
+    activities: number;
+  };
+};
+
+export function getAdminOverview() {
+  return request<AdminOverview>("/api/admin/overview");
+}
+
+export function updateAdminUser(id: string, patch: Partial<Pick<AdminUser, "coins" | "isAdmin">> & { inventory?: string[] }) {
+  return request<{ user: PublicUser }>(`/api/admin/users/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch)
+  });
+}
+
+export function updateAdminCatalogItem(id: string, patch: Partial<CatalogItem>) {
+  return request<{ item: CatalogItem; catalog: CatalogItem[] }>(`/api/admin/catalog/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch)
+  });
+}
+
+export function updateAdminActivity(id: string, patch: Partial<Activity>) {
+  return request<{ activity: Activity; activities: Activity[] }>(`/api/admin/activities/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch)
+  });
+}

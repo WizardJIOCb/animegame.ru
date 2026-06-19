@@ -3,9 +3,9 @@ import bcrypt from "bcryptjs";
 import Fastify from "fastify";
 import jwt from "jsonwebtoken";
 import { Server, type Socket } from "socket.io";
-import { activities, catalog, starterItems } from "./data/catalog";
+import { activities as baseActivities, catalog as baseCatalog, starterItems } from "./data/catalog";
 import { findUserByName, readDb, toPublicUser, writeDb } from "./db";
-import type { ChatMessage, PlacedItem, User } from "./types";
+import type { Activity, CatalogItem, ChatMessage, DbShape, PlacedItem, User } from "./types";
 
 const PORT = Number(process.env.PORT ?? 4000);
 const JWT_SECRET = process.env.JWT_SECRET ?? "animegame-dev-secret-change-me";
@@ -54,6 +54,77 @@ function requireUser(request: AuthedRequest) {
   return user;
 }
 
+function requireAdmin(request: AuthedRequest) {
+  const user = requireUser(request);
+  if (!user.isAdmin) {
+    throw new Error("NOT_ADMIN");
+  }
+  return user;
+}
+
+function normalizeItemType(value: unknown, fallback: CatalogItem["type"]) {
+  return ["furniture", "clothing", "pet", "decor", "outdoor", "character", "activity"].includes(String(value))
+    ? value as CatalogItem["type"]
+    : fallback;
+}
+
+function normalizeRarity(value: unknown, fallback: CatalogItem["rarity"]) {
+  return ["common", "rare", "epic", "legendary"].includes(String(value))
+    ? value as CatalogItem["rarity"]
+    : fallback;
+}
+
+function normalizeColor(value: unknown, fallback: string) {
+  return /^#[0-9a-fA-F]{6}$/.test(String(value ?? "")) ? String(value) : fallback;
+}
+
+function normalizeSize(value: unknown, fallback?: CatalogItem["size"]) {
+  if (!Array.isArray(value) || value.length !== 3) {
+    return fallback;
+  }
+  const next = value.map((entry) => Math.max(0.01, Math.min(20, Number(entry))));
+  return next.every(Number.isFinite) ? next as [number, number, number] : fallback;
+}
+
+function sanitizeCatalogOverride(baseItem: CatalogItem, patch: Partial<CatalogItem>): CatalogItem {
+  return {
+    ...baseItem,
+    ...patch,
+    id: baseItem.id,
+    type: normalizeItemType(patch.type, baseItem.type),
+    name: String(patch.name ?? baseItem.name).trim().slice(0, 80) || baseItem.name,
+    price: Math.max(0, Math.min(99999999, Math.round(Number(patch.price ?? baseItem.price) || 0))),
+    rarity: normalizeRarity(patch.rarity, baseItem.rarity),
+    color: normalizeColor(patch.color, baseItem.color),
+    emoji: String(patch.emoji ?? baseItem.emoji).trim().slice(0, 16) || baseItem.emoji,
+    size: normalizeSize(patch.size, baseItem.size),
+    modelUrl: patch.modelUrl === "" ? undefined : patch.modelUrl ?? baseItem.modelUrl,
+    modelScale: patch.modelScale === undefined ? baseItem.modelScale : Math.max(0.1, Math.min(10, Number(patch.modelScale) || 1)),
+    clothingModelUrl: patch.clothingModelUrl === "" ? undefined : patch.clothingModelUrl ?? baseItem.clothingModelUrl,
+    clothingModelScale: patch.clothingModelScale === undefined ? baseItem.clothingModelScale : Math.max(0.1, Math.min(10, Number(patch.clothingModelScale) || 1)),
+    clothingPaintStyle: patch.clothingPaintStyle === "" ? undefined : patch.clothingPaintStyle ?? baseItem.clothingPaintStyle
+  };
+}
+
+function getGameCatalog(db: DbShape = readDb()) {
+  const overrides = db.content?.catalogItems ?? {};
+  return baseCatalog.map((item) => sanitizeCatalogOverride(item, overrides[item.id] ?? {}));
+}
+
+function sanitizeActivityOverride(baseActivity: Activity, patch: Partial<Activity>): Activity {
+  return {
+    id: baseActivity.id,
+    name: String(patch.name ?? baseActivity.name).trim().slice(0, 80) || baseActivity.name,
+    reward: Math.max(0, Math.min(99999999, Math.round(Number(patch.reward ?? baseActivity.reward) || 0))),
+    seconds: Math.max(1, Math.min(86400, Math.round(Number(patch.seconds ?? baseActivity.seconds) || 1)))
+  };
+}
+
+function getGameActivities(db: DbShape = readDb()) {
+  const overrides = db.content?.activities ?? {};
+  return baseActivities.map((activity) => sanitizeActivityOverride(activity, overrides[activity.id] ?? {}));
+}
+
 function starterPlacedItems(): PlacedItem[] {
   return [
     { instanceId: crypto.randomUUID(), itemId: "kenney-beddouble", x: -2.8, y: 0, z: -2.5, rotation: 0 },
@@ -96,11 +167,11 @@ function clampPlacedScale(value: unknown) {
   return Math.max(0.5, Math.min(2.5, Number(finiteValue.toFixed(2))));
 }
 
-function upgradeLegacyPlacedItems(user: User) {
+function upgradeLegacyPlacedItems(user: User, activeCatalog: CatalogItem[]) {
   let changed = false;
   for (const placed of user.placedItems) {
     const nextItemId = upgradedItemId(placed.itemId);
-    if (nextItemId !== placed.itemId && catalog.some((item) => item.id === nextItemId)) {
+    if (nextItemId !== placed.itemId && activeCatalog.some((item) => item.id === nextItemId)) {
       placed.itemId = nextItemId;
       changed = true;
     }
@@ -108,8 +179,8 @@ function upgradeLegacyPlacedItems(user: User) {
   return changed;
 }
 
-function getPlacedItemValue(itemId: string) {
-  const item = catalog.find((entry) => entry.id === itemId);
+function getPlacedItemValue(itemId: string, activeCatalog: CatalogItem[]) {
+  const item = activeCatalog.find((entry) => entry.id === itemId);
   return item ? Math.floor(item.price * 0.7) : 0;
 }
 
@@ -236,7 +307,10 @@ fastify.get("/api/me", async (request, reply) => {
   }
 });
 
-fastify.get("/api/catalog", async () => ({ catalog, activities }));
+fastify.get("/api/catalog", async () => {
+  const db = readDb();
+  return { catalog: getGameCatalog(db), activities: getGameActivities(db) };
+});
 
 fastify.get("/api/players", async () => {
   const db = readDb();
@@ -251,7 +325,8 @@ fastify.get("/api/home/:username", async (request, reply) => {
     return reply.code(404).send({ error: "Дом не найден" });
   }
 
-  if (upgradeLegacyPlacedItems(user)) {
+  const activeCatalog = getGameCatalog(db);
+  if (upgradeLegacyPlacedItems(user, activeCatalog)) {
     writeDb(db);
   }
 
@@ -287,12 +362,12 @@ fastify.post("/api/earn", async (request, reply) => {
   try {
     const user = requireUser(request);
     const body = request.body as { activityId?: string };
-    const activity = activities.find((entry) => entry.id === body.activityId);
+    const db = readDb();
+    const activity = getGameActivities(db).find((entry) => entry.id === body.activityId);
     if (!activity) {
       return reply.code(400).send({ error: "Нет такой работы" });
     }
 
-    const db = readDb();
     const dbUser = db.users.find((entry) => entry.id === user.id)!;
     dbUser.coins += activity.reward;
     writeDb(db);
@@ -306,12 +381,12 @@ fastify.post("/api/buy", async (request, reply) => {
   try {
     const user = requireUser(request);
     const body = request.body as { itemId?: string };
-    const item = catalog.find((entry) => entry.id === body.itemId && entry.type !== "activity");
+    const db = readDb();
+    const item = getGameCatalog(db).find((entry) => entry.id === body.itemId && entry.type !== "activity");
     if (!item) {
       return reply.code(400).send({ error: "Нет такого товара" });
     }
 
-    const db = readDb();
     const dbUser = db.users.find((entry) => entry.id === user.id)!;
     const alreadyOwned = dbUser.inventory.includes(item.id);
     const equipOnly = alreadyOwned && ["character", "clothing", "pet"].includes(item.type);
@@ -353,7 +428,8 @@ fastify.post("/api/place", async (request, reply) => {
   try {
     const user = requireUser(request);
     const body = request.body as { itemId?: string; x?: number; z?: number; rotation?: number };
-    const item = catalog.find((entry) => entry.id === body.itemId && ["furniture", "decor", "outdoor"].includes(entry.type));
+    const db = readDb();
+    const item = getGameCatalog(db).find((entry) => entry.id === body.itemId && ["furniture", "decor", "outdoor"].includes(entry.type));
     if (!item || !user.inventory.includes(item.id)) {
       return reply.code(400).send({ error: "Предмета нет в инвентаре" });
     }
@@ -368,7 +444,6 @@ fastify.post("/api/place", async (request, reply) => {
       scale: 1
     };
 
-    const db = readDb();
     const dbUser = db.users.find((entry) => entry.id === user.id)!;
     const inventoryIndex = dbUser.inventory.indexOf(item.id);
     if (inventoryIndex === -1) {
@@ -463,7 +538,7 @@ fastify.post("/api/placed/sell", async (request, reply) => {
     }
 
     const [placed] = dbUser.placedItems.splice(placedIndex, 1);
-    const refund = getPlacedItemValue(placed.itemId);
+    const refund = getPlacedItemValue(placed.itemId, getGameCatalog(db));
     dbUser.coins += refund;
     writeDb(db);
     io.to(`home:${dbUser.username}`).emit("home:itemSold", { instanceId: placed.instanceId, refund });
@@ -471,6 +546,110 @@ fastify.post("/api/placed/sell", async (request, reply) => {
     return { user: toPublicUser(dbUser), placed, refund };
   } catch {
     return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.get("/api/admin/overview", async (request, reply) => {
+  try {
+    requireAdmin(request);
+    const db = readDb();
+    return {
+      users: db.users.map((entry) => ({
+        id: entry.id,
+        username: entry.username,
+        coins: entry.coins,
+        isAdmin: Boolean(entry.isAdmin),
+        inventoryCount: entry.inventory.length,
+        placedCount: entry.placedItems.length,
+        createdAt: entry.createdAt,
+        avatar: entry.avatar
+      })),
+      catalog: getGameCatalog(db),
+      activities: getGameActivities(db),
+      stats: {
+        users: db.users.length,
+        chats: db.chats.length,
+        catalogItems: baseCatalog.length,
+        activities: baseActivities.length
+      }
+    };
+  } catch {
+    return reply.code(403).send({ error: "Admin only" });
+  }
+});
+
+fastify.patch("/api/admin/users/:id", async (request, reply) => {
+  try {
+    requireAdmin(request);
+    const params = request.params as { id: string };
+    const body = request.body as { coins?: number; isAdmin?: boolean; inventory?: string[] };
+    const db = readDb();
+    const dbUser = db.users.find((entry) => entry.id === params.id);
+    if (!dbUser) {
+      return reply.code(404).send({ error: "User not found" });
+    }
+
+    if (body.coins !== undefined) {
+      dbUser.coins = Math.max(0, Math.min(999999999, Math.round(Number(body.coins) || 0)));
+    }
+    if (body.isAdmin !== undefined) {
+      dbUser.isAdmin = dbUser.username.toLowerCase() === "rodion" ? true : Boolean(body.isAdmin);
+    }
+    if (Array.isArray(body.inventory)) {
+      const validIds = new Set(getGameCatalog(db).map((item) => item.id));
+      dbUser.inventory = body.inventory.map(String).filter((id) => validIds.has(id)).slice(0, 1000);
+    }
+
+    writeDb(db);
+    return { user: toPublicUser(dbUser) };
+  } catch {
+    return reply.code(403).send({ error: "Admin only" });
+  }
+});
+
+fastify.patch("/api/admin/catalog/:id", async (request, reply) => {
+  try {
+    requireAdmin(request);
+    const params = request.params as { id: string };
+    const body = request.body as Partial<CatalogItem>;
+    const baseItem = baseCatalog.find((item) => item.id === params.id);
+    if (!baseItem) {
+      return reply.code(404).send({ error: "Item not found" });
+    }
+
+    const db = readDb();
+    db.content ??= {};
+    db.content.catalogItems ??= {};
+    db.content.catalogItems[baseItem.id] = sanitizeCatalogOverride(baseItem, body);
+    writeDb(db);
+
+    const item = getGameCatalog(db).find((entry) => entry.id === baseItem.id)!;
+    return { item, catalog: getGameCatalog(db) };
+  } catch {
+    return reply.code(403).send({ error: "Admin only" });
+  }
+});
+
+fastify.patch("/api/admin/activities/:id", async (request, reply) => {
+  try {
+    requireAdmin(request);
+    const params = request.params as { id: string };
+    const body = request.body as Partial<Activity>;
+    const baseActivity = baseActivities.find((activity) => activity.id === params.id);
+    if (!baseActivity) {
+      return reply.code(404).send({ error: "Activity not found" });
+    }
+
+    const db = readDb();
+    db.content ??= {};
+    db.content.activities ??= {};
+    db.content.activities[baseActivity.id] = sanitizeActivityOverride(baseActivity, body);
+    writeDb(db);
+
+    const activity = getGameActivities(db).find((entry) => entry.id === baseActivity.id)!;
+    return { activity, activities: getGameActivities(db) };
+  } catch {
+    return reply.code(403).send({ error: "Admin only" });
   }
 });
 

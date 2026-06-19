@@ -26,6 +26,13 @@ export type PlacedItem = {
   scale?: number;
 };
 
+export type Activity = {
+  id: string;
+  name: string;
+  reward: number;
+  seconds: number;
+};
+
 export type ChatMessage = {
   id: string;
   homeOwner: string;
@@ -37,6 +44,7 @@ export type ChatMessage = {
 export type PublicUser = {
   id: string;
   username: string;
+  isAdmin?: boolean;
   coins: number;
   inventory: string[];
   placedItems: PlacedItem[];
@@ -51,13 +59,6 @@ export type PublicUser = {
     wallColor: string;
   };
   createdAt: number;
-};
-
-export type Activity = {
-  id: string;
-  name: string;
-  reward: number;
-  seconds: number;
 };
 
 export type HomeState = {
