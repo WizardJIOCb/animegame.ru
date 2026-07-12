@@ -101,7 +101,7 @@ export default function App() {
         const response = await me();
         userRef.current = response.user;
         setUser(response.user);
-        await loadHome(response.user.username);
+        await loadPrimaryLocation(response.user.username);
         connectSocket(response.user.username);
       } catch {
         setToken(null);
@@ -116,7 +116,7 @@ export default function App() {
       setToken(response.token);
       userRef.current = response.user;
       setUser(response.user);
-      await loadHome(response.user.username);
+      await loadPrimaryLocation(response.user.username);
       connectSocket(response.user.username);
       const playersResponse = await getPlayers();
       setPlayers(playersResponse.players);
@@ -412,15 +412,40 @@ export default function App() {
     setRemotePlayers([]);
   }
 
-  async function visit(owner: string) {
-    if (owner !== homeOwner) {
-      stopVoice();
+  async function loadPrimaryLocation(owner: string) {
+    const homePromise = getHome(owner);
+    const neighborhoodPromise = getNeighborhood().catch(() => null);
+    const [nextHome, nextNeighborhood] = await Promise.all([homePromise, neighborhoodPromise]);
+    setHomeOwner(owner);
+    setHome(nextHome);
+    setMessages(nextHome.chats);
+    setRemotePlayers([]);
+
+    if (nextNeighborhood) {
+      setNeighborhood(nextNeighborhood);
+      setSceneMode("street");
+      sceneModeRef.current = "street";
+      trackGoal("neighborhood_primary_view", { residents: nextNeighborhood.residents.length });
+      return;
     }
-    await loadHome(owner);
+
     setSceneMode("home");
     sceneModeRef.current = "home";
-    socketRef.current?.emit("home:join", owner);
-    trackGoal("visit_home", { own_home: owner === userRef.current?.username });
+  }
+
+  async function visit(owner: string) {
+    try {
+      if (owner !== homeOwner) {
+        stopVoice();
+      }
+      await loadHome(owner);
+      setSceneMode("home");
+      sceneModeRef.current = "home";
+      socketRef.current?.emit("home:join", owner);
+      trackGoal("visit_home", { own_home: owner === userRef.current?.username });
+    } catch (visitError) {
+      showToast(visitError instanceof Error ? visitError.message : "Не удалось войти в дом");
+    }
   }
 
   async function openNeighborhood() {
@@ -726,6 +751,7 @@ export default function App() {
 
   const selectedSellValue = selectedPlacedCatalogItem ? Math.floor(selectedPlacedCatalogItem.price * 0.7) : 0;
   const selectedScale = selectedPlaced ? selectedPlaced.scale ?? 1 : 1;
+  const ownNeighborhoodResident = neighborhood?.residents.find((resident) => resident.username === user?.username);
   const voiceLabel = voiceState === "connecting" ? "Connecting" : voiceState === "on" ? "Voice on" : "Voice";
 
   if (!user || !home) {
@@ -739,13 +765,13 @@ export default function App() {
         <div className="home-title">
           {sceneMode === "street" ? (
             <>
-              <span><MapIcon size={17} /> Улица Сакуры · 12 домов</span>
-              <button className="ghost-button" onClick={goOwnHome}><DoorOpen size={16} /> В свой дом</button>
+              <span><MapIcon size={17} /> Мой участок · дом {ownNeighborhoodResident?.houseLevel ?? 1} ур.</span>
+              <button className="ghost-button" onClick={goOwnHome}><DoorOpen size={16} /> Войти в дом</button>
             </>
           ) : (
             <>
               <span>{ownHome ? "Мой дом" : `В гостях у ${homeOwner}`}</span>
-              <button className="ghost-button street-button" onClick={openNeighborhood}><CarFront size={16} /> На улицу</button>
+              <button className="ghost-button street-button" onClick={openNeighborhood}><CarFront size={16} /> К участку</button>
               {!ownHome ? <button className="ghost-button" onClick={goOwnHome}><DoorOpen size={16} /> Домой</button> : null}
               {ownHome ? (
                 <button
