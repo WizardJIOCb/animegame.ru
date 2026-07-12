@@ -4,6 +4,22 @@ import Fastify from "fastify";
 import jwt from "jsonwebtoken";
 import { Server, type Socket } from "socket.io";
 import { activities as baseActivities, catalog as baseCatalog, starterItems } from "./data/catalog";
+import {
+  activityXp,
+  calculatePendingIncome,
+  careerRequiredLevel,
+  careerUpgradeCost,
+  createDefaultProgress,
+  grantXp,
+  houseRequiredLevel,
+  houseUpgradeCost,
+  incomePerHourForCareer,
+  makeNeighborhoodResidents,
+  makeNpcHome,
+  makeProgressView,
+  MAX_CAREER_LEVEL,
+  MAX_HOUSE_LEVEL
+} from "./data/neighborhood";
 import { findUserByName, readDb, toPublicUser, writeDb } from "./db";
 import type { Activity, CatalogItem, ChatMessage, DbShape, PlacedItem, User } from "./types";
 
@@ -17,13 +33,15 @@ const io = new Server(fastify.server, {
   }
 });
 const voiceRooms = new Map<string, Map<string, string>>();
+const NEIGHBORHOOD_ROOM = "neighborhood:street";
 type LivePlayer = {
   id: string;
   username: string;
-  position: { x: number; y: number; z: number; rotation?: number };
+  position: { x: number; y: number; z: number; rotation?: number; vehicle?: boolean };
   avatar?: User["avatar"];
 };
 const homePlayers = new Map<string, Map<string, LivePlayer>>();
+const neighborhoodPlayers = new Map<string, LivePlayer>();
 
 type AuthedRequest = {
   headers: { authorization?: string };
@@ -198,6 +216,62 @@ function defaultPlayerPosition() {
   return { x: 0, y: 0, z: 1.2, rotation: 0 };
 }
 
+function defaultNeighborhoodPosition() {
+  return { x: 0, y: 0, z: 34, rotation: Math.PI };
+}
+
+function finiteNumber(value: unknown, fallback: number) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function sanitizeNeighborhoodPosition(position: unknown) {
+  const candidate = position && typeof position === "object"
+    ? position as { x?: unknown; y?: unknown; z?: unknown; rotation?: unknown; vehicle?: unknown }
+    : {};
+  return {
+    x: Math.max(-34, Math.min(34, finiteNumber(candidate.x, 0))),
+    y: Math.max(0, Math.min(4, finiteNumber(candidate.y, 0))),
+    z: Math.max(-49, Math.min(49, finiteNumber(candidate.z, 34))),
+    rotation: finiteNumber(candidate.rotation, 0),
+    vehicle: candidate.vehicle === true
+  };
+}
+
+function creditPendingIncome(user: User, now = Date.now()) {
+  const pending = calculatePendingIncome(user.progress, now);
+  if (pending <= 0) {
+    return 0;
+  }
+
+  const previousCoins = user.coins;
+  user.coins = Math.min(999_999_999, user.coins + pending);
+  user.progress.lastIncomeClaimAt = now;
+  return user.coins - previousCoins;
+}
+
+function leaveNeighborhoodPresence(socket: Socket) {
+  if (!socket.data.inNeighborhood) {
+    return;
+  }
+
+  const previousPlayer = neighborhoodPlayers.get(socket.id);
+  neighborhoodPlayers.delete(socket.id);
+  socket.data.inNeighborhood = false;
+  socket.leave(NEIGHBORHOOD_ROOM);
+
+  if (previousPlayer) {
+    const sameUserStillPresent = [...neighborhoodPlayers.values()]
+      .some((player) => player.username === previousPlayer.username);
+    if (!sameUserStillPresent) {
+      socket.to(NEIGHBORHOOD_ROOM).emit("player:left", {
+        id: socket.id,
+        username: previousPlayer.username
+      });
+    }
+  }
+}
+
 function leaveHomePresence(socket: Socket) {
   const homeOwner = socket.data.homeOwner as string | undefined;
   if (!homeOwner) {
@@ -279,6 +353,7 @@ fastify.post("/api/auth/register", async (request, reply) => {
       floorColor: "#9b6a3c",
       wallColor: "#d8d1c3"
     },
+    progress: createDefaultProgress(),
     createdAt: Date.now()
   };
 
@@ -317,12 +392,40 @@ fastify.get("/api/players", async () => {
   return { players: db.users.map((user) => ({ username: user.username, coins: user.coins })) };
 });
 
+fastify.get("/api/neighborhood", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    const catalog = getGameCatalog(db);
+    const now = Date.now();
+    const residents = makeNeighborhoodResidents(db.users, catalog);
+    if (!residents.some((resident) => !resident.isNpc && resident.username === user.username)) {
+      return reply.code(409).send({ error: "На этой улице все 12 участков уже заняты", code: "NEIGHBORHOOD_FULL" });
+    }
+    return {
+      residents,
+      progress: makeProgressView(user, catalog, now),
+      generatedAt: now
+    };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
 fastify.get("/api/home/:username", async (request, reply) => {
   const params = request.params as { username: string };
   const db = readDb();
   const user = db.users.find((entry) => entry.username.toLowerCase() === params.username.toLowerCase());
   if (!user) {
-    return reply.code(404).send({ error: "Дом не найден" });
+    const npcHome = makeNpcHome(params.username);
+    if (!npcHome) {
+      return reply.code(404).send({ error: "Дом не найден" });
+    }
+    return {
+      ...npcHome,
+      chats: db.chats.filter((message) => message.homeOwner.toLowerCase() === npcHome.owner.toLowerCase()).slice(-50)
+    };
   }
 
   const activeCatalog = getGameCatalog(db);
@@ -358,6 +461,107 @@ fastify.post("/api/home/style", async (request, reply) => {
   }
 });
 
+fastify.post("/api/neighborhood/claim-income", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    const now = Date.now();
+    const pendingBeforeClaim = calculatePendingIncome(user.progress, now);
+    const claimed = creditPendingIncome(user, now);
+    if (pendingBeforeClaim > 0) {
+      writeDb(db);
+    }
+    return {
+      user: toPublicUser(user),
+      progress: makeProgressView(user, getGameCatalog(db), now),
+      claimed
+    };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/neighborhood/upgrade-career", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    const currentLevel = user.progress.careerLevel;
+    if (currentLevel >= MAX_CAREER_LEVEL) {
+      return reply.code(400).send({ error: "Карьера уже максимального уровня", code: "MAX_CAREER_LEVEL" });
+    }
+
+    const requiredLevel = careerRequiredLevel(currentLevel);
+    if (user.progress.level < requiredLevel) {
+      return reply.code(400).send({
+        error: `Нужен ${requiredLevel} уровень персонажа`,
+        code: "PLAYER_LEVEL_REQUIRED",
+        requiredLevel
+      });
+    }
+
+    const cost = careerUpgradeCost(currentLevel);
+    const now = Date.now();
+    const pendingIncome = calculatePendingIncome(user.progress, now);
+    if (user.coins + pendingIncome < cost) {
+      return reply.code(400).send({ error: "Не хватает монет", code: "NOT_ENOUGH_COINS", cost });
+    }
+
+    const claimed = creditPendingIncome(user, now);
+    user.coins -= cost;
+    user.progress.careerLevel += 1;
+    user.progress.incomePerHour = incomePerHourForCareer(user.progress.careerLevel);
+    user.progress.lastIncomeClaimAt = now;
+    writeDb(db);
+    return {
+      user: toPublicUser(user),
+      progress: makeProgressView(user, getGameCatalog(db), now),
+      spent: cost,
+      claimed
+    };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/neighborhood/upgrade-house", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    const currentLevel = user.progress.houseLevel;
+    if (currentLevel >= MAX_HOUSE_LEVEL) {
+      return reply.code(400).send({ error: "Дом уже максимального уровня", code: "MAX_HOUSE_LEVEL" });
+    }
+
+    const requiredLevel = houseRequiredLevel(currentLevel);
+    if (user.progress.level < requiredLevel) {
+      return reply.code(400).send({
+        error: `Нужен ${requiredLevel} уровень персонажа`,
+        code: "PLAYER_LEVEL_REQUIRED",
+        requiredLevel
+      });
+    }
+
+    const cost = houseUpgradeCost(currentLevel);
+    if (user.coins < cost) {
+      return reply.code(400).send({ error: "Не хватает монет", code: "NOT_ENOUGH_COINS", cost });
+    }
+
+    user.coins -= cost;
+    user.progress.houseLevel += 1;
+    writeDb(db);
+    return {
+      user: toPublicUser(user),
+      progress: makeProgressView(user, getGameCatalog(db)),
+      spent: cost
+    };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
 fastify.post("/api/earn", async (request, reply) => {
   try {
     const user = requireUser(request);
@@ -369,9 +573,29 @@ fastify.post("/api/earn", async (request, reply) => {
     }
 
     const dbUser = db.users.find((entry) => entry.id === user.id)!;
-    dbUser.coins += activity.reward;
+    const now = Date.now();
+    if (dbUser.progress.workAvailableAt > now) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((dbUser.progress.workAvailableAt - now) / 1000));
+      return reply.code(429).send({
+        error: `Работа ещё идёт: ${retryAfterSeconds} сек.`,
+        code: "WORK_IN_PROGRESS",
+        retryAfterSeconds,
+        workAvailableAt: dbUser.progress.workAvailableAt
+      });
+    }
+
+    dbUser.progress.workAvailableAt = now + activity.seconds * 1000;
+    dbUser.coins = Math.min(999_999_999, dbUser.coins + activity.reward);
+    const xpEarned = activityXp(activity.reward);
+    const levelsGained = grantXp(dbUser.progress, xpEarned);
     writeDb(db);
-    return { user: toPublicUser(dbUser), activity };
+    return {
+      user: toPublicUser(dbUser),
+      activity,
+      progress: makeProgressView(dbUser, getGameCatalog(db)),
+      xpEarned,
+      levelsGained
+    };
   } catch {
     return reply.code(401).send({ error: "Нужно войти" });
   }
@@ -666,7 +890,56 @@ io.use((socket, next) => {
 });
 
 io.on("connection", (socket) => {
+  socket.on("neighborhood:join", () => {
+    const previousHomeOwner = socket.data.homeOwner as string | undefined;
+    if (previousHomeOwner) {
+      leaveVoiceRoom(socket);
+      leaveHomePresence(socket);
+      socket.leave(`home:${previousHomeOwner}`);
+      socket.data.homeOwner = undefined;
+    }
+
+    const wasAlreadyPresent = neighborhoodPlayers.has(socket.id);
+    socket.join(NEIGHBORHOOD_ROOM);
+    socket.data.inNeighborhood = true;
+    const currentPlayer: LivePlayer = {
+      id: socket.id,
+      username: socket.data.username,
+      position: neighborhoodPlayers.get(socket.id)?.position ?? defaultNeighborhoodPosition(),
+      avatar: getPublicAvatar(socket.data.username)
+    };
+    socket.emit("player:present", {
+      players: [...neighborhoodPlayers.entries()]
+        .filter(([id]) => id !== socket.id)
+        .map(([, player]) => player)
+    });
+    neighborhoodPlayers.set(socket.id, currentPlayer);
+    if (!wasAlreadyPresent) {
+      socket.to(NEIGHBORHOOD_ROOM).emit("player:joined", currentPlayer);
+    }
+  });
+
+  socket.on("neighborhood:move", (position: unknown) => {
+    if (!socket.data.inNeighborhood || !neighborhoodPlayers.has(socket.id)) {
+      return;
+    }
+
+    const player: LivePlayer = {
+      id: socket.id,
+      username: socket.data.username,
+      position: sanitizeNeighborhoodPosition(position),
+      avatar: getPublicAvatar(socket.data.username)
+    };
+    neighborhoodPlayers.set(socket.id, player);
+    socket.to(NEIGHBORHOOD_ROOM).emit("player:moved", player);
+  });
+
+  socket.on("neighborhood:leave", () => {
+    leaveNeighborhoodPresence(socket);
+  });
+
   socket.on("home:join", (homeOwner: string) => {
+    leaveNeighborhoodPresence(socket);
     const previousHomeOwner = socket.data.homeOwner as string | undefined;
     if (previousHomeOwner && previousHomeOwner !== homeOwner) {
       leaveVoiceRoom(socket);
@@ -776,6 +1049,7 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     leaveVoiceRoom(socket);
     leaveHomePresence(socket);
+    leaveNeighborhoodPresence(socket);
   });
 });
 

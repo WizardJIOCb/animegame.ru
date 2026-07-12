@@ -41,6 +41,58 @@ export type ChatMessage = {
   createdAt: number;
 };
 
+export type UserProgress = {
+  level: number;
+  xp: number;
+  careerLevel: number;
+  houseLevel: number;
+  incomePerHour: number;
+  lastIncomeClaimAt: number;
+  workAvailableAt: number;
+};
+
+export type NeighborhoodHouseColors = {
+  walls: string;
+  roof: string;
+  trim: string;
+};
+
+export type NeighborhoodLot = {
+  x: number;
+  z: number;
+  rotation: number;
+};
+
+export type NeighborhoodResident = {
+  plotId: number;
+  username: string;
+  isNpc: boolean;
+  level: number;
+  careerLevel: number;
+  houseLevel: number;
+  homeValue: number;
+  incomePerHour: number;
+  colors: NeighborhoodHouseColors;
+  avatar: User["avatar"];
+  lot: NeighborhoodLot;
+};
+
+export type NeighborhoodProgress = {
+  level: number;
+  xp: number;
+  xpToNext: number;
+  careerLevel: number;
+  houseLevel: number;
+  homeValue: number;
+  incomePerHour: number;
+  pendingIncome: number;
+  nextCareerCost: number | null;
+  nextCareerRequiredLevel: number | null;
+  nextHouseCost: number | null;
+  nextHouseRequiredLevel: number | null;
+  workAvailableAt: number;
+};
+
 export type User = {
   id: string;
   username: string;
@@ -59,6 +111,7 @@ export type User = {
     floorColor: string;
     wallColor: string;
   };
+  progress: UserProgress;
   createdAt: number;
 };
 
