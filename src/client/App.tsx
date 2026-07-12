@@ -1,14 +1,17 @@
-import { Coins, DoorOpen, Hammer, Home, LogOut, MessageCircle, Mic, MicOff, Minus, Plus, RotateCcw, RotateCw, Shield, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
+import { CarFront, Coins, DoorOpen, Hammer, Home, LogOut, Map as MapIcon, MessageCircle, Mic, MicOff, Minus, Plus, RotateCcw, RotateCw, Shield, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { AdminPanel } from "./components/AdminPanel";
 import { AuthScreen } from "./components/AuthScreen";
-import { buy, earn, getCatalog, getHome, getPlayers, getToken, login, me, movePlacedItem, place, register, rotatePlacedItem, scalePlacedItem, sellPlacedItem, setToken, updateHomeStyle } from "./api";
+import { NeighborhoodPanel } from "./components/NeighborhoodPanel";
+import { buy, claimNeighborhoodIncome, earn, getCatalog, getHome, getNeighborhood, getPlayers, getToken, login, me, movePlacedItem, place, register, rotatePlacedItem, scalePlacedItem, sellPlacedItem, setToken, updateHomeStyle, upgradeCareer, upgradeHouse } from "./api";
 import { trackGoal, trackItemGoal, trackPurchase } from "./analytics";
 import { GameScene } from "./game/GameScene";
-import type { Activity, CatalogItem, ChatMessage, HomeState, PlacedItem, PublicUser, RemotePlayer } from "./types";
+import { NeighborhoodScene } from "./game/NeighborhoodScene";
+import type { Activity, CatalogItem, ChatMessage, HomeState, NeighborhoodState, PlacedItem, PublicUser, RemotePlayer } from "./types";
 
 type Tab = "shop" | "work" | "visit" | "inventory" | "admin";
+type SceneMode = "home" | "street";
 type VoiceState = "off" | "connecting" | "on";
 type VoicePeerInfo = { id: string; username: string };
 type VoiceSignal =
@@ -40,6 +43,9 @@ export default function App() {
   const [players, setPlayers] = useState<Array<{ username: string; coins: number }>>([]);
   const [home, setHome] = useState<HomeState | null>(null);
   const [homeOwner, setHomeOwner] = useState("");
+  const [sceneMode, setSceneMode] = useState<SceneMode>("home");
+  const [neighborhood, setNeighborhood] = useState<NeighborhoodState | null>(null);
+  const [neighborhoodBusy, setNeighborhoodBusy] = useState("");
   const [remotePlayers, setRemotePlayers] = useState<RemotePlayer[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatText, setChatText] = useState("");
@@ -53,6 +59,8 @@ export default function App() {
   const [voiceError, setVoiceError] = useState("");
   const [remoteVoicePeers, setRemoteVoicePeers] = useState<VoicePeerInfo[]>([]);
   const userRef = useRef<PublicUser | null>(null);
+  const sceneModeRef = useRef<SceneMode>("home");
+  const streetPositionRef = useRef<{ x: number; y: number; z: number; rotation?: number; vehicle?: boolean } | undefined>(undefined);
   const socketRef = useRef<Socket | null>(null);
   const localVoiceStreamRef = useRef<MediaStream | null>(null);
   const voicePeersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
@@ -66,6 +74,10 @@ export default function App() {
   useEffect(() => {
     userRef.current = user;
   }, [user]);
+
+  useEffect(() => {
+    sceneModeRef.current = sceneMode;
+  }, [sceneMode]);
 
   useEffect(() => {
     void bootstrap();
@@ -135,7 +147,11 @@ export default function App() {
     });
 
     socket.on("connect", () => {
-      socket.emit("home:join", owner);
+      if (sceneModeRef.current === "street") {
+        socket.emit("neighborhood:join");
+      } else {
+        socket.emit("home:join", owner);
+      }
     });
     socket.on("player:present", ({ players }: { players: RemotePlayer[] }) => {
       setRemotePlayers((current) => players.reduce((nextPlayers, player) => upsertRemotePlayer(nextPlayers, player), current));
@@ -143,7 +159,7 @@ export default function App() {
     socket.on("player:joined", (player: RemotePlayer) => {
       const username = player.username;
       setRemotePlayers((current) => upsertRemotePlayer(current, player));
-      showToast(`${username} зашел в дом`);
+      showToast(sceneModeRef.current === "street" ? `${username} вышел на улицу` : `${username} зашел в дом`);
     });
     socket.on("player:left", ({ username }: { id?: string; username: string }) => {
       setRemotePlayers((current) => current.filter((player) => player.username !== username));
@@ -401,8 +417,86 @@ export default function App() {
       stopVoice();
     }
     await loadHome(owner);
+    setSceneMode("home");
+    sceneModeRef.current = "home";
     socketRef.current?.emit("home:join", owner);
     trackGoal("visit_home", { own_home: owner === userRef.current?.username });
+  }
+
+  async function openNeighborhood() {
+    try {
+      stopVoice();
+      setBuildMode(false);
+      setSelectedPlacedId("");
+      const nextNeighborhood = await getNeighborhood();
+      setNeighborhood(nextNeighborhood);
+      setRemotePlayers([]);
+      setSceneMode("street");
+      sceneModeRef.current = "street";
+      socketRef.current?.emit("neighborhood:join");
+      trackGoal("neighborhood_enter", { residents: nextNeighborhood.residents.length });
+    } catch (neighborhoodError) {
+      showToast(neighborhoodError instanceof Error ? neighborhoodError.message : "Не удалось открыть улицу");
+    }
+  }
+
+  async function refreshNeighborhood() {
+    const nextNeighborhood = await getNeighborhood();
+    setNeighborhood(nextNeighborhood);
+    return nextNeighborhood;
+  }
+
+  function handleNeighborhoodMove(position: { x: number; y: number; z: number; rotation?: number; vehicle?: boolean }) {
+    streetPositionRef.current = position;
+    socketRef.current?.emit("neighborhood:move", position);
+  }
+
+  async function handleClaimIncome() {
+    if (neighborhoodBusy) return;
+    setNeighborhoodBusy("income");
+    try {
+      const response = await claimNeighborhoodIncome();
+      setUser(response.user);
+      await refreshNeighborhood();
+      showToast(response.claimed > 0 ? `Пассивный доход: +${response.claimed} монет` : "Доход ещё накапливается");
+      trackGoal("income_claim", { amount: response.claimed });
+    } catch (incomeError) {
+      showToast(incomeError instanceof Error ? incomeError.message : "Не удалось забрать доход");
+    } finally {
+      setNeighborhoodBusy("");
+    }
+  }
+
+  async function handleUpgradeCareer() {
+    if (neighborhoodBusy) return;
+    setNeighborhoodBusy("career");
+    try {
+      const response = await upgradeCareer();
+      setUser(response.user);
+      await refreshNeighborhood();
+      showToast(`Карьера повышена · доход ${response.progress.incomePerHour} монет/час`);
+      trackGoal("career_upgrade", { level: response.progress.careerLevel, spent: response.spent });
+    } catch (careerError) {
+      showToast(careerError instanceof Error ? careerError.message : "Не удалось повысить карьеру");
+    } finally {
+      setNeighborhoodBusy("");
+    }
+  }
+
+  async function handleUpgradeHouse() {
+    if (neighborhoodBusy) return;
+    setNeighborhoodBusy("house");
+    try {
+      const response = await upgradeHouse();
+      setUser(response.user);
+      await refreshNeighborhood();
+      showToast(`Новый этап стройки готов · дом ${response.progress.houseLevel} уровня`);
+      trackGoal("house_upgrade", { level: response.progress.houseLevel, spent: response.spent });
+    } catch (houseError) {
+      showToast(houseError instanceof Error ? houseError.message : "Не удалось улучшить дом");
+    } finally {
+      setNeighborhoodBusy("");
+    }
   }
 
   async function goOwnHome() {
@@ -413,14 +507,24 @@ export default function App() {
   }
 
   async function handleEarn(activityId: string) {
-    const response = await earn(activityId);
-    setUser(response.user);
-    trackGoal("earn_activity", {
-      activity_id: response.activity.id,
-      reward: response.activity.reward,
-      duration_seconds: response.activity.seconds
-    });
-    showToast(`+${response.activity.reward} монет: ${response.activity.name}`);
+    if (sceneModeRef.current === "street") setNeighborhoodBusy(activityId);
+    try {
+      const response = await earn(activityId);
+      setUser(response.user);
+      if (sceneModeRef.current === "street") await refreshNeighborhood();
+      trackGoal("earn_activity", {
+        activity_id: response.activity.id,
+        reward: response.activity.reward,
+        duration_seconds: response.activity.seconds,
+        xp: response.xpEarned ?? 0
+      });
+      const levelText = response.levelsGained ? ` · новый ${response.progress?.level} уровень!` : "";
+      showToast(`+${response.activity.reward} монет · +${response.xpEarned ?? 0} XP${levelText}`);
+    } catch (earnError) {
+      showToast(earnError instanceof Error ? earnError.message : "Не удалось выполнить работу");
+    } finally {
+      if (sceneModeRef.current === "street") setNeighborhoodBusy("");
+    }
   }
 
   async function handleBuy(itemId: string) {
@@ -590,6 +694,10 @@ export default function App() {
     setUser(null);
     setHome(null);
     setHomeOwner("");
+    setNeighborhood(null);
+    setSceneMode("home");
+    sceneModeRef.current = "home";
+    streetPositionRef.current = undefined;
   }
 
   function showToast(text: string) {
@@ -629,46 +737,71 @@ export default function App() {
       <section className="topbar">
         <div className="brand"><Home size={20} /> AnimeGame</div>
         <div className="home-title">
-          <span>{ownHome ? "Мой дом" : `В гостях у ${homeOwner}`}</span>
-          {!ownHome ? <button className="ghost-button" onClick={goOwnHome}><DoorOpen size={16} /> Домой</button> : null}
-          {ownHome ? (
-            <button
-              className={buildMode ? "ghost-button active-build" : "ghost-button"}
-              onClick={() => {
-                const nextBuildMode = !buildMode;
-                setBuildMode(nextBuildMode);
-                trackGoal("build_mode", { enabled: nextBuildMode });
-                setSelectedPlacedId("");
-              }}
-            >
-              <Hammer size={16} /> Build
-            </button>
-          ) : null}
+          {sceneMode === "street" ? (
+            <>
+              <span><MapIcon size={17} /> Улица Сакуры · 12 домов</span>
+              <button className="ghost-button" onClick={goOwnHome}><DoorOpen size={16} /> В свой дом</button>
+            </>
+          ) : (
+            <>
+              <span>{ownHome ? "Мой дом" : `В гостях у ${homeOwner}`}</span>
+              <button className="ghost-button street-button" onClick={openNeighborhood}><CarFront size={16} /> На улицу</button>
+              {!ownHome ? <button className="ghost-button" onClick={goOwnHome}><DoorOpen size={16} /> Домой</button> : null}
+              {ownHome ? (
+                <button
+                  className={buildMode ? "ghost-button active-build" : "ghost-button"}
+                  onClick={() => {
+                    const nextBuildMode = !buildMode;
+                    setBuildMode(nextBuildMode);
+                    trackGoal("build_mode", { enabled: nextBuildMode });
+                    setSelectedPlacedId("");
+                  }}
+                >
+                  <Hammer size={16} /> Обустроить
+                </button>
+              ) : null}
+            </>
+          )}
         </div>
         <div className="wallet"><Coins size={18} /> {user.coins}</div>
         <button className="icon-button" onClick={logout} title="Выйти"><LogOut size={18} /></button>
       </section>
 
-      <section className="game-layout">
+      <section className={sceneMode === "street" ? "game-layout street-layout" : "game-layout"}>
         <div className="scene-wrap">
-          <GameScene
-            user={user}
-            home={home}
-            catalog={catalog}
-            remotePlayers={remotePlayers}
-            buildMode={buildMode && ownHome}
-            selectedPlacedId={selectedPlacedId}
-            onMove={handleMove}
-            onInteract={handleInteract}
-            onSelectPlaced={setSelectedPlacedId}
-            onBuildMove={handleBuildMove}
-          />
-          <div className="scene-hint">
-            {buildMode && ownHome
-              ? "Build: click an item, click floor to move it. Right mouse pans camera."
-              : "Клик по полу: идти. Клик по предмету: взаимодействовать."}
-          </div>
-          {buildMode && ownHome ? (
+          {sceneMode === "street" && neighborhood ? (
+            <NeighborhoodScene
+              user={user}
+              catalog={catalog}
+              residents={neighborhood.residents}
+              remotePlayers={remotePlayers}
+              initialPosition={streetPositionRef.current}
+              onMove={handleNeighborhoodMove}
+              onVisit={visit}
+              onToast={showToast}
+            />
+          ) : (
+            <GameScene
+              user={user}
+              home={home}
+              catalog={catalog}
+              remotePlayers={remotePlayers}
+              buildMode={buildMode && ownHome}
+              selectedPlacedId={selectedPlacedId}
+              onMove={handleMove}
+              onInteract={handleInteract}
+              onSelectPlaced={setSelectedPlacedId}
+              onBuildMove={handleBuildMove}
+            />
+          )}
+          {sceneMode === "home" ? (
+            <div className="scene-hint">
+              {buildMode && ownHome
+                ? "Стройка: выберите предмет и кликните по полу. Правая кнопка двигает камеру."
+                : "Клик по полу: идти. Клик по предмету: взаимодействовать."}
+            </div>
+          ) : null}
+          {sceneMode === "home" && buildMode && ownHome ? (
             <div className="build-toolbar">
               <div className="build-selection">
                 <b>{selectedPlacedCatalogItem ? selectedPlacedCatalogItem.name : "Select item"}</b>
@@ -721,6 +854,20 @@ export default function App() {
         </div>
 
         <aside className="side-panel">
+          {sceneMode === "street" && neighborhood ? (
+            <NeighborhoodPanel
+              user={user}
+              neighborhood={neighborhood}
+              activities={activities}
+              busyAction={neighborhoodBusy}
+              onEarn={handleEarn}
+              onClaimIncome={handleClaimIncome}
+              onUpgradeCareer={handleUpgradeCareer}
+              onUpgradeHouse={handleUpgradeHouse}
+              onVisit={visit}
+            />
+          ) : (
+            <>
           <nav className="tabs">
             <button className={tab === "shop" ? "active" : ""} onClick={() => setTab("shop")}><ShoppingBag size={17} /> Магазин</button>
             <button className={tab === "work" ? "active" : ""} onClick={() => setTab("work")}><Hammer size={17} /> Работа</button>
@@ -844,6 +991,8 @@ export default function App() {
               <button onClick={sendChat}>Send</button>
             </div>
           </div>
+            </>
+          )}
         </aside>
       </section>
     </main>

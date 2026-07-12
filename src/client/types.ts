@@ -58,7 +58,63 @@ export type PublicUser = {
     floorColor: string;
     wallColor: string;
   };
+  progress?: UserProgress;
   createdAt: number;
+};
+
+export type UserProgress = {
+  level: number;
+  xp: number;
+  careerLevel: number;
+  houseLevel: number;
+  incomePerHour: number;
+  lastIncomeClaimAt: number;
+  workAvailableAt: number;
+};
+
+export type NeighborhoodProgress = {
+  level: number;
+  xp: number;
+  xpToNext: number;
+  careerLevel: number;
+  houseLevel: number;
+  homeValue: number;
+  incomePerHour: number;
+  pendingIncome: number;
+  nextCareerCost: number | null;
+  nextCareerRequiredLevel: number | null;
+  nextHouseCost: number | null;
+  nextHouseRequiredLevel: number | null;
+  workAvailableAt: number;
+};
+
+export type NeighborhoodResident = {
+  plotId: number;
+  username: string;
+  isNpc: boolean;
+  level: number;
+  careerLevel: number;
+  houseLevel: number;
+  homeValue: number;
+  incomePerHour: number;
+  colors: {
+    walls: string;
+    roof: string;
+    trim: string;
+  };
+  carColor?: string;
+  avatar: PublicUser["avatar"];
+  lot: {
+    x: number;
+    z: number;
+    rotation: number;
+  };
+};
+
+export type NeighborhoodState = {
+  residents: NeighborhoodResident[];
+  progress: NeighborhoodProgress;
+  generatedAt: number;
 };
 
 export type HomeState = {
@@ -73,6 +129,6 @@ export type HomeState = {
 export type RemotePlayer = {
   id?: string;
   username: string;
-  position: { x: number; y: number; z: number; rotation?: number };
+  position: { x: number; y: number; z: number; rotation?: number; vehicle?: boolean };
   avatar?: PublicUser["avatar"];
 };

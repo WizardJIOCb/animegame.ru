@@ -1,4 +1,4 @@
-import type { Activity, CatalogItem, HomeState, PlacedItem, PublicUser } from "./types";
+import type { Activity, CatalogItem, HomeState, NeighborhoodProgress, NeighborhoodState, PlacedItem, PublicUser } from "./types";
 
 const TOKEN_KEY = "animegame_token";
 
@@ -59,12 +59,34 @@ export function getPlayers() {
   return request<{ players: Array<{ username: string; coins: number }> }>("/api/players");
 }
 
+export function getNeighborhood() {
+  return request<NeighborhoodState>("/api/neighborhood");
+}
+
+export function claimNeighborhoodIncome() {
+  return request<{ user: PublicUser; progress: NeighborhoodProgress; claimed: number }>("/api/neighborhood/claim-income", {
+    method: "POST"
+  });
+}
+
+export function upgradeCareer() {
+  return request<{ user: PublicUser; progress: NeighborhoodProgress; spent: number; claimed: number }>("/api/neighborhood/upgrade-career", {
+    method: "POST"
+  });
+}
+
+export function upgradeHouse() {
+  return request<{ user: PublicUser; progress: NeighborhoodProgress; spent: number }>("/api/neighborhood/upgrade-house", {
+    method: "POST"
+  });
+}
+
 export function getHome(username: string) {
   return request<HomeState>(`/api/home/${encodeURIComponent(username)}`);
 }
 
 export function earn(activityId: string) {
-  return request<{ user: PublicUser; activity: Activity }>("/api/earn", {
+  return request<{ user: PublicUser; activity: Activity; progress?: NeighborhoodProgress; xpEarned?: number; levelsGained?: number }>("/api/earn", {
     method: "POST",
     body: JSON.stringify({ activityId })
   });

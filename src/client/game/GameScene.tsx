@@ -1758,7 +1758,7 @@ function PetCompanion({
   );
 }
 
-function Player({
+export function Player({
   username,
   color,
   position,
