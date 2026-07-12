@@ -736,6 +736,32 @@ input:focus {
   transform: translateY(-3px);
 }
 
+.house-label.own {
+  border-color: rgba(94, 234, 212, 0.95);
+  background: rgba(12, 74, 67, 0.9);
+  box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.18), 0 10px 30px rgba(6, 78, 70, 0.3);
+}
+
+.house-label.own.active {
+  background: rgba(45, 212, 191, 0.96);
+  color: #052e2b;
+}
+
+.own-lot-tag {
+  padding: 5px 9px;
+  border: 1px solid rgba(94, 234, 212, 0.9);
+  border-radius: 999px;
+  background: rgba(6, 78, 70, 0.88);
+  color: #ecfdf9;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 0 7px 20px rgba(6, 78, 70, 0.25);
+  pointer-events: none;
+}
+
 .house-label b {
   font-size: 13px;
 }

@@ -53,6 +53,16 @@ function houseDepth(level: number) {
   return 5.4;
 }
 
+function houseWidth(level: number) {
+  if (level >= 5) return 7.6 + (Math.min(8, level) - 5) * 0.32;
+  return level >= 3 ? 6.2 : 5.2;
+}
+
+function houseHalfWidth(level: number) {
+  const sideExtensions = level >= 5 ? 2.3 : 0;
+  return (houseWidth(level) + sideExtensions) / 2 + 0.08;
+}
+
 function residentDoorPosition(resident: NeighborhoodResident) {
   const front = frontVector(resident.lot.rotation);
   const distance = houseDepth(resident.houseLevel) / 2 + 1.2;
@@ -87,7 +97,7 @@ function clampWalkPosition(position: THREE.Vector3, residents: NeighborhoodResid
   for (const resident of residents) {
     const local = position.clone().sub(new THREE.Vector3(resident.lot.x, 0, resident.lot.z));
     local.applyAxisAngle(UP, -resident.lot.rotation);
-    const halfWidth = resident.houseLevel >= 5 ? 4.4 : 3.4;
+    const halfWidth = houseHalfWidth(resident.houseLevel);
     const halfDepth = houseDepth(resident.houseLevel) / 2;
     if (Math.abs(local.x) < halfWidth && Math.abs(local.z) < halfDepth) {
       const pushX = halfWidth - Math.abs(local.x);
@@ -105,18 +115,46 @@ function clampWalkPosition(position: THREE.Vector3, residents: NeighborhoodResid
   return position;
 }
 
-function StreetCamera({ position, rotation, driving }: { position: THREE.Vector3; rotation: number; driving: boolean }) {
+function StreetCamera({
+  position,
+  rotation,
+  driving,
+  homePosition,
+  homeFront,
+  neighborDirection,
+  intro
+}: {
+  position: THREE.Vector3;
+  rotation: number;
+  driving: boolean;
+  homePosition: THREE.Vector3;
+  homeFront: THREE.Vector3;
+  neighborDirection: THREE.Vector3;
+  intro: boolean;
+}) {
   const { camera } = useThree();
   const lookTarget = useRef(new THREE.Vector3());
 
   useFrame((_, delta) => {
     const forward = frontVector(rotation);
-    const desired = driving
-      ? position.clone().addScaledVector(forward, -10).add(new THREE.Vector3(0, 7.2, 0))
-      : position.clone().add(new THREE.Vector3(11.5, 12.5, 15.5));
-    const target = driving
-      ? position.clone().addScaledVector(forward, 5)
-      : position.clone().add(new THREE.Vector3(0, 1.1, 0));
+    let desired: THREE.Vector3;
+    let target: THREE.Vector3;
+    if (driving) {
+      desired = position.clone().addScaledVector(forward, -10).add(new THREE.Vector3(0, 7.2, 0));
+      target = position.clone().addScaledVector(forward, 5);
+    } else if (intro) {
+      desired = homePosition.clone()
+        .addScaledVector(homeFront, 13.5)
+        .addScaledVector(neighborDirection, -7)
+        .add(new THREE.Vector3(0, 11.5, 0));
+      target = homePosition.clone().add(new THREE.Vector3(0, 1.65, 0));
+    } else {
+      desired = position.clone()
+        .addScaledVector(homeFront, 10.5)
+        .addScaledVector(neighborDirection, -5)
+        .add(new THREE.Vector3(0, 10.2, 0));
+      target = position.clone().addScaledVector(neighborDirection, 1.4).add(new THREE.Vector3(0, 1.1, 0));
+    }
     const damping = 1 - Math.exp(-delta * (driving ? 5.5 : 4));
     camera.position.lerp(desired, damping);
     lookTarget.current.lerp(target, damping);
@@ -189,6 +227,34 @@ function Fence({ length = 8 }: { length?: number }) {
   );
 }
 
+function OwnLotHighlight({ resident }: { resident: NeighborhoodResident }) {
+  const width = 11.25;
+  const depth = 10.95;
+  return (
+    <group position={[resident.lot.x, 0.018, resident.lot.z]} rotation={[0, resident.lot.rotation, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
+        <planeGeometry args={[width, depth]} />
+        <meshBasicMaterial color="#5eead4" transparent opacity={0.075} depthWrite={false} />
+      </mesh>
+      {[-depth / 2, depth / 2].map((z) => (
+        <mesh key={`z-${z}`} position={[0, 0.045, z]} raycast={() => null}>
+          <boxGeometry args={[width, 0.09, 0.1]} />
+          <meshBasicMaterial color="#2dd4bf" transparent opacity={0.9} />
+        </mesh>
+      ))}
+      {[-width / 2, width / 2].map((x) => (
+        <mesh key={`x-${x}`} position={[x, 0.045, 0]} raycast={() => null}>
+          <boxGeometry args={[0.1, 0.09, depth]} />
+          <meshBasicMaterial color="#2dd4bf" transparent opacity={0.9} />
+        </mesh>
+      ))}
+      <Html center position={[-4.25, 0.65, depth / 2]} distanceFactor={11} style={{ pointerEvents: "none" }}>
+        <div className="own-lot-tag">Мой участок</div>
+      </Html>
+    </group>
+  );
+}
+
 function Window({ x, y, z, rotation = 0 }: { x: number; y: number; z: number; rotation?: number }) {
   return (
     <group position={[x, y, z]} rotation={[0, rotation, 0]}>
@@ -236,12 +302,13 @@ function Scaffolding({ width, depth, height }: { width: number; depth: number; h
   );
 }
 
-function House({ resident, onEnter }: { resident: NeighborhoodResident; onEnter: (resident: NeighborhoodResident) => void }) {
+function House({ resident, isOwn, onEnter }: { resident: NeighborhoodResident; isOwn: boolean; onEnter: (resident: NeighborhoodResident) => void }) {
   const [hovered, setHovered] = useState(false);
   const level = THREE.MathUtils.clamp(resident.houseLevel, 1, 8);
-  const width = level >= 5 ? 7.6 + (level - 5) * 0.32 : level >= 3 ? 6.2 : 5.2;
+  const width = houseWidth(level);
   const depth = houseDepth(level);
   const bodyHeight = level >= 4 ? 4.5 + Math.max(0, level - 5) * 0.22 : level === 3 ? 3.05 : 2.45;
+  const labelHeight = bodyHeight + (level >= 8 ? 5.25 : level >= 7 ? 3.8 : 2.8);
   const wallColor = resident.colors.walls;
   const roofColor = resident.colors.roof;
   const trimColor = resident.colors.trim;
@@ -302,12 +369,12 @@ function House({ resident, onEnter }: { resident: NeighborhoodResident; onEnter:
           ) : null}
           {level >= 5 ? (
             <>
-              <mesh castShadow receiveShadow position={[-width / 2 - 1.15, 1.15, 0.35]}>
-                <boxGeometry args={[2.3, 2.3, depth * 0.74]} />
+              <mesh castShadow receiveShadow position={[-width / 2 - 0.575, 1.15, 0.35]}>
+                <boxGeometry args={[1.15, 2.3, depth * 0.74]} />
                 <meshStandardMaterial color={wallColor} roughness={0.84} />
               </mesh>
-              <mesh castShadow receiveShadow position={[width / 2 + 1.15, 1.15, 0.35]}>
-                <boxGeometry args={[2.3, 2.3, depth * 0.74]} />
+              <mesh castShadow receiveShadow position={[width / 2 + 0.575, 1.15, 0.35]}>
+                <boxGeometry args={[1.15, 2.3, depth * 0.74]} />
                 <meshStandardMaterial color={wallColor} roughness={0.84} />
               </mesh>
               <mesh castShadow position={[0, 0.52, depth / 2 + 1.2]}>
@@ -315,6 +382,53 @@ function House({ resident, onEnter }: { resident: NeighborhoodResident; onEnter:
                 <meshStandardMaterial color="#d9c19b" roughness={0.9} />
               </mesh>
             </>
+          ) : null}
+          {level >= 6 ? (
+            <group position={[0, 2.6, depth / 2 + 0.62]}>
+              <mesh castShadow receiveShadow>
+                <boxGeometry args={[3.4, 0.16, 1.25]} />
+                <meshStandardMaterial color="#d9c19b" roughness={0.88} />
+              </mesh>
+              <mesh castShadow position={[0, 0.55, 0.52]}>
+                <boxGeometry args={[3.45, 0.08, 0.08]} />
+                <meshStandardMaterial color={trimColor} roughness={0.65} />
+              </mesh>
+              {[-1.55, -0.52, 0.52, 1.55].map((x) => (
+                <mesh key={x} castShadow position={[x, 0.28, 0.52]}>
+                  <boxGeometry args={[0.06, 0.62, 0.06]} />
+                  <meshStandardMaterial color={trimColor} roughness={0.65} />
+                </mesh>
+              ))}
+            </group>
+          ) : null}
+          {level >= 7 ? (
+            <group position={[0, bodyHeight + 1.35, 0.62]}>
+              <mesh castShadow receiveShadow>
+                <boxGeometry args={[2.15, 1.28, 1.45]} />
+                <meshStandardMaterial color={wallColor} roughness={0.78} />
+              </mesh>
+              <Window x={0} y={0} z={0.76} />
+              <mesh castShadow position={[0, 0.98, 0]} rotation={[0, Math.PI / 4, 0]}>
+                <coneGeometry args={[1.7, 1.05, 4]} />
+                <meshStandardMaterial color={roofColor} roughness={0.7} />
+              </mesh>
+            </group>
+          ) : null}
+          {level >= 8 ? (
+            <group position={[0, bodyHeight + 2.3, -0.75]}>
+              <mesh castShadow receiveShadow>
+                <boxGeometry args={[1.75, 2.35, 1.75]} />
+                <meshStandardMaterial color={trimColor} roughness={0.72} />
+              </mesh>
+              <mesh castShadow position={[0, 1.72, 0]}>
+                <coneGeometry args={[1.55, 1.35, 6]} />
+                <meshStandardMaterial color={roofColor} metalness={0.12} roughness={0.6} />
+              </mesh>
+              <mesh position={[0, 2.62, 0]}>
+                <sphereGeometry args={[0.16, 12, 12]} />
+                <meshStandardMaterial color="#f6cf68" emissive="#f2aa3f" emissiveIntensity={0.35} />
+              </mesh>
+            </group>
           ) : null}
         </>
       ) : (
@@ -334,10 +448,10 @@ function House({ resident, onEnter }: { resident: NeighborhoodResident; onEnter:
         <boxGeometry args={[1.5, 0.07, 4.5]} />
         <meshStandardMaterial color="#d9c6a2" roughness={0.98} />
       </mesh>
-      <Html center position={[0, bodyHeight + 2.8, 0]} distanceFactor={13}>
-        <button className={hovered ? "house-label active" : "house-label"} type="button">
-          <b>{resident.username}</b>
-          <span>Дом {level} ур. · {resident.homeValue.toLocaleString("ru-RU")} ₽</span>
+      <Html center position={[0, labelHeight, 0]} distanceFactor={13} style={{ pointerEvents: "none" }}>
+        <button className={`${hovered ? "house-label active" : "house-label"}${isOwn ? " own" : ""}`} type="button">
+          <b>{isOwn ? "Мой дом" : resident.username}</b>
+          <span>{isOwn ? `${resident.username} · ` : ""}дом {level} ур. · {resident.homeValue.toLocaleString("ru-RU")} ₽</span>
         </button>
       </Html>
     </group>
@@ -543,6 +657,19 @@ function NeighborhoodWorld({
   onDrivingChange
 }: NeighborhoodSceneProps & { onDrivingChange: (driving: boolean) => void }) {
   const ownResident = residents.find((resident) => resident.username === user.username) ?? residents[0];
+  const viewOrigin = useMemo(() => new THREE.Vector3(ownResident.lot.x, 0, ownResident.lot.z), [ownResident]);
+  const viewOffset = useMemo(() => viewOrigin.clone().multiplyScalar(-1), [viewOrigin]);
+  const homeFront = useMemo(() => frontVector(ownResident.lot.rotation), [ownResident.lot.rotation]);
+  const neighborDirection = useMemo(() => {
+    const nearest = residents
+      .filter((resident) => resident.username !== ownResident.username)
+      .map((resident) => new THREE.Vector3(resident.lot.x - ownResident.lot.x, 0, resident.lot.z - ownResident.lot.z))
+      .sort((left, right) => left.lengthSq() - right.lengthSq())
+      .slice(0, 3);
+    const average = nearest.reduce((sum, direction) => sum.add(direction.clone().normalize()), new THREE.Vector3());
+    if (average.lengthSq() < 0.01) return rightVector(ownResident.lot.rotation);
+    return average.normalize();
+  }, [ownResident, residents]);
   const ownCarStart = useMemo(() => residentCarTransform(ownResident), [ownResident]);
   const defaultSpawn = useMemo(() => {
     const door = residentDoorPosition(ownResident);
@@ -563,12 +690,14 @@ function NeighborhoodWorld({
   const pendingVisit = useRef<NeighborhoodResident | null>(null);
   const drivingRef = useRef(false);
   const lastMoveSent = useRef(0);
+  const introViewRef = useRef(!initialPosition);
   const [renderPlayerPosition, setRenderPlayerPosition] = useState(() => playerPosition.current.clone());
   const [renderPlayerRotation, setRenderPlayerRotation] = useState(playerRotation.current);
   const [renderCarPosition, setRenderCarPosition] = useState(() => carPosition.current.clone());
   const [renderCarRotation, setRenderCarRotation] = useState(carRotation.current);
   const [moving, setMoving] = useState(false);
   const [driving, setDriving] = useState(false);
+  const [introView, setIntroView] = useState(!initialPosition);
 
   const ownOutfit = getCatalogItem(catalog, user.avatar.outfit);
   const ownCharacter = getCatalogItem(catalog, user.avatar.character);
@@ -629,6 +758,19 @@ function NeighborhoodWorld({
       document.body.style.cursor = "default";
     };
   }, [onDrivingChange, onToast]);
+
+  useEffect(() => {
+    const announcePosition = () => onMove({
+      x: playerPosition.current.x,
+      y: 0,
+      z: playerPosition.current.z,
+      rotation: playerRotation.current,
+      vehicle: false
+    });
+    announcePosition();
+    const retry = window.setTimeout(announcePosition, 650);
+    return () => window.clearTimeout(retry);
+  }, []);
 
   useFrame((_, delta) => {
     let didMove = false;
@@ -694,6 +836,10 @@ function NeighborhoodWorld({
     }
 
     setMoving(didMove);
+    if (didMove && introViewRef.current) {
+      introViewRef.current = false;
+      setIntroView(false);
+    }
     setRenderPlayerPosition(playerPosition.current.clone());
     setRenderPlayerRotation(playerRotation.current);
     setRenderCarPosition(carPosition.current.clone());
@@ -714,7 +860,7 @@ function NeighborhoodWorld({
 
   function handleGroundClick(event: ThreeEvent<MouseEvent>) {
     if (drivingRef.current) return;
-    const next = clampWalkPosition(event.point.clone().setY(0), residents);
+    const next = clampWalkPosition(event.point.clone().add(viewOrigin).setY(0), residents);
     pendingVisit.current = null;
     clickTarget.current = next;
   }
@@ -730,6 +876,8 @@ function NeighborhoodWorld({
   }
 
   const controlledCarTransform = { position: renderCarPosition, rotation: renderCarRotation };
+  const cameraPosition = (driving ? renderCarPosition : renderPlayerPosition).clone().sub(viewOrigin);
+  const displayHomePosition = new THREE.Vector3(0, 0, 0);
 
   return (
     <>
@@ -749,65 +897,81 @@ function NeighborhoodWorld({
         shadow-bias={-0.00012}
       />
       <Sparkles count={80} scale={[64, 10, 94]} size={1.35} speed={0.18} color="#fff2fb" opacity={0.52} />
-      <DistrictGeometry residents={residents} />
-      <mesh
-        receiveShadow
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, 0.012, 0]}
-        onClick={handleGroundClick}
-      >
-        <planeGeometry args={[80, 108]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
+      <group position={viewOffset}>
+        <DistrictGeometry residents={residents} />
+        <mesh
+          receiveShadow
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, 0.012, 0]}
+          onClick={handleGroundClick}
+        >
+          <planeGeometry args={[80, 108]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
 
-      {residents.map((resident) => (
-        <House key={resident.plotId} resident={resident} onEnter={handleHouseEnter} />
-      ))}
-      {residents.filter((resident) => resident.username !== user.username).map((resident) => (
-        <ResidentFigure key={`resident-${resident.plotId}`} resident={resident} />
-      ))}
-      {residents.filter((resident) => resident.username !== user.username).map((resident) => (
-        <Car
-          key={`car-${resident.plotId}`}
-          transform={residentCarTransform(resident)}
-          color={residentCarColor(resident)}
-        />
-      ))}
-      <Car transform={controlledCarTransform} color={residentCarColor(ownResident)} active={!driving} />
+        <OwnLotHighlight resident={ownResident} />
+        {residents.map((resident) => (
+          <House
+            key={resident.plotId}
+            resident={resident}
+            isOwn={resident.username === user.username}
+            onEnter={handleHouseEnter}
+          />
+        ))}
+        {residents.filter((resident) => resident.username !== user.username).map((resident) => (
+          <ResidentFigure key={`resident-${resident.plotId}`} resident={resident} />
+        ))}
+        {residents.filter((resident) => resident.username !== user.username).map((resident) => (
+          <Car
+            key={`car-${resident.plotId}`}
+            transform={residentCarTransform(resident)}
+            color={residentCarColor(resident)}
+          />
+        ))}
+        <Car transform={controlledCarTransform} color={residentCarColor(ownResident)} active={!driving} />
 
-      {!driving ? (
-        <Player
-          username={user.username}
-          color={ownOutfit?.color ?? "#ff8ab3"}
-          position={renderPlayerPosition}
-          isSelf
-          pet={ownPet}
-          character={ownCharacter}
-          outfit={ownOutfit}
-          moving={moving}
-          rotation={renderPlayerRotation}
-        />
-      ) : null}
-      {remoteVectors.map((player) => player.position.vehicle ? (
-        <Car
-          key={player.id ?? player.username}
-          transform={{ position: player.vector, rotation: player.position.rotation ?? 0 }}
-          color="#8b5cf6"
-        />
-      ) : (
-        <Player
-          key={player.id ?? player.username}
-          username={player.username}
-          color={player.outfit?.color ?? "#8b5cf6"}
-          position={player.vector}
-          pet={player.pet}
-          character={player.character}
-          outfit={player.outfit}
-          moving
-          rotation={player.position.rotation ?? 0}
-        />
-      ))}
-      <StreetCamera position={driving ? renderCarPosition : renderPlayerPosition} rotation={driving ? renderCarRotation : renderPlayerRotation} driving={driving} />
+        {!driving ? (
+          <Player
+            username={user.username}
+            color={ownOutfit?.color ?? "#ff8ab3"}
+            position={renderPlayerPosition}
+            isSelf
+            pet={ownPet}
+            character={ownCharacter}
+            outfit={ownOutfit}
+            moving={moving}
+            rotation={renderPlayerRotation}
+          />
+        ) : null}
+        {remoteVectors.map((player) => player.position.vehicle ? (
+          <Car
+            key={player.id ?? player.username}
+            transform={{ position: player.vector, rotation: player.position.rotation ?? 0 }}
+            color="#8b5cf6"
+          />
+        ) : (
+          <Player
+            key={player.id ?? player.username}
+            username={player.username}
+            color={player.outfit?.color ?? "#8b5cf6"}
+            position={player.vector}
+            pet={player.pet}
+            character={player.character}
+            outfit={player.outfit}
+            moving
+            rotation={player.position.rotation ?? 0}
+          />
+        ))}
+      </group>
+      <StreetCamera
+        position={cameraPosition}
+        rotation={driving ? renderCarRotation : renderPlayerRotation}
+        driving={driving}
+        homePosition={displayHomePosition}
+        homeFront={homeFront}
+        neighborDirection={neighborDirection}
+        intro={introView}
+      />
     </>
   );
 }
