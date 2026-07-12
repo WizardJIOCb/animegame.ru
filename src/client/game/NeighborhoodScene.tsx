@@ -2,19 +2,26 @@ import { Html, Sky, Sparkles, useGLTF } from "@react-three/drei";
 import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import type { CatalogItem, NeighborhoodResident, PublicUser, RemotePlayer } from "../types";
-import { Player } from "./GameScene";
+import type { CatalogItem, HomeState, NeighborhoodResident, PublicUser, RemotePlayer } from "../types";
+import { HomePlacedObject, Player } from "./GameScene";
 
 type WorldPosition = { x: number; y: number; z: number; rotation?: number; vehicle?: boolean };
 
 type NeighborhoodSceneProps = {
   user: PublicUser;
+  home: HomeState;
   catalog: CatalogItem[];
   residents: NeighborhoodResident[];
   remotePlayers: RemotePlayer[];
   initialPosition?: WorldPosition;
+  buildMode: boolean;
+  selectedPlacedId: string;
+  visitRequest?: { username: string; requestId: number };
   onMove: (position: WorldPosition) => void;
-  onVisit: (username: string) => void;
+  onInteriorChange: (username: string | null) => void;
+  onInteract: (itemId: string, action: string) => void;
+  onSelectPlaced: (instanceId: string) => void;
+  onBuildMove: (x: number, z: number) => void;
   onToast: (message: string) => void;
 };
 
@@ -23,10 +30,12 @@ type CarTransform = {
   rotation: number;
 };
 
-const WORLD_X = 34;
-const WORLD_Z = 49;
+const WORLD_X = 42;
+const WORLD_Z = 76;
 const WALK_SPEED = 5.4;
 const CAR_MAX_SPEED = 12.5;
+const DOOR_HALF_WIDTH = 0.72;
+const WALL_THICKNESS = 0.18;
 const UP = new THREE.Vector3(0, 1, 0);
 const CAR_COLORS = ["#f472b6", "#38bdf8", "#f59e0b", "#34d399", "#a78bfa", "#fb7185"];
 
@@ -47,20 +56,21 @@ function rightVector(rotation: number) {
 }
 
 function houseDepth(level: number) {
-  if (level <= 1) return 4.2;
-  if (level === 2) return 4.5;
-  if (level === 3) return 5;
-  return 5.4;
+  if (level <= 1) return 16;
+  if (level === 2) return 16.2;
+  if (level === 3) return 16.35;
+  return 16.5;
 }
 
 function houseWidth(level: number) {
-  if (level >= 5) return 7.6 + (Math.min(8, level) - 5) * 0.32;
-  return level >= 3 ? 6.2 : 5.2;
+  if (level <= 1) return 16.2;
+  if (level === 2) return 16.45;
+  if (level === 3) return 16.7;
+  return 16.9 + Math.max(0, Math.min(8, level) - 4) * 0.12;
 }
 
 function houseHalfWidth(level: number) {
-  const sideExtensions = level >= 5 ? 2.3 : 0;
-  return (houseWidth(level) + sideExtensions) / 2 + 0.08;
+  return houseWidth(level) / 2 + 0.08;
 }
 
 function residentDoorPosition(resident: NeighborhoodResident) {
@@ -73,14 +83,45 @@ function residentDoorPosition(resident: NeighborhoodResident) {
   );
 }
 
+function worldToHouseLocal(position: THREE.Vector3, resident: NeighborhoodResident) {
+  return position
+    .clone()
+    .sub(new THREE.Vector3(resident.lot.x, 0, resident.lot.z))
+    .applyAxisAngle(UP, -resident.lot.rotation);
+}
+
+function houseLocalToWorld(position: THREE.Vector3, resident: NeighborhoodResident) {
+  return position
+    .clone()
+    .applyAxisAngle(UP, resident.lot.rotation)
+    .add(new THREE.Vector3(resident.lot.x, 0, resident.lot.z));
+}
+
+function residentInteriorTarget(resident: NeighborhoodResident) {
+  return houseLocalToWorld(new THREE.Vector3(0, 0, houseDepth(resident.houseLevel) / 2 - 1.35), resident);
+}
+
+function residentAtPosition(position: THREE.Vector3, residents: NeighborhoodResident[]) {
+  return residents.find((resident) => {
+    const local = worldToHouseLocal(position, resident);
+    const insideRoom = Math.abs(local.x) < houseWidth(resident.houseLevel) / 2 - WALL_THICKNESS
+      && local.z > -houseDepth(resident.houseLevel) / 2 + WALL_THICKNESS
+      && local.z < houseDepth(resident.houseLevel) / 2 - WALL_THICKNESS;
+    const inDoorway = Math.abs(local.x) <= DOOR_HALF_WIDTH + 0.12
+      && local.z >= houseDepth(resident.houseLevel) / 2 - 0.35
+      && local.z <= houseDepth(resident.houseLevel) / 2 + 1;
+    return insideRoom || inDoorway;
+  });
+}
+
 function residentCarTransform(resident: NeighborhoodResident): CarTransform {
   const front = frontVector(resident.lot.rotation);
   const right = rightVector(resident.lot.rotation);
   return {
     position: new THREE.Vector3(
-      resident.lot.x + front.x * 10.2 + right.x * 2.1,
+      resident.lot.x + front.x * 14.2 + right.x * 2.1,
       0,
-      resident.lot.z + front.z * 10.2 + right.z * 2.1
+      resident.lot.z + front.z * 14.2 + right.z * 2.1
     ),
     rotation: resident.plotId % 2 === 0 ? Math.PI : 0
   };
@@ -90,29 +131,113 @@ function isRoad(x: number, z: number) {
   return (Math.abs(x) <= 8.6 || Math.abs(z) <= 5.7) && Math.abs(x) <= WORLD_X && Math.abs(z) <= WORLD_Z;
 }
 
-function clampWalkPosition(position: THREE.Vector3, residents: NeighborhoodResident[]) {
+function resolveWalkPosition(current: THREE.Vector3, requested: THREE.Vector3, residents: NeighborhoodResident[]) {
+  const position = requested.clone();
   position.x = THREE.MathUtils.clamp(position.x, -WORLD_X + 0.6, WORLD_X - 0.6);
   position.z = THREE.MathUtils.clamp(position.z, -WORLD_Z + 0.6, WORLD_Z - 0.6);
 
   for (const resident of residents) {
-    const local = position.clone().sub(new THREE.Vector3(resident.lot.x, 0, resident.lot.z));
-    local.applyAxisAngle(UP, -resident.lot.rotation);
+    const currentLocal = worldToHouseLocal(current, resident);
+    const nextLocal = worldToHouseLocal(position, resident);
     const halfWidth = houseHalfWidth(resident.houseLevel);
-    const halfDepth = houseDepth(resident.houseLevel) / 2;
-    if (Math.abs(local.x) < halfWidth && Math.abs(local.z) < halfDepth) {
-      const pushX = halfWidth - Math.abs(local.x);
-      const pushZ = halfDepth - Math.abs(local.z);
-      if (pushX < pushZ) {
-        local.x = Math.sign(local.x || 1) * halfWidth;
-      } else {
-        local.z = Math.sign(local.z || 1) * halfDepth;
+    const halfDepth = houseDepth(resident.houseLevel) / 2 + 0.08;
+    const currentInside = Math.abs(currentLocal.x) < halfWidth && Math.abs(currentLocal.z) < halfDepth;
+    const nextInside = Math.abs(nextLocal.x) < halfWidth && Math.abs(nextLocal.z) < halfDepth;
+
+    if (currentInside) {
+      if (!nextInside) {
+        const leavesThroughDoor = nextLocal.z >= halfDepth
+          && Math.abs(currentLocal.x) <= DOOR_HALF_WIDTH
+          && Math.abs(nextLocal.x) <= DOOR_HALF_WIDTH + 0.18;
+        if (leavesThroughDoor) continue;
+        nextLocal.x = THREE.MathUtils.clamp(nextLocal.x, -halfWidth + 0.28, halfWidth - 0.28);
+        nextLocal.z = THREE.MathUtils.clamp(nextLocal.z, -halfDepth + 0.28, halfDepth - 0.28);
+        return houseLocalToWorld(nextLocal, resident).setY(0);
       }
-      local.applyAxisAngle(UP, resident.lot.rotation);
-      position.set(resident.lot.x + local.x, 0, resident.lot.z + local.z);
+
+      nextLocal.x = THREE.MathUtils.clamp(nextLocal.x, -halfWidth + 0.28, halfWidth - 0.28);
+      nextLocal.z = Math.max(nextLocal.z, -halfDepth + 0.28);
+      if (nextLocal.z > halfDepth - 0.28 && Math.abs(nextLocal.x) > DOOR_HALF_WIDTH) {
+        nextLocal.z = halfDepth - 0.28;
+      }
+      return houseLocalToWorld(nextLocal, resident).setY(0);
     }
+
+    if (!nextInside) continue;
+    const entersThroughDoor = currentLocal.z >= halfDepth - 0.5
+      && Math.abs(currentLocal.x) <= DOOR_HALF_WIDTH + 0.2
+      && Math.abs(nextLocal.x) <= DOOR_HALF_WIDTH;
+    if (entersThroughDoor) continue;
+
+    const pushX = halfWidth - Math.abs(nextLocal.x);
+    const pushZ = halfDepth - Math.abs(nextLocal.z);
+    if (pushX < pushZ) {
+      nextLocal.x = Math.sign(nextLocal.x || currentLocal.x || 1) * halfWidth;
+    } else {
+      nextLocal.z = Math.sign(nextLocal.z || currentLocal.z || 1) * halfDepth;
+    }
+    return houseLocalToWorld(nextLocal, resident).setY(0);
   }
 
   return position;
+}
+
+function blocksInteriorPath(item: CatalogItem) {
+  const id = item.id.toLowerCase();
+  if (item.type !== "furniture" && item.type !== "outdoor") return false;
+  return !id.includes("door")
+    && !id.includes("rug")
+    && !id.includes("floor")
+    && !id.includes("grass")
+    && !id.includes("flower")
+    && !id.includes("path")
+    && !id.includes("water")
+    && !id.includes("terrain")
+    && !id.includes("platform")
+    && !id.includes("deck")
+    && !id.includes("lawn");
+}
+
+function resolveInteriorItemCollisions(
+  current: THREE.Vector3,
+  requested: THREE.Vector3,
+  residents: NeighborhoodResident[],
+  catalog: CatalogItem[]
+) {
+  const resident = residentAtPosition(requested, residents) ?? residentAtPosition(current, residents);
+  if (!resident) return requested;
+
+  const halfDepth = houseDepth(resident.houseLevel) / 2;
+  const candidate = worldToHouseLocal(requested, resident);
+  const currentLocal = worldToHouseLocal(current, resident);
+  const inExitCorridor = Math.abs(candidate.x) <= DOOR_HALF_WIDTH + 0.32 && candidate.z >= halfDepth - 2.85;
+  if (inExitCorridor) return requested;
+
+  for (const placed of resident.placedItems) {
+    const item = getCatalogItem(catalog, placed.itemId);
+    if (!item || !blocksInteriorPath(item)) continue;
+    const baseSize = item.size ?? [0.9, 0.9, 0.9];
+    const scale = placed.scale ?? 1;
+    const halfX = baseSize[0] * scale / 2 + 0.22;
+    const halfZ = baseSize[2] * scale / 2 + 0.22;
+    const itemSpace = candidate.clone().sub(new THREE.Vector3(placed.x, 0, placed.z)).applyAxisAngle(UP, -placed.rotation);
+    if (Math.abs(itemSpace.x) > halfX || Math.abs(itemSpace.z) > halfZ) continue;
+
+    const currentItemSpace = currentLocal.clone().sub(new THREE.Vector3(placed.x, 0, placed.z)).applyAxisAngle(UP, -placed.rotation);
+    const pushX = halfX - Math.abs(itemSpace.x);
+    const pushZ = halfZ - Math.abs(itemSpace.z);
+    if (pushX < pushZ) {
+      itemSpace.x = Math.sign(currentItemSpace.x || itemSpace.x || 1) * halfX;
+    } else {
+      itemSpace.z = Math.sign(currentItemSpace.z || itemSpace.z || 1) * halfZ;
+    }
+    const adjusted = itemSpace
+      .applyAxisAngle(UP, placed.rotation)
+      .add(new THREE.Vector3(placed.x, 0, placed.z));
+    candidate.copy(adjusted);
+  }
+
+  return houseLocalToWorld(candidate, resident).setY(0);
 }
 
 function StreetCamera({
@@ -122,7 +247,8 @@ function StreetCamera({
   homePosition,
   homeFront,
   neighborDirection,
-  intro
+  intro,
+  inside
 }: {
   position: THREE.Vector3;
   rotation: number;
@@ -131,6 +257,7 @@ function StreetCamera({
   homeFront: THREE.Vector3;
   neighborDirection: THREE.Vector3;
   intro: boolean;
+  inside: boolean;
 }) {
   const { camera } = useThree();
   const lookTarget = useRef(new THREE.Vector3());
@@ -142,6 +269,13 @@ function StreetCamera({
     if (driving) {
       desired = position.clone().addScaledVector(forward, -10).add(new THREE.Vector3(0, 7.2, 0));
       target = position.clone().addScaledVector(forward, 5);
+    } else if (inside) {
+      const side = rightVector(Math.atan2(homeFront.x, homeFront.z));
+      desired = homePosition.clone()
+        .addScaledVector(homeFront, intro ? 8.2 : 7)
+        .addScaledVector(side, intro ? 2.2 : 1.45)
+        .add(new THREE.Vector3(0, intro ? 6.2 : 5.25, 0));
+      target = position.clone().add(new THREE.Vector3(0, 1.05, 0));
     } else if (intro) {
       desired = homePosition.clone()
         .addScaledVector(homeFront, 13.5)
@@ -228,8 +362,8 @@ function Fence({ length = 8 }: { length?: number }) {
 }
 
 function OwnLotHighlight({ resident }: { resident: NeighborhoodResident }) {
-  const width = 11.25;
-  const depth = 10.95;
+  const width = 19.35;
+  const depth = 26.4;
   return (
     <group position={[resident.lot.x, 0.018, resident.lot.z]} rotation={[0, resident.lot.rotation, 0]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
@@ -458,6 +592,218 @@ function House({ resident, isOwn, onEnter }: { resident: NeighborhoodResident; i
   );
 }
 
+type SeamlessHouseProps = {
+  resident: NeighborhoodResident;
+  isOwn: boolean;
+  active: boolean;
+  catalog: CatalogItem[];
+  buildMode: boolean;
+  selectedPlacedId: string;
+  onEnter: (resident: NeighborhoodResident) => void;
+  onFloorClick: (event: ThreeEvent<MouseEvent>, resident: NeighborhoodResident) => void;
+  onInteract: (itemId: string, action: string) => void;
+  onSelectPlaced: (instanceId: string) => void;
+};
+
+function SeamlessHouse({
+  resident,
+  isOwn,
+  active,
+  catalog,
+  buildMode,
+  selectedPlacedId,
+  onEnter,
+  onFloorClick,
+  onInteract,
+  onSelectPlaced
+}: SeamlessHouseProps) {
+  const [hovered, setHovered] = useState(false);
+  const level = THREE.MathUtils.clamp(resident.houseLevel, 1, 8);
+  const width = houseWidth(level);
+  const depth = houseDepth(level);
+  const bodyHeight = level >= 4 ? 4.7 + Math.max(0, level - 5) * 0.22 : level === 3 ? 3.35 : 2.85;
+  const visibleWallHeight = active ? Math.min(bodyHeight, 2.85) : bodyHeight;
+  const labelHeight = bodyHeight + (level >= 8 ? 5.25 : level >= 7 ? 3.8 : 2.8);
+  const wallColor = resident.colors.walls;
+  const interiorWallColor = resident.homeStyle.wallColor;
+  const floorColor = resident.homeStyle.floorColor;
+  const roofColor = resident.colors.roof;
+  const trimColor = resident.colors.trim;
+  const frontSegmentWidth = width / 2 - DOOR_HALF_WIDTH;
+
+  return (
+    <group
+      position={[resident.lot.x, 0, resident.lot.z]}
+      rotation={[0, resident.lot.rotation, 0]}
+      onPointerEnter={() => {
+        setHovered(true);
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerLeave={() => {
+        setHovered(false);
+        document.body.style.cursor = "default";
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        onEnter(resident);
+      }}
+    >
+      <mesh receiveShadow position={[0, -0.08, 0]}>
+        <boxGeometry args={[width + 0.7, 0.16, depth + 0.7]} />
+        <meshStandardMaterial color={level === 1 ? "#b8b5ad" : "#d8d1c5"} roughness={0.95} />
+      </mesh>
+      <mesh
+        receiveShadow
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, 0.012, 0]}
+        onClick={(event) => {
+          event.stopPropagation();
+          onFloorClick(event, resident);
+        }}
+      >
+        <planeGeometry args={[width - 0.34, depth - 0.34]} />
+        <meshStandardMaterial color={floorColor} roughness={0.88} />
+      </mesh>
+
+      <mesh castShadow receiveShadow position={[0, visibleWallHeight / 2, -depth / 2]}>
+        <boxGeometry args={[width, visibleWallHeight, WALL_THICKNESS]} />
+        <meshStandardMaterial color={interiorWallColor} roughness={0.84} />
+      </mesh>
+      {[-width / 2, width / 2].map((x) => (
+        <mesh key={`side-${x}`} castShadow receiveShadow position={[x, visibleWallHeight / 2, 0]}>
+          <boxGeometry args={[WALL_THICKNESS, visibleWallHeight, depth]} />
+          <meshStandardMaterial color={interiorWallColor} roughness={0.84} />
+        </mesh>
+      ))}
+      {[-1, 1].map((side) => (
+        <mesh
+          key={`front-${side}`}
+          castShadow
+          receiveShadow
+          position={[side * (DOOR_HALF_WIDTH + frontSegmentWidth / 2), visibleWallHeight / 2, depth / 2]}
+        >
+          <boxGeometry args={[frontSegmentWidth, visibleWallHeight, WALL_THICKNESS]} />
+          <meshStandardMaterial color={wallColor} roughness={0.84} />
+        </mesh>
+      ))}
+      <mesh castShadow position={[0, 2.38, depth / 2]}>
+        <boxGeometry args={[DOOR_HALF_WIDTH * 2 + 0.22, 0.22, WALL_THICKNESS + 0.04]} />
+        <meshStandardMaterial color={trimColor} roughness={0.68} />
+      </mesh>
+      <mesh castShadow position={[-DOOR_HALF_WIDTH + 0.08, 1.08, depth / 2 + 0.42]} rotation={[0, -1.16, 0]}>
+        <boxGeometry args={[DOOR_HALF_WIDTH * 1.82, 2.12, 0.12]} />
+        <meshStandardMaterial color={trimColor} roughness={0.72} />
+      </mesh>
+      {active ? <pointLight position={[0, 2.35, 0]} color="#ffd7aa" intensity={1.2} distance={10} /> : null}
+
+      {!active ? (
+        <>
+          <mesh castShadow position={[0, bodyHeight + 1.15, 0]} rotation={[0, Math.PI / 4, 0]}>
+            <coneGeometry args={[Math.max(width, depth) * 0.73, 2.35, 4]} />
+            <meshStandardMaterial color={roofColor} roughness={0.72} />
+          </mesh>
+          <Window x={-4.15} y={1.55} z={depth / 2 + 0.105} />
+          <Window x={4.15} y={1.55} z={depth / 2 + 0.105} />
+          {level >= 4 ? (
+            <>
+              <Window x={-4.15} y={3.45} z={depth / 2 + 0.105} />
+              <Window x={4.15} y={3.45} z={depth / 2 + 0.105} />
+              <mesh castShadow position={[-width * 0.3, bodyHeight + 1.3, -1.4]}>
+                <boxGeometry args={[0.65, 1.9, 0.72]} />
+                <meshStandardMaterial color="#8b5a45" roughness={0.86} />
+              </mesh>
+            </>
+          ) : null}
+          {level >= 5 ? (
+            <mesh castShadow position={[0, 0.48, depth / 2 + 1.25]}>
+              <boxGeometry args={[5.6, 0.22, 2.5]} />
+              <meshStandardMaterial color="#d9c19b" roughness={0.9} />
+            </mesh>
+          ) : null}
+          {level >= 6 ? (
+            <group position={[0, 2.75, depth / 2 + 0.62]}>
+              <mesh castShadow receiveShadow>
+                <boxGeometry args={[5.2, 0.16, 1.25]} />
+                <meshStandardMaterial color="#d9c19b" roughness={0.88} />
+              </mesh>
+              <mesh castShadow position={[0, 0.58, 0.52]}>
+                <boxGeometry args={[5.25, 0.08, 0.08]} />
+                <meshStandardMaterial color={trimColor} roughness={0.65} />
+              </mesh>
+              {[-2.45, -0.82, 0.82, 2.45].map((x) => (
+                <mesh key={x} castShadow position={[x, 0.3, 0.52]}>
+                  <boxGeometry args={[0.07, 0.66, 0.07]} />
+                  <meshStandardMaterial color={trimColor} roughness={0.65} />
+                </mesh>
+              ))}
+            </group>
+          ) : null}
+          {level >= 7 ? (
+            <group position={[0, bodyHeight + 1.45, 0.8]}>
+              <mesh castShadow receiveShadow>
+                <boxGeometry args={[3.1, 1.45, 2.1]} />
+                <meshStandardMaterial color={wallColor} roughness={0.78} />
+              </mesh>
+              <Window x={0} y={0} z={1.1} />
+              <mesh castShadow position={[0, 1.12, 0]} rotation={[0, Math.PI / 4, 0]}>
+                <coneGeometry args={[2.2, 1.2, 4]} />
+                <meshStandardMaterial color={roofColor} roughness={0.7} />
+              </mesh>
+            </group>
+          ) : null}
+          {level >= 8 ? (
+            <group position={[0, bodyHeight + 2.7, -1.4]}>
+              <mesh castShadow receiveShadow>
+                <boxGeometry args={[2.15, 2.8, 2.15]} />
+                <meshStandardMaterial color={trimColor} roughness={0.72} />
+              </mesh>
+              <mesh castShadow position={[0, 2.15, 0]}>
+                <coneGeometry args={[1.85, 1.55, 6]} />
+                <meshStandardMaterial color={roofColor} metalness={0.12} roughness={0.6} />
+              </mesh>
+            </group>
+          ) : null}
+        </>
+      ) : null}
+
+      {level <= 2 && !active ? <Scaffolding width={width + 0.55} depth={depth + 0.55} height={3.25} /> : null}
+      <mesh receiveShadow position={[0, 0.035, depth / 2 + 2.25]}>
+        <boxGeometry args={[1.5, 0.07, 4.5]} />
+        <meshStandardMaterial color="#d9c6a2" roughness={0.98} />
+      </mesh>
+
+      {active ? resident.placedItems.map((placed) => {
+        const item = getCatalogItem(catalog, placed.itemId);
+        if (!item) return null;
+        return (
+          <HomePlacedObject
+            key={placed.instanceId}
+            instanceId={placed.instanceId}
+            item={item}
+            x={placed.x}
+            z={placed.z}
+            rotation={placed.rotation}
+            itemScale={placed.scale ?? 1}
+            selected={isOwn && selectedPlacedId === placed.instanceId}
+            buildMode={isOwn && buildMode}
+            onInteract={(nextItem) => onInteract(nextItem.id, nextItem.type === "furniture" ? "use" : "look")}
+            onSelect={onSelectPlaced}
+          />
+        );
+      }) : null}
+
+      {!active ? (
+        <Html center position={[0, labelHeight, 0]} distanceFactor={13} style={{ pointerEvents: "none" }}>
+          <button className={`${hovered ? "house-label active" : "house-label"}${isOwn ? " own" : ""}`} type="button">
+            <b>{isOwn ? "Мой дом" : resident.username}</b>
+            <span>{isOwn ? `${resident.username} · ` : ""}дом {level} ур. · {resident.homeValue.toLocaleString("ru-RU")} ₽</span>
+          </button>
+        </Html>
+      ) : null}
+    </group>
+  );
+}
+
 function ResidentFigure({ resident }: { resident: NeighborhoodResident }) {
   const front = frontVector(resident.lot.rotation);
   const right = rightVector(resident.lot.rotation);
@@ -554,7 +900,7 @@ function DistrictGeometry({ residents }: { residents: NeighborhoodResident[] }) 
     const right = rightVector(resident.lot.rotation);
     const center = new THREE.Vector3(resident.lot.x, 0, resident.lot.z);
     return [-1, 1].map((direction, index) => {
-      const position = center.clone().addScaledVector(right, direction * 5.1).addScaledVector(front, -0.4 + index * 0.8);
+      const position = center.clone().addScaledVector(right, direction * 9.15).addScaledVector(front, -1.1 + index * 1.5);
       return { position: [position.x, 0, position.z] as [number, number, number], autumn: (resident.plotId + index) % 4 === 0 };
     });
   }), [residents]);
@@ -562,37 +908,37 @@ function DistrictGeometry({ residents }: { residents: NeighborhoodResident[] }) 
   return (
     <>
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.08, 0]}>
-        <planeGeometry args={[82, 112]} />
+        <planeGeometry args={[116, 170]} />
         <meshStandardMaterial color="#78ad68" roughness={1} />
       </mesh>
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.035, 0]}>
-        <planeGeometry args={[12.4, 104]} />
+        <planeGeometry args={[12.4, 164]} />
         <meshStandardMaterial color="#343942" roughness={0.96} />
       </mesh>
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.026, 0]}>
-        <planeGeometry args={[76, 11.2]} />
+        <planeGeometry args={[90, 11.2]} />
         <meshStandardMaterial color="#343942" roughness={0.96} />
       </mesh>
       {[-7.35, 7.35].map((x) => (
         <mesh key={x} receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[x, 0, 0]}>
-          <planeGeometry args={[2.2, 104]} />
+          <planeGeometry args={[2.2, 164]} />
           <meshStandardMaterial color="#d5d2ca" roughness={0.97} />
         </mesh>
       ))}
       {[-6.25, 6.25].map((x) => (
         <mesh key={`curb-${x}`} castShadow receiveShadow position={[x, 0.09, 0]}>
-          <boxGeometry args={[0.18, 0.18, 104]} />
+          <boxGeometry args={[0.18, 0.18, 164]} />
           <meshStandardMaterial color="#b8b6b0" roughness={0.96} />
         </mesh>
       ))}
-      {Array.from({ length: 18 }, (_, index) => (
-        <mesh key={`line-${index}`} position={[0, 0.005, -49 + index * 6]}>
+      {Array.from({ length: 27 }, (_, index) => (
+        <mesh key={`line-${index}`} position={[0, 0.005, -78 + index * 6]}>
           <boxGeometry args={[0.16, 0.025, 3.2]} />
           <meshStandardMaterial color="#f7e7a0" roughness={0.8} />
         </mesh>
       ))}
-      {Array.from({ length: 12 }, (_, index) => (
-        <mesh key={`cross-${index}`} position={[-32 + index * 6, 0.007, 0]}>
+      {Array.from({ length: 15 }, (_, index) => (
+        <mesh key={`cross-${index}`} position={[-42 + index * 6, 0.007, 0]}>
           <boxGeometry args={[3.2, 0.025, 0.16]} />
           <meshStandardMaterial color="#f7e7a0" roughness={0.8} />
         </mesh>
@@ -601,22 +947,23 @@ function DistrictGeometry({ residents }: { residents: NeighborhoodResident[] }) 
         const front = frontVector(resident.lot.rotation);
         const right = rightVector(resident.lot.rotation);
         const base = new THREE.Vector3(resident.lot.x, 0, resident.lot.z);
-        const fencePosition = base.clone().addScaledVector(front, 5.45);
+        const halfDepth = houseDepth(resident.houseLevel) / 2;
+        const fencePosition = base.clone().addScaledVector(front, halfDepth + 4.15);
         return (
           <group key={`yard-${resident.plotId}`}>
             <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[resident.lot.x, -0.005, resident.lot.z]}>
-              <planeGeometry args={[11.5, 11.2]} />
+              <planeGeometry args={[27, 19.5]} />
               <meshStandardMaterial color={resident.plotId % 3 === 0 ? "#82b96d" : "#8ec578"} roughness={1} />
             </mesh>
             <group position={fencePosition} rotation={[0, resident.lot.rotation, 0]}>
-              <group position={[-3.9, 0, 0]}><Fence length={3.1} /></group>
-              <group position={[3.9, 0, 0]}><Fence length={3.1} /></group>
+              <group position={[-5.95, 0, 0]}><Fence length={7.05} /></group>
+              <group position={[5.95, 0, 0]}><Fence length={7.05} /></group>
             </group>
-            <mesh receiveShadow position={base.clone().addScaledVector(front, 4.2)} rotation={[0, resident.lot.rotation, 0]}>
-              <boxGeometry args={[1.55, 0.055, 4.8]} />
+            <mesh receiveShadow position={base.clone().addScaledVector(front, halfDepth + 2.05)} rotation={[0, resident.lot.rotation, 0]}>
+              <boxGeometry args={[1.55, 0.055, 4.2]} />
               <meshStandardMaterial color="#d7c7a8" roughness={1} />
             </mesh>
-            <mesh castShadow position={base.clone().addScaledVector(front, 5.75).addScaledVector(right, -2.25)}>
+            <mesh castShadow position={base.clone().addScaledVector(front, halfDepth + 4.45).addScaledVector(right, -2.25)}>
               <boxGeometry args={[0.52, 1.05, 0.42]} />
               <meshStandardMaterial color={resident.colors.roof} roughness={0.62} />
             </mesh>
@@ -626,16 +973,16 @@ function DistrictGeometry({ residents }: { residents: NeighborhoodResident[] }) 
       {treePositions.map((tree, index) => (
         <Tree key={index} position={tree.position} scale={0.78 + (index % 3) * 0.08} autumn={tree.autumn} />
       ))}
-      {[-42, -28, -14, 14, 28, 42].flatMap((z) => [
+      {[-70, -50, -30, -10, 10, 30, 50, 70].flatMap((z) => [
         <StreetLamp key={`left-${z}`} position={[-5.65, 0, z]} />,
         <StreetLamp key={`right-${z}`} position={[5.65, 0, z]} />
       ])}
       {Array.from({ length: 14 }, (_, index) => {
         const side = index % 2 === 0 ? -1 : 1;
-        const z = -44 + (index % 7) * 14.5;
+        const z = -70 + (index % 7) * 23;
         const height = 8 + (index % 4) * 3.2;
         return (
-          <mesh key={`city-${index}`} castShadow position={[side * (39 + (index % 3) * 3.5), height / 2 - 0.1, z]}>
+          <mesh key={`city-${index}`} castShadow position={[side * (50 + (index % 3) * 3.5), height / 2 - 0.1, z]}>
             <boxGeometry args={[8, height, 8]} />
             <meshStandardMaterial color={index % 3 === 0 ? "#9faec1" : "#b8b0c4"} roughness={0.92} />
           </mesh>
@@ -647,21 +994,34 @@ function DistrictGeometry({ residents }: { residents: NeighborhoodResident[] }) 
 
 function NeighborhoodWorld({
   user,
+  home,
   catalog,
   residents,
   remotePlayers,
   initialPosition,
+  buildMode,
+  selectedPlacedId,
+  visitRequest,
   onMove,
-  onVisit,
+  onInteriorChange,
+  onInteract,
+  onSelectPlaced,
+  onBuildMove,
   onToast,
   onDrivingChange
 }: NeighborhoodSceneProps & { onDrivingChange: (driving: boolean) => void }) {
-  const ownResident = residents.find((resident) => resident.username === user.username) ?? residents[0];
+  const worldResidents = useMemo(() => residents.map((resident) => resident.username === user.username ? {
+    ...resident,
+    avatar: home.avatar,
+    homeStyle: home.homeStyle ?? resident.homeStyle,
+    placedItems: home.placedItems
+  } : resident), [home.avatar, home.homeStyle, home.placedItems, residents, user.username]);
+  const ownResident = worldResidents.find((resident) => resident.username === user.username) ?? worldResidents[0];
   const viewOrigin = useMemo(() => new THREE.Vector3(ownResident.lot.x, 0, ownResident.lot.z), [ownResident]);
   const viewOffset = useMemo(() => viewOrigin.clone().multiplyScalar(-1), [viewOrigin]);
   const homeFront = useMemo(() => frontVector(ownResident.lot.rotation), [ownResident.lot.rotation]);
   const neighborDirection = useMemo(() => {
-    const nearest = residents
+    const nearest = worldResidents
       .filter((resident) => resident.username !== ownResident.username)
       .map((resident) => new THREE.Vector3(resident.lot.x - ownResident.lot.x, 0, resident.lot.z - ownResident.lot.z))
       .sort((left, right) => left.lengthSq() - right.lengthSq())
@@ -669,28 +1029,29 @@ function NeighborhoodWorld({
     const average = nearest.reduce((sum, direction) => sum.add(direction.clone().normalize()), new THREE.Vector3());
     if (average.lengthSq() < 0.01) return rightVector(ownResident.lot.rotation);
     return average.normalize();
-  }, [ownResident, residents]);
+  }, [ownResident, worldResidents]);
   const ownCarStart = useMemo(() => residentCarTransform(ownResident), [ownResident]);
   const defaultSpawn = useMemo(() => {
-    const door = residentDoorPosition(ownResident);
-    const front = frontVector(ownResident.lot.rotation);
-    return door.addScaledVector(front, 1.25);
+    return houseLocalToWorld(new THREE.Vector3(0, 0, houseDepth(ownResident.houseLevel) / 2 - 2.15), ownResident);
   }, [ownResident]);
   const playerPosition = useRef(new THREE.Vector3(
     initialPosition?.x ?? defaultSpawn.x,
     0,
     initialPosition?.z ?? defaultSpawn.z
   ));
-  const playerRotation = useRef(initialPosition?.rotation ?? ownResident.lot.rotation + Math.PI);
+  const playerRotation = useRef(initialPosition?.rotation ?? ownResident.lot.rotation);
   const carPosition = useRef(ownCarStart.position.clone());
   const carRotation = useRef(ownCarStart.rotation);
   const carSpeed = useRef(0);
   const keys = useRef(new Set<string>());
   const clickTarget = useRef<THREE.Vector3 | null>(null);
+  const clickPath = useRef<THREE.Vector3[]>([]);
   const pendingVisit = useRef<NeighborhoodResident | null>(null);
+  const handledVisitRequest = useRef<number | null>(null);
   const drivingRef = useRef(false);
   const lastMoveSent = useRef(0);
   const introViewRef = useRef(!initialPosition);
+  const activeInteriorRef = useRef<NeighborhoodResident | null>(initialPosition ? residentAtPosition(playerPosition.current, worldResidents) ?? null : ownResident);
   const [renderPlayerPosition, setRenderPlayerPosition] = useState(() => playerPosition.current.clone());
   const [renderPlayerRotation, setRenderPlayerRotation] = useState(playerRotation.current);
   const [renderCarPosition, setRenderCarPosition] = useState(() => carPosition.current.clone());
@@ -698,6 +1059,7 @@ function NeighborhoodWorld({
   const [moving, setMoving] = useState(false);
   const [driving, setDriving] = useState(false);
   const [introView, setIntroView] = useState(!initialPosition);
+  const [activeInterior, setActiveInterior] = useState<NeighborhoodResident | null>(activeInteriorRef.current);
 
   const ownOutfit = getCatalogItem(catalog, user.avatar.outfit);
   const ownCharacter = getCatalogItem(catalog, user.avatar.character);
@@ -710,6 +1072,26 @@ function NeighborhoodWorld({
     character: getCatalogItem(catalog, player.avatar?.character),
     pet: getCatalogItem(catalog, player.avatar?.pet)
   })), [catalog, remotePlayers]);
+
+  function startClickRoute(points: THREE.Vector3[]) {
+    const route = points.filter((point, index) => index === 0 || point.distanceTo(points[index - 1]) > 0.08);
+    clickTarget.current = route.shift() ?? null;
+    clickPath.current = route;
+  }
+
+  function routeToResident(resident: NeighborhoodResident) {
+    const currentInterior = activeInteriorRef.current;
+    const route: THREE.Vector3[] = [];
+    if (currentInterior && currentInterior.username !== resident.username) {
+      route.push(residentDoorPosition(currentInterior));
+    }
+    if (!currentInterior || currentInterior.username !== resident.username) {
+      route.push(residentDoorPosition(resident));
+    }
+    route.push(residentInteriorTarget(resident));
+    pendingVisit.current = resident;
+    startClickRoute(route);
+  }
 
   useEffect(() => {
     const setDriveState = (next: boolean) => {
@@ -740,6 +1122,7 @@ function NeighborhoodWorld({
 
       if (playerPosition.current.distanceTo(carPosition.current) <= 2.65) {
         clickTarget.current = null;
+        clickPath.current = [];
         pendingVisit.current = null;
         playerPosition.current.copy(carPosition.current);
         playerRotation.current = carRotation.current;
@@ -768,9 +1151,35 @@ function NeighborhoodWorld({
       vehicle: false
     });
     announcePosition();
+    onInteriorChange(activeInteriorRef.current?.username ?? null);
     const retry = window.setTimeout(announcePosition, 650);
     return () => window.clearTimeout(retry);
   }, []);
+
+  useEffect(() => {
+    const currentName = activeInteriorRef.current?.username;
+    if (!currentName) return;
+    const refreshed = worldResidents.find((resident) => resident.username === currentName) ?? null;
+    activeInteriorRef.current = refreshed;
+    setActiveInterior(refreshed);
+  }, [worldResidents]);
+
+  useEffect(() => {
+    if (!visitRequest) return;
+    if (handledVisitRequest.current === visitRequest.requestId) return;
+    handledVisitRequest.current = visitRequest.requestId;
+    const resident = worldResidents.find((entry) => entry.username === visitRequest.username);
+    if (!resident) {
+      onToast("Дом этого соседа не найден на улице");
+      return;
+    }
+    if (drivingRef.current) {
+      onToast("Сначала выйдите из машины");
+      return;
+    }
+    routeToResident(resident);
+    onToast(resident.username === user.username ? "Идём домой" : `Идём в гости к ${resident.username}`);
+  }, [onToast, user.username, visitRequest, worldResidents]);
 
   useFrame((_, delta) => {
     let didMove = false;
@@ -807,13 +1216,14 @@ function NeighborhoodWorld({
       let direction = keyboardDirection;
       if (keyboardDirection.lengthSq() > 0) {
         clickTarget.current = null;
+        clickPath.current = [];
         pendingVisit.current = null;
       } else if (clickTarget.current) {
         direction = clickTarget.current.clone().sub(playerPosition.current);
         direction.y = 0;
         if (direction.length() < 0.16) {
           playerPosition.current.copy(clickTarget.current);
-          clickTarget.current = null;
+          clickTarget.current = clickPath.current.shift() ?? null;
           direction.set(0, 0, 0);
         }
       }
@@ -822,17 +1232,26 @@ function NeighborhoodWorld({
         direction.normalize();
         playerRotation.current = Math.atan2(direction.x, direction.z);
         const nextPosition = playerPosition.current.clone().addScaledVector(direction, WALK_SPEED * delta);
-        clampWalkPosition(nextPosition, residents);
-        playerPosition.current.copy(nextPosition);
+        const currentPosition = playerPosition.current.clone();
+        const shellResolved = resolveWalkPosition(currentPosition, nextPosition, worldResidents);
+        playerPosition.current.copy(resolveInteriorItemCollisions(currentPosition, shellResolved, worldResidents, catalog));
         didMove = true;
       }
+    }
 
-      const visit = pendingVisit.current;
-      if (visit && playerPosition.current.distanceTo(residentDoorPosition(visit)) < 1.45) {
-        pendingVisit.current = null;
-        clickTarget.current = null;
-        onVisit(visit.username);
+    const nextInterior = residentAtPosition(playerPosition.current, worldResidents) ?? null;
+    if (nextInterior?.username !== activeInteriorRef.current?.username) {
+      activeInteriorRef.current = nextInterior;
+      setActiveInterior(nextInterior);
+      onInteriorChange(nextInterior?.username ?? null);
+      if (nextInterior) {
+        onToast(nextInterior.username === user.username ? "Вы дома" : `Вы в гостях у ${nextInterior.username}`);
+      } else {
+        onToast("Вы вышли на улицу");
       }
+    }
+    if (pendingVisit.current && nextInterior?.username === pendingVisit.current.username) {
+      pendingVisit.current = null;
     }
 
     setMoving(didMove);
@@ -860,9 +1279,30 @@ function NeighborhoodWorld({
 
   function handleGroundClick(event: ThreeEvent<MouseEvent>) {
     if (drivingRef.current) return;
-    const next = clampWalkPosition(event.point.clone().add(viewOrigin).setY(0), residents);
     pendingVisit.current = null;
-    clickTarget.current = next;
+    const worldPoint = event.point.clone().add(viewOrigin).setY(0);
+    const currentInterior = activeInteriorRef.current;
+    const targetInterior = residentAtPosition(worldPoint, worldResidents);
+    if (currentInterior && targetInterior?.username !== currentInterior.username) {
+      startClickRoute([residentDoorPosition(currentInterior), worldPoint]);
+      return;
+    }
+    startClickRoute([worldPoint]);
+  }
+
+  function handleInteriorFloorClick(event: ThreeEvent<MouseEvent>, resident: NeighborhoodResident) {
+    if (drivingRef.current) return;
+    const worldPoint = event.point.clone().add(viewOrigin).setY(0);
+    if (buildMode && resident.username === user.username && activeInteriorRef.current?.username === user.username) {
+      const local = worldToHouseLocal(worldPoint, resident);
+      onBuildMove(
+        THREE.MathUtils.clamp(local.x, -7.6, 7.6),
+        THREE.MathUtils.clamp(local.z, -7.6, 7.6)
+      );
+      return;
+    }
+    pendingVisit.current = null;
+    startClickRoute([worldPoint]);
   }
 
   function handleHouseEnter(resident: NeighborhoodResident) {
@@ -870,19 +1310,20 @@ function NeighborhoodWorld({
       onToast("Сначала выйдите из машины возле дома");
       return;
     }
-    pendingVisit.current = resident;
-    clickTarget.current = residentDoorPosition(resident);
+    routeToResident(resident);
     onToast(resident.username === user.username ? "Идём домой" : `Идём в гости к ${resident.username}`);
   }
 
   const controlledCarTransform = { position: renderCarPosition, rotation: renderCarRotation };
   const cameraPosition = (driving ? renderCarPosition : renderPlayerPosition).clone().sub(viewOrigin);
-  const displayHomePosition = new THREE.Vector3(0, 0, 0);
+  const cameraResident = activeInterior ?? ownResident;
+  const displayHomePosition = new THREE.Vector3(cameraResident.lot.x, 0, cameraResident.lot.z).sub(viewOrigin);
+  const cameraHomeFront = frontVector(cameraResident.lot.rotation);
 
   return (
     <>
       <color attach="background" args={["#9ed9f3"]} />
-      <fog attach="fog" args={["#b9ddec", 48, 112]} />
+      <fog attach="fog" args={["#b9ddec", 58, 148]} />
       <Sky distance={450000} sunPosition={[18, 28, 12]} turbidity={3.5} rayleigh={0.72} mieCoefficient={0.006} mieDirectionalG={0.76} />
       <hemisphereLight args={["#dff5ff", "#587447", 1.55]} />
       <directionalLight
@@ -896,32 +1337,39 @@ function NeighborhoodWorld({
         shadow-camera-bottom={-55}
         shadow-bias={-0.00012}
       />
-      <Sparkles count={80} scale={[64, 10, 94]} size={1.35} speed={0.18} color="#fff2fb" opacity={0.52} />
+      <Sparkles count={100} scale={[78, 10, 128]} size={1.35} speed={0.18} color="#fff2fb" opacity={0.52} />
       <group position={viewOffset}>
-        <DistrictGeometry residents={residents} />
+        <DistrictGeometry residents={worldResidents} />
         <mesh
           receiveShadow
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, 0.012, 0]}
           onClick={handleGroundClick}
         >
-          <planeGeometry args={[80, 108]} />
+          <planeGeometry args={[94, 140]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} />
         </mesh>
 
         <OwnLotHighlight resident={ownResident} />
-        {residents.map((resident) => (
-          <House
+        {worldResidents.map((resident) => (
+          <SeamlessHouse
             key={resident.plotId}
             resident={resident}
             isOwn={resident.username === user.username}
+            active={resident.username === activeInterior?.username}
+            catalog={catalog}
+            buildMode={buildMode && activeInterior?.username === user.username}
+            selectedPlacedId={selectedPlacedId}
             onEnter={handleHouseEnter}
+            onFloorClick={handleInteriorFloorClick}
+            onInteract={onInteract}
+            onSelectPlaced={onSelectPlaced}
           />
         ))}
-        {residents.filter((resident) => resident.username !== user.username).map((resident) => (
+        {worldResidents.filter((resident) => resident.username !== user.username).map((resident) => (
           <ResidentFigure key={`resident-${resident.plotId}`} resident={resident} />
         ))}
-        {residents.filter((resident) => resident.username !== user.username).map((resident) => (
+        {worldResidents.filter((resident) => resident.username !== user.username).map((resident) => (
           <Car
             key={`car-${resident.plotId}`}
             transform={residentCarTransform(resident)}
@@ -968,9 +1416,10 @@ function NeighborhoodWorld({
         rotation={driving ? renderCarRotation : renderPlayerRotation}
         driving={driving}
         homePosition={displayHomePosition}
-        homeFront={homeFront}
+        homeFront={activeInterior ? cameraHomeFront : homeFront}
         neighborDirection={neighborDirection}
         intro={introView}
+        inside={Boolean(activeInterior)}
       />
     </>
   );
@@ -981,7 +1430,7 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
 
   return (
     <>
-      <Canvas shadows dpr={[1, 1.7]} camera={{ position: [16, 15, 20], fov: 48, near: 0.1, far: 180 }}>
+      <Canvas shadows dpr={[1, 1.7]} camera={{ position: [16, 15, 20], fov: 48, near: 0.1, far: 220 }}>
         <NeighborhoodWorld {...props} onDrivingChange={setDriving} />
       </Canvas>
       <div className={driving ? "street-controls driving" : "street-controls"}>
@@ -990,7 +1439,7 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
         <span className="control-dot">·</span>
         <span className="control-key">E</span>
         <span>{driving ? "выйти" : "сесть в свою машину"}</span>
-        {!driving ? <><span className="control-dot">·</span><span>клик по дому — зайти</span></> : null}
+        {!driving ? <><span className="control-dot">·</span><span>открытая дверь ведёт прямо в дом</span></> : null}
       </div>
     </>
   );
