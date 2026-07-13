@@ -8,7 +8,7 @@ import { buy, claimNeighborhoodIncome, earn, getCatalog, getHome, getNeighborhoo
 import { trackGoal, trackItemGoal, trackPurchase } from "./analytics";
 import { GameScene } from "./game/GameScene";
 import { NeighborhoodScene } from "./game/NeighborhoodScene";
-import type { Activity, CatalogItem, ChatMessage, HomeState, NeighborhoodState, PlacedItem, PublicUser, RemotePlayer } from "./types";
+import type { Activity, CatalogItem, ChatMessage, HomeState, NeighborhoodResident, NeighborhoodState, PlacedItem, PublicUser, RemotePlayer } from "./types";
 
 type Tab = "shop" | "work" | "visit" | "inventory" | "admin";
 type SceneMode = "home" | "street";
@@ -45,6 +45,8 @@ export default function App() {
   const [homeOwner, setHomeOwner] = useState("");
   const [sceneMode, setSceneMode] = useState<SceneMode>("home");
   const [neighborhood, setNeighborhood] = useState<NeighborhoodState | null>(null);
+  const [activeInteriorOwner, setActiveInteriorOwner] = useState<string | null>(null);
+  const [neighborhoodVisitRequest, setNeighborhoodVisitRequest] = useState<{ username: string; requestId: number }>();
   const [neighborhoodBusy, setNeighborhoodBusy] = useState("");
   const [remotePlayers, setRemotePlayers] = useState<RemotePlayer[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -60,6 +62,7 @@ export default function App() {
   const [remoteVoicePeers, setRemoteVoicePeers] = useState<VoicePeerInfo[]>([]);
   const userRef = useRef<PublicUser | null>(null);
   const sceneModeRef = useRef<SceneMode>("home");
+  const activeInteriorOwnerRef = useRef<string | null>(null);
   const streetPositionRef = useRef<{ x: number; y: number; z: number; rotation?: number; vehicle?: boolean } | undefined>(undefined);
   const socketRef = useRef<Socket | null>(null);
   const localVoiceStreamRef = useRef<MediaStream | null>(null);
@@ -140,6 +143,24 @@ export default function App() {
     return players.map((player) => matches(player) ? { ...nextPlayer, avatar: nextPlayer.avatar ?? player.avatar } : player);
   }
 
+  function upsertPlacedItem(items: PlacedItem[], placed: PlacedItem) {
+    return items.some((item) => item.instanceId === placed.instanceId)
+      ? items.map((item) => item.instanceId === placed.instanceId ? placed : item)
+      : [...items, placed];
+  }
+
+  function patchNeighborhoodResident(owner: string, update: (resident: NeighborhoodResident) => NeighborhoodResident, homeValue?: number) {
+    setNeighborhood((current) => current ? {
+      ...current,
+      progress: owner === userRef.current?.username && homeValue !== undefined
+        ? { ...current.progress, homeValue }
+        : current.progress,
+      residents: current.residents.map((resident) => resident.username === owner
+        ? { ...update(resident), ...(homeValue !== undefined ? { homeValue } : {}) }
+        : resident)
+    } : current);
+  }
+
   function connectSocket(owner: string) {
     socketRef.current?.disconnect();
     const socket = io("/", {
@@ -149,12 +170,18 @@ export default function App() {
     socket.on("connect", () => {
       if (sceneModeRef.current === "street") {
         socket.emit("neighborhood:join");
+        if (streetPositionRef.current) {
+          socket.emit("neighborhood:move", streetPositionRef.current);
+        }
+        if (activeInteriorOwnerRef.current) {
+          socket.emit("home:watch", activeInteriorOwnerRef.current);
+        }
       } else {
         socket.emit("home:join", owner);
       }
     });
     socket.on("player:present", ({ players }: { players: RemotePlayer[] }) => {
-      setRemotePlayers((current) => players.reduce((nextPlayers, player) => upsertRemotePlayer(nextPlayers, player), current));
+      setRemotePlayers(players.reduce((nextPlayers, player) => upsertRemotePlayer(nextPlayers, player), [] as RemotePlayer[]));
     });
     socket.on("player:joined", (player: RemotePlayer) => {
       const username = player.username;
@@ -171,18 +198,51 @@ export default function App() {
     socket.on("chat:message", (message: ChatMessage) => {
       setMessages((current) => [...current.slice(-80), message]);
     });
-    socket.on("home:placed", (placed: PlacedItem) => {
-      setHome((current) => current ? { ...current, placedItems: [...current.placedItems, placed] } : current);
+    socket.on("home:snapshot", ({ owner, homeStyle, placedItems, homeValue, houseLevel, level, careerLevel, incomePerHour, colors, avatar }: {
+      owner: string;
+      homeStyle: NonNullable<PublicUser["homeStyle"]>;
+      placedItems: PlacedItem[];
+      homeValue: number;
+      houseLevel: number;
+      level: number;
+      careerLevel: number;
+      incomePerHour: number;
+      colors: NeighborhoodResident["colors"];
+      avatar: PublicUser["avatar"];
+    }) => {
+      setHome((current) => current?.owner === owner ? { ...current, avatar, homeStyle, placedItems } : current);
+      patchNeighborhoodResident(owner, (resident) => ({
+        ...resident,
+        avatar,
+        houseLevel,
+        level,
+        careerLevel,
+        incomePerHour,
+        colors,
+        homeStyle,
+        placedItems
+      }), homeValue);
     });
-    socket.on("home:itemUpdated", (placed: PlacedItem) => {
-      updatePlacedItem(placed);
+    socket.on("home:placed", ({ owner, placed, homeValue }: { owner: string; placed: PlacedItem; homeValue: number }) => {
+      setHome((current) => current?.owner === owner ? { ...current, placedItems: upsertPlacedItem(current.placedItems, placed) } : current);
+      patchNeighborhoodResident(owner, (resident) => ({ ...resident, placedItems: upsertPlacedItem(resident.placedItems, placed) }), homeValue);
     });
-    socket.on("home:itemSold", ({ instanceId }: { instanceId: string }) => {
-      setHome((current) => current ? { ...current, placedItems: current.placedItems.filter((item) => item.instanceId !== instanceId) } : current);
+    socket.on("home:itemUpdated", ({ owner, placed, homeValue }: { owner: string; placed: PlacedItem; homeValue: number }) => {
+      setHome((current) => current?.owner === owner ? { ...current, placedItems: upsertPlacedItem(current.placedItems, placed) } : current);
+      patchNeighborhoodResident(owner, (resident) => ({ ...resident, placedItems: upsertPlacedItem(resident.placedItems, placed) }), homeValue);
+    });
+    socket.on("home:itemSold", ({ owner, instanceId, homeValue }: { owner: string; instanceId: string; homeValue: number }) => {
+      setHome((current) => current?.owner === owner ? { ...current, placedItems: current.placedItems.filter((item) => item.instanceId !== instanceId) } : current);
+      patchNeighborhoodResident(owner, (resident) => ({ ...resident, placedItems: resident.placedItems.filter((item) => item.instanceId !== instanceId) }), homeValue);
       setSelectedPlacedId((current) => current === instanceId ? "" : current);
     });
-    socket.on("home:styleUpdated", (homeStyle: PublicUser["homeStyle"]) => {
-      setHome((current) => current ? { ...current, homeStyle } : current);
+    socket.on("home:styleUpdated", ({ owner, homeStyle }: { owner: string; homeStyle: NonNullable<PublicUser["homeStyle"]> }) => {
+      setHome((current) => current?.owner === owner ? { ...current, homeStyle } : current);
+      patchNeighborhoodResident(owner, (resident) => ({
+        ...resident,
+        homeStyle,
+        colors: { ...resident.colors, walls: homeStyle.wallColor }
+      }));
     });
     socket.on("world:interaction", ({ username, action }: { username: string; action: string }) => {
       showToast(`${username}: ${action}`);
@@ -412,6 +472,14 @@ export default function App() {
     setRemotePlayers([]);
   }
 
+  async function refreshDisplayedHome(owner: string) {
+    const nextHome = await getHome(owner);
+    setHomeOwner(owner);
+    setHome(nextHome);
+    setMessages(nextHome.chats);
+    return nextHome;
+  }
+
   async function loadPrimaryLocation(owner: string) {
     const homePromise = getHome(owner);
     const neighborhoodPromise = getNeighborhood().catch(() => null);
@@ -423,6 +491,8 @@ export default function App() {
 
     if (nextNeighborhood) {
       setNeighborhood(nextNeighborhood);
+      activeInteriorOwnerRef.current = owner;
+      setActiveInteriorOwner(owner);
       setSceneMode("street");
       sceneModeRef.current = "street";
       trackGoal("neighborhood_primary_view", { residents: nextNeighborhood.residents.length });
@@ -431,9 +501,18 @@ export default function App() {
 
     setSceneMode("home");
     sceneModeRef.current = "home";
+    activeInteriorOwnerRef.current = null;
+    setActiveInteriorOwner(null);
   }
 
   async function visit(owner: string) {
+    if (sceneModeRef.current === "street" && neighborhood) {
+      setBuildMode(false);
+      setSelectedPlacedId("");
+      setNeighborhoodVisitRequest({ username: owner, requestId: Date.now() });
+      trackGoal("visit_home_route", { own_home: owner === userRef.current?.username });
+      return;
+    }
     try {
       if (owner !== homeOwner) {
         stopVoice();
@@ -456,6 +535,8 @@ export default function App() {
       const nextNeighborhood = await getNeighborhood();
       setNeighborhood(nextNeighborhood);
       setRemotePlayers([]);
+      activeInteriorOwnerRef.current = userRef.current?.username ?? null;
+      setActiveInteriorOwner(activeInteriorOwnerRef.current);
       setSceneMode("street");
       sceneModeRef.current = "street";
       socketRef.current?.emit("neighborhood:join");
@@ -474,6 +555,20 @@ export default function App() {
   function handleNeighborhoodMove(position: { x: number; y: number; z: number; rotation?: number; vehicle?: boolean }) {
     streetPositionRef.current = position;
     socketRef.current?.emit("neighborhood:move", position);
+  }
+
+  function handleInteriorChange(owner: string | null) {
+    if (owner !== activeInteriorOwnerRef.current) {
+      stopVoice(false);
+    }
+    activeInteriorOwnerRef.current = owner;
+    setActiveInteriorOwner(owner);
+    socketRef.current?.emit("home:watch", owner);
+    if (owner !== userRef.current?.username) {
+      setBuildMode(false);
+      setSelectedPlacedId("");
+    }
+    trackGoal(owner ? "seamless_home_enter" : "seamless_home_exit", owner ? { owner, own_home: owner === userRef.current?.username } : undefined);
   }
 
   async function handleClaimIncome() {
@@ -572,8 +667,12 @@ export default function App() {
       const z = Number((Math.random() * 5 - 1.5).toFixed(2));
       const placedResponse = await place(response.item.id, x, z, Math.random() * Math.PI);
       setUser(placedResponse.user);
-      await loadHome(placedResponse.user.username);
-      socketRef.current?.emit("home:join", placedResponse.user.username);
+      await refreshDisplayedHome(placedResponse.user.username);
+      if (sceneModeRef.current === "street") {
+        await refreshNeighborhood();
+      } else {
+        socketRef.current?.emit("home:join", placedResponse.user.username);
+      }
       setSelectedPlacedId(placedResponse.placed.instanceId);
       setBuildMode(true);
       trackItemGoal("item_place", response.item, { source: "purchase", auto_place: true });
@@ -590,8 +689,12 @@ export default function App() {
     const z = Number((Math.random() * 5 - 1.5).toFixed(2));
     const response = await place(itemId, x, z, Math.random() * Math.PI);
     setUser(response.user);
-    await loadHome(response.user.username);
-    socketRef.current?.emit("home:join", response.user.username);
+    await refreshDisplayedHome(response.user.username);
+    if (sceneModeRef.current === "street") {
+      await refreshNeighborhood();
+    } else {
+      socketRef.current?.emit("home:join", response.user.username);
+    }
     const item = catalog.find((entry) => entry.id === itemId);
     if (item) {
       trackItemGoal("item_place", item, { source: "inventory", auto_place: false });
@@ -681,6 +784,9 @@ export default function App() {
     );
     setUser(response.user);
     setHome((current) => current ? { ...current, homeStyle: response.homeStyle } : current);
+    if (sceneModeRef.current === "street") {
+      await refreshNeighborhood();
+    }
     trackGoal("home_style_change", {
       floor_changed: Boolean(nextStyle.floorColor),
       wall_changed: Boolean(nextStyle.wallColor)
@@ -720,6 +826,9 @@ export default function App() {
     setHome(null);
     setHomeOwner("");
     setNeighborhood(null);
+    activeInteriorOwnerRef.current = null;
+    setActiveInteriorOwner(null);
+    setNeighborhoodVisitRequest(undefined);
     setSceneMode("home");
     sceneModeRef.current = "home";
     streetPositionRef.current = undefined;
@@ -758,6 +867,14 @@ export default function App() {
     return <AuthScreen onSubmit={handleAuth} error={error} />;
   }
 
+  const insideOwnHome = sceneMode === "street" && activeInteriorOwner === user.username;
+  const canEditHome = ownHome && (sceneMode === "home" || insideOwnHome);
+  const seamlessLocationTitle = activeInteriorOwner === user.username
+    ? `Мой дом · ${ownNeighborhoodResident?.houseLevel ?? 1} ур.`
+    : activeInteriorOwner
+      ? `В гостях у ${activeInteriorOwner}`
+      : "Улица · рядом с моим домом";
+
   return (
     <main className="app-shell">
       <section className="topbar">
@@ -765,8 +882,20 @@ export default function App() {
         <div className="home-title">
           {sceneMode === "street" ? (
             <>
-              <span><MapIcon size={17} /> Мой участок · дом {ownNeighborhoodResident?.houseLevel ?? 1} ур.</span>
-              <button className="ghost-button" onClick={goOwnHome}><DoorOpen size={16} /> Войти в дом</button>
+              <span><MapIcon size={17} /> {seamlessLocationTitle}</span>
+              {insideOwnHome ? (
+                <button
+                  className={buildMode ? "ghost-button active-build" : "ghost-button"}
+                  onClick={() => {
+                    const nextBuildMode = !buildMode;
+                    setBuildMode(nextBuildMode);
+                    trackGoal("build_mode", { enabled: nextBuildMode });
+                    setSelectedPlacedId("");
+                  }}
+                >
+                  <Hammer size={16} /> Обустроить
+                </button>
+              ) : null}
             </>
           ) : (
             <>
@@ -798,12 +927,19 @@ export default function App() {
           {sceneMode === "street" && neighborhood ? (
             <NeighborhoodScene
               user={user}
+              home={home}
               catalog={catalog}
               residents={neighborhood.residents}
               remotePlayers={remotePlayers}
               initialPosition={streetPositionRef.current}
+              buildMode={buildMode && insideOwnHome}
+              selectedPlacedId={selectedPlacedId}
+              visitRequest={neighborhoodVisitRequest}
               onMove={handleNeighborhoodMove}
-              onVisit={visit}
+              onInteriorChange={handleInteriorChange}
+              onInteract={handleInteract}
+              onSelectPlaced={setSelectedPlacedId}
+              onBuildMove={handleBuildMove}
               onToast={showToast}
             />
           ) : (
@@ -820,14 +956,16 @@ export default function App() {
               onBuildMove={handleBuildMove}
             />
           )}
-          {sceneMode === "home" ? (
+          {sceneMode === "home" || insideOwnHome ? (
             <div className="scene-hint">
-              {buildMode && ownHome
+              {buildMode && canEditHome
                 ? "Стройка: выберите предмет и кликните по полу. Правая кнопка двигает камеру."
-                : "Клик по полу: идти. Клик по предмету: взаимодействовать."}
+                : insideOwnHome
+                  ? "Вы внутри дома. Пройдите через открытую дверь, чтобы выйти прямо на улицу."
+                  : "Клик по полу: идти. Клик по предмету: взаимодействовать."}
             </div>
           ) : null}
-          {sceneMode === "home" && buildMode && ownHome ? (
+          {buildMode && canEditHome ? (
             <div className="build-toolbar">
               <div className="build-selection">
                 <b>{selectedPlacedCatalogItem ? selectedPlacedCatalogItem.name : "Select item"}</b>
@@ -880,7 +1018,7 @@ export default function App() {
         </div>
 
         <aside className="side-panel">
-          {sceneMode === "street" && neighborhood ? (
+          {sceneMode === "street" && neighborhood && !insideOwnHome ? (
             <NeighborhoodPanel
               user={user}
               neighborhood={neighborhood}

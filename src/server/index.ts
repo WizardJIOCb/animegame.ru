@@ -6,6 +6,7 @@ import { Server, type Socket } from "socket.io";
 import { activities as baseActivities, catalog as baseCatalog, starterItems } from "./data/catalog";
 import {
   activityXp,
+  calculateHomeValue,
   calculatePendingIncome,
   careerRequiredLevel,
   careerUpgradeCost,
@@ -21,7 +22,7 @@ import {
   MAX_HOUSE_LEVEL
 } from "./data/neighborhood";
 import { findUserByName, readDb, toPublicUser, writeDb } from "./db";
-import type { Activity, CatalogItem, ChatMessage, DbShape, PlacedItem, User } from "./types";
+import type { Activity, CatalogItem, ChatMessage, DbShape, NeighborhoodResident, PlacedItem, User } from "./types";
 
 const PORT = Number(process.env.PORT ?? 4000);
 const JWT_SECRET = process.env.JWT_SECRET ?? "animegame-dev-secret-change-me";
@@ -34,6 +35,30 @@ const io = new Server(fastify.server, {
 });
 const voiceRooms = new Map<string, Map<string, string>>();
 const NEIGHBORHOOD_ROOM = "neighborhood:street";
+const HOME_WATCH_ROOM_PREFIX = "home:watch:";
+
+function homeWatchRoom(homeOwner: string) {
+  return `${HOME_WATCH_ROOM_PREFIX}${homeOwner}`;
+}
+
+function emitHomeEvent(event: string, homeOwner: string, payload: unknown) {
+  io.to(`home:${homeOwner}`).to(homeWatchRoom(homeOwner)).emit(event, payload);
+}
+
+function homeSnapshotPayload(resident: NeighborhoodResident) {
+  return {
+    owner: resident.username,
+    homeStyle: resident.homeStyle,
+    placedItems: resident.placedItems,
+    homeValue: resident.homeValue,
+    houseLevel: resident.houseLevel,
+    level: resident.level,
+    careerLevel: resident.careerLevel,
+    incomePerHour: resident.incomePerHour,
+    colors: resident.colors,
+    avatar: resident.avatar
+  };
+}
 type LivePlayer = {
   id: string;
   username: string;
@@ -217,7 +242,7 @@ function defaultPlayerPosition() {
 }
 
 function defaultNeighborhoodPosition() {
-  return { x: 0, y: 0, z: 34, rotation: Math.PI };
+  return { x: 0, y: 0, z: 68, rotation: Math.PI };
 }
 
 function finiteNumber(value: unknown, fallback: number) {
@@ -225,16 +250,33 @@ function finiteNumber(value: unknown, fallback: number) {
   return Number.isFinite(numberValue) ? numberValue : fallback;
 }
 
+function normalizeRotation(value: unknown, fallback = 0) {
+  const rotation = finiteNumber(value, fallback);
+  return Math.atan2(Math.sin(rotation), Math.cos(rotation));
+}
+
 function sanitizeNeighborhoodPosition(position: unknown) {
   const candidate = position && typeof position === "object"
     ? position as { x?: unknown; y?: unknown; z?: unknown; rotation?: unknown; vehicle?: unknown }
     : {};
   return {
-    x: Math.max(-34, Math.min(34, finiteNumber(candidate.x, 0))),
+    x: Math.max(-42, Math.min(42, finiteNumber(candidate.x, 0))),
     y: Math.max(0, Math.min(4, finiteNumber(candidate.y, 0))),
-    z: Math.max(-49, Math.min(49, finiteNumber(candidate.z, 34))),
-    rotation: finiteNumber(candidate.rotation, 0),
+    z: Math.max(-76, Math.min(76, finiteNumber(candidate.z, 68))),
+    rotation: normalizeRotation(candidate.rotation),
     vehicle: candidate.vehicle === true
+  };
+}
+
+function sanitizeHomePosition(position: unknown) {
+  const candidate = position && typeof position === "object"
+    ? position as { x?: unknown; y?: unknown; z?: unknown; rotation?: unknown }
+    : {};
+  return {
+    x: Math.max(-7.6, Math.min(7.6, finiteNumber(candidate.x, 0))),
+    y: Math.max(0, Math.min(4, finiteNumber(candidate.y, 0))),
+    z: Math.max(-7.6, Math.min(7.6, finiteNumber(candidate.z, 1.2))),
+    rotation: normalizeRotation(candidate.rotation)
   };
 }
 
@@ -307,7 +349,7 @@ function leaveVoiceRoom(socket: Socket) {
     if (roomUsers.size === 0) {
       voiceRooms.delete(homeOwner);
     }
-    socket.to(`home:${homeOwner}`).emit("voice:userLeft", { id: socket.id, username: socket.data.username });
+    socket.to(`home:${homeOwner}`).to(homeWatchRoom(homeOwner)).emit("voice:userLeft", { id: socket.id, username: socket.data.username });
   }
   socket.data.voiceHomeOwner = undefined;
 }
@@ -454,7 +496,7 @@ fastify.post("/api/home/style", async (request, reply) => {
       wallColor: /^#[0-9a-fA-F]{6}$/.test(body.wallColor ?? "") ? body.wallColor! : dbUser.homeStyle?.wallColor ?? "#d8d1c3"
     };
     writeDb(db);
-    io.to(`home:${dbUser.username}`).emit("home:styleUpdated", dbUser.homeStyle);
+    emitHomeEvent("home:styleUpdated", dbUser.username, { owner: dbUser.username, homeStyle: dbUser.homeStyle });
     return { user: toPublicUser(dbUser), homeStyle: dbUser.homeStyle };
   } catch {
     return reply.code(401).send({ error: "Нужно войти" });
@@ -552,9 +594,15 @@ fastify.post("/api/neighborhood/upgrade-house", async (request, reply) => {
     user.coins -= cost;
     user.progress.houseLevel += 1;
     writeDb(db);
+    const activeCatalog = getGameCatalog(db);
+    const resident = makeNeighborhoodResidents(db.users, activeCatalog)
+      .find((entry) => entry.username === user.username);
+    if (resident) {
+      emitHomeEvent("home:snapshot", user.username, homeSnapshotPayload(resident));
+    }
     return {
       user: toPublicUser(user),
-      progress: makeProgressView(user, getGameCatalog(db)),
+      progress: makeProgressView(user, activeCatalog),
       spent: cost
     };
   } catch {
@@ -677,7 +725,11 @@ fastify.post("/api/place", async (request, reply) => {
     dbUser.inventory.splice(inventoryIndex, 1);
     dbUser.placedItems.push(placed);
     writeDb(db);
-    io.to(`home:${dbUser.username}`).emit("home:placed", placed);
+    emitHomeEvent("home:placed", dbUser.username, {
+      owner: dbUser.username,
+      placed,
+      homeValue: calculateHomeValue(dbUser.progress.houseLevel, dbUser.placedItems, getGameCatalog(db))
+    });
 
     return { user: toPublicUser(dbUser), placed };
   } catch {
@@ -700,7 +752,11 @@ fastify.post("/api/placed/move", async (request, reply) => {
     placed.z = clampHomeCoordinate(body.z);
     placed.y = 0;
     writeDb(db);
-    io.to(`home:${dbUser.username}`).emit("home:itemUpdated", placed);
+    emitHomeEvent("home:itemUpdated", dbUser.username, {
+      owner: dbUser.username,
+      placed,
+      homeValue: calculateHomeValue(dbUser.progress.houseLevel, dbUser.placedItems, getGameCatalog(db))
+    });
 
     return { user: toPublicUser(dbUser), placed };
   } catch {
@@ -721,7 +777,11 @@ fastify.post("/api/placed/rotate", async (request, reply) => {
 
     placed.rotation = Number(body.rotation ?? placed.rotation);
     writeDb(db);
-    io.to(`home:${dbUser.username}`).emit("home:itemUpdated", placed);
+    emitHomeEvent("home:itemUpdated", dbUser.username, {
+      owner: dbUser.username,
+      placed,
+      homeValue: calculateHomeValue(dbUser.progress.houseLevel, dbUser.placedItems, getGameCatalog(db))
+    });
 
     return { user: toPublicUser(dbUser), placed };
   } catch {
@@ -742,7 +802,11 @@ fastify.post("/api/placed/scale", async (request, reply) => {
 
     placed.scale = clampPlacedScale(body.scale);
     writeDb(db);
-    io.to(`home:${dbUser.username}`).emit("home:itemUpdated", placed);
+    emitHomeEvent("home:itemUpdated", dbUser.username, {
+      owner: dbUser.username,
+      placed,
+      homeValue: calculateHomeValue(dbUser.progress.houseLevel, dbUser.placedItems, getGameCatalog(db))
+    });
 
     return { user: toPublicUser(dbUser), placed };
   } catch {
@@ -765,7 +829,12 @@ fastify.post("/api/placed/sell", async (request, reply) => {
     const refund = getPlacedItemValue(placed.itemId, getGameCatalog(db));
     dbUser.coins += refund;
     writeDb(db);
-    io.to(`home:${dbUser.username}`).emit("home:itemSold", { instanceId: placed.instanceId, refund });
+    emitHomeEvent("home:itemSold", dbUser.username, {
+      owner: dbUser.username,
+      instanceId: placed.instanceId,
+      refund,
+      homeValue: calculateHomeValue(dbUser.progress.houseLevel, dbUser.placedItems, getGameCatalog(db))
+    });
 
     return { user: toPublicUser(dbUser), placed, refund };
   } catch {
@@ -899,6 +968,13 @@ io.on("connection", (socket) => {
       socket.data.homeOwner = undefined;
     }
 
+    const previousWatchedHomeOwner = socket.data.watchedHomeOwner as string | undefined;
+    if (previousWatchedHomeOwner) {
+      leaveVoiceRoom(socket);
+      socket.leave(homeWatchRoom(previousWatchedHomeOwner));
+      socket.data.watchedHomeOwner = undefined;
+    }
+
     const wasAlreadyPresent = neighborhoodPlayers.has(socket.id);
     socket.join(NEIGHBORHOOD_ROOM);
     socket.data.inNeighborhood = true;
@@ -938,8 +1014,43 @@ io.on("connection", (socket) => {
     leaveNeighborhoodPresence(socket);
   });
 
+  socket.on("home:watch", (requestedOwner: unknown) => {
+    const homeOwner = String(requestedOwner ?? "").trim();
+    const previousHomeOwner = socket.data.watchedHomeOwner as string | undefined;
+    if (previousHomeOwner === homeOwner) {
+      return;
+    }
+
+    if (previousHomeOwner) {
+      leaveVoiceRoom(socket);
+      socket.leave(homeWatchRoom(previousHomeOwner));
+      socket.data.watchedHomeOwner = undefined;
+    }
+
+    if (!homeOwner) {
+      return;
+    }
+
+    const db = readDb();
+    const resident = makeNeighborhoodResidents(db.users, getGameCatalog(db))
+      .find((entry) => entry.username.toLowerCase() === homeOwner.toLowerCase());
+    if (!resident) {
+      return;
+    }
+
+    socket.join(homeWatchRoom(resident.username));
+    socket.data.watchedHomeOwner = resident.username;
+    socket.emit("home:snapshot", homeSnapshotPayload(resident));
+  });
+
   socket.on("home:join", (homeOwner: string) => {
     leaveNeighborhoodPresence(socket);
+    const watchedHomeOwner = socket.data.watchedHomeOwner as string | undefined;
+    if (watchedHomeOwner) {
+      leaveVoiceRoom(socket);
+      socket.leave(homeWatchRoom(watchedHomeOwner));
+      socket.data.watchedHomeOwner = undefined;
+    }
     const previousHomeOwner = socket.data.homeOwner as string | undefined;
     if (previousHomeOwner && previousHomeOwner !== homeOwner) {
       leaveVoiceRoom(socket);
@@ -966,12 +1077,15 @@ io.on("connection", (socket) => {
   });
 
   socket.on("player:move", (position: { x: number; y: number; z: number; rotation?: number }) => {
-    const homeOwner = String(socket.data.homeOwner ?? socket.data.username);
+    const homeOwner = socket.data.homeOwner as string | undefined;
+    if (!homeOwner || !homePlayers.get(homeOwner)?.has(socket.id)) {
+      return;
+    }
     const room = `home:${homeOwner}`;
     const player: LivePlayer = {
       id: socket.id,
       username: socket.data.username,
-      position,
+      position: sanitizeHomePosition(position),
       avatar: getPublicAvatar(socket.data.username)
     };
     const players = homePlayers.get(homeOwner) ?? new Map<string, LivePlayer>();
@@ -982,7 +1096,7 @@ io.on("connection", (socket) => {
 
   socket.on("chat:send", (text: string) => {
     const cleanText = String(text).trim().slice(0, 300);
-    const homeOwner = String(socket.data.homeOwner ?? socket.data.username);
+    const homeOwner = String(socket.data.watchedHomeOwner ?? socket.data.homeOwner ?? socket.data.username);
     if (!cleanText) {
       return;
     }
@@ -998,12 +1112,13 @@ io.on("connection", (socket) => {
     db.chats.push(message);
     db.chats = db.chats.slice(-500);
     writeDb(db);
-    io.to(`home:${homeOwner}`).emit("chat:message", message);
+    emitHomeEvent("chat:message", homeOwner, message);
   });
 
   socket.on("world:interact", (payload: { itemId?: string; action?: string }) => {
-    const room = `home:${socket.data.homeOwner}`;
-    socket.to(room).emit("world:interaction", {
+    const homeOwner = String(socket.data.watchedHomeOwner ?? socket.data.homeOwner ?? "");
+    if (!homeOwner) return;
+    socket.to(`home:${homeOwner}`).to(homeWatchRoom(homeOwner)).emit("world:interaction", {
       username: socket.data.username,
       itemId: payload.itemId,
       action: payload.action ?? "interact",
@@ -1012,7 +1127,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("voice:join", () => {
-    const homeOwner = String(socket.data.homeOwner ?? socket.data.username);
+    const homeOwner = String(socket.data.watchedHomeOwner ?? socket.data.homeOwner ?? socket.data.username);
     leaveVoiceRoom(socket);
     const roomUsers = voiceRooms.get(homeOwner) ?? new Map<string, string>();
     const users = [...roomUsers.entries()]
@@ -1022,7 +1137,7 @@ io.on("connection", (socket) => {
     voiceRooms.set(homeOwner, roomUsers);
     socket.data.voiceHomeOwner = homeOwner;
     socket.emit("voice:users", { users });
-    socket.to(`home:${homeOwner}`).emit("voice:userJoined", { id: socket.id, username: socket.data.username });
+    socket.to(`home:${homeOwner}`).to(homeWatchRoom(homeOwner)).emit("voice:userJoined", { id: socket.id, username: socket.data.username });
   });
 
   socket.on("voice:leave", () => {

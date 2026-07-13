@@ -104,6 +104,8 @@ export type NeighborhoodResident = {
   };
   carColor?: string;
   avatar: PublicUser["avatar"];
+  homeStyle: NonNullable<PublicUser["homeStyle"]>;
+  placedItems: PlacedItem[];
   lot: {
     x: number;
     z: number;

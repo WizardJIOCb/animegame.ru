@@ -1827,7 +1827,7 @@ export function Player({
   );
 }
 
-function PlacedObject({
+export function HomePlacedObject({
   instanceId,
   item,
   x,
@@ -2266,7 +2266,7 @@ function World({
           return null;
         }
         return (
-          <PlacedObject
+          <HomePlacedObject
             key={placed.instanceId}
             instanceId={placed.instanceId}
             item={item}

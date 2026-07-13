@@ -38,8 +38,8 @@ export const neighborhoodLots: NeighborhoodLot[] = Array.from({ length: NEIGHBOR
   const westSide = index < NEIGHBORHOOD_SIZE / 2;
   const sideIndex = westSide ? index : index - NEIGHBORHOOD_SIZE / 2;
   return {
-    x: westSide ? -18 : 18,
-    z: -30 + sideIndex * 12,
+    x: westSide ? -22 : 22,
+    z: [-60, -40, -20, 20, 40, 60][sideIndex],
     rotation: westSide ? Math.PI / 2 : -Math.PI / 2
   };
 });
@@ -228,6 +228,8 @@ function residentFromUser(user: User, plotIndex: number, catalog: CatalogItem[])
     incomePerHour: user.progress.incomePerHour,
     colors: colorsForUser(user, plotIndex),
     avatar: user.avatar,
+    homeStyle: user.homeStyle ?? { floorColor: "#9b6a3c", wallColor: "#d8d1c3" },
+    placedItems: user.placedItems,
     lot: neighborhoodLots[plotIndex]
   };
 }
@@ -244,6 +246,8 @@ function residentFromNpc(npc: NeighborhoodNpc, plotIndex: number, catalog: Catal
     incomePerHour: incomePerHourForCareer(npc.careerLevel),
     colors: npc.colors,
     avatar: npc.avatar,
+    homeStyle: npc.homeStyle,
+    placedItems: npc.placedItems,
     lot: neighborhoodLots[plotIndex]
   };
 }

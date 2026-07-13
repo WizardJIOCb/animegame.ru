@@ -74,6 +74,8 @@ export type NeighborhoodResident = {
   incomePerHour: number;
   colors: NeighborhoodHouseColors;
   avatar: User["avatar"];
+  homeStyle: NonNullable<User["homeStyle"]>;
+  placedItems: PlacedItem[];
   lot: NeighborhoodLot;
 };
 
