@@ -1871,6 +1871,7 @@ export function HomePlacedObject({
       onPointerLeave={() => setHovered(false)}
       onClick={(event) => {
         event.stopPropagation();
+        if (event.nativeEvent.button !== 0 || event.delta > 6) return;
         if (buildMode) {
           onSelect(instanceId);
           return;

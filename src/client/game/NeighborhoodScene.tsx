@@ -1,4 +1,4 @@
-import { Html, Sky, Sparkles, useGLTF } from "@react-three/drei";
+import { Html, OrbitControls, Sky, Sparkles, useGLTF } from "@react-three/drei";
 import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -30,6 +30,13 @@ type CarTransform = {
   rotation: number;
 };
 
+type CameraBounds = {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+};
+
 const WORLD_X = 42;
 const WORLD_Z = 76;
 const WALK_SPEED = 5.4;
@@ -38,6 +45,10 @@ const DOOR_HALF_WIDTH = 0.72;
 const WALL_THICKNESS = 0.18;
 const UP = new THREE.Vector3(0, 1, 0);
 const CAR_COLORS = ["#f472b6", "#38bdf8", "#f59e0b", "#34d399", "#a78bfa", "#fb7185"];
+
+function isPrimarySceneClick(event: ThreeEvent<MouseEvent>) {
+  return event.nativeEvent.button === 0 && event.delta <= 6;
+}
 
 function getCatalogItem(catalog: CatalogItem[], id?: string) {
   return id ? catalog.find((item) => item.id === id) : undefined;
@@ -248,7 +259,9 @@ function StreetCamera({
   homeFront,
   neighborDirection,
   intro,
-  inside
+  inside,
+  keys,
+  bounds
 }: {
   position: THREE.Vector3;
   rotation: number;
@@ -258,44 +271,238 @@ function StreetCamera({
   neighborDirection: THREE.Vector3;
   intro: boolean;
   inside: boolean;
+  keys: { current: Set<string> };
+  bounds: CameraBounds;
 }) {
-  const { camera } = useThree();
+  const { camera, gl } = useThree();
+  const controlsRef = useRef<any>(null);
+  const initialized = useRef(false);
+  const wasDriving = useRef(driving);
+  const drivingState = useRef(driving);
   const lookTarget = useRef(new THREE.Vector3());
+  const dragRef = useRef<{ x: number; y: number } | null>(null);
+  const touchPointers = useRef(new Map<number, { x: number; y: number }>());
+  const touchPanRef = useRef<{ x: number; y: number } | null>(null);
+  drivingState.current = driving;
+
+  function getFlatAxes() {
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    right.y = 0;
+    right.normalize();
+
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.y = 0;
+    forward.normalize();
+
+    return { right, forward };
+  }
+
+  function panFlat(move: THREE.Vector3) {
+    const controls = controlsRef.current;
+    if (!controls || move.lengthSq() === 0) return;
+
+    const nextTarget = controls.target.clone().add(move);
+    nextTarget.x = THREE.MathUtils.clamp(nextTarget.x, bounds.minX, bounds.maxX);
+    nextTarget.z = THREE.MathUtils.clamp(nextTarget.z, bounds.minZ, bounds.maxZ);
+    const appliedMove = nextTarget.sub(controls.target);
+    camera.position.add(appliedMove);
+    controls.target.add(appliedMove);
+    controls.update();
+  }
+
+  useEffect(() => {
+    const element = gl.domElement;
+    const previousTouchAction = element.style.touchAction;
+    element.style.touchAction = "none";
+
+    function getTouchCentroid() {
+      const points = [...touchPointers.current.values()];
+      if (points.length < 2) return null;
+      return points.reduce(
+        (center, point) => ({
+          x: center.x + point.x / points.length,
+          y: center.y + point.y / points.length
+        }),
+        { x: 0, y: 0 }
+      );
+    }
+
+    function panByScreenDelta(dx: number, dy: number, mode: "drag" | "touch") {
+      if (drivingState.current) return;
+      const controls = controlsRef.current;
+      if (!controls) return;
+      const { right, forward } = getFlatAxes();
+      const distance = camera.position.distanceTo(controls.target);
+      const speed = Math.max(0.008, distance * 0.0018);
+      const move = mode === "touch"
+        ? right.multiplyScalar(dx * speed).add(forward.multiplyScalar(-dy * speed))
+        : right.multiplyScalar(-dx * speed).add(forward.multiplyScalar(dy * speed));
+      panFlat(move);
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (drivingState.current) return;
+      if (event.pointerType === "touch") {
+        touchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (touchPointers.current.size >= 2) {
+          event.preventDefault();
+          touchPanRef.current = getTouchCentroid();
+          element.setPointerCapture?.(event.pointerId);
+        }
+        return;
+      }
+
+      if (event.button !== 2) return;
+      event.preventDefault();
+      dragRef.current = { x: event.clientX, y: event.clientY };
+      element.setPointerCapture?.(event.pointerId);
+    }
+
+    function handlePointerMove(event: PointerEvent) {
+      if (drivingState.current) return;
+      if (event.pointerType === "touch") {
+        if (!touchPointers.current.has(event.pointerId)) return;
+        touchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        const centroid = getTouchCentroid();
+        if (!centroid) {
+          touchPanRef.current = null;
+          return;
+        }
+
+        event.preventDefault();
+        const last = touchPanRef.current ?? centroid;
+        touchPanRef.current = centroid;
+        panByScreenDelta(centroid.x - last.x, centroid.y - last.y, "touch");
+        return;
+      }
+
+      const last = dragRef.current;
+      if (!last) return;
+      event.preventDefault();
+      dragRef.current = { x: event.clientX, y: event.clientY };
+      panByScreenDelta(event.clientX - last.x, event.clientY - last.y, "drag");
+    }
+
+    function handlePointerUp(event: PointerEvent) {
+      if (event.pointerType === "touch") {
+        touchPointers.current.delete(event.pointerId);
+        touchPanRef.current = getTouchCentroid();
+      } else if (event.button === 2) {
+        dragRef.current = null;
+      }
+      if (element.hasPointerCapture?.(event.pointerId)) {
+        element.releasePointerCapture?.(event.pointerId);
+      }
+    }
+
+    element.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+
+    return () => {
+      element.style.touchAction = previousTouchAction;
+      dragRef.current = null;
+      touchPointers.current.clear();
+      touchPanRef.current = null;
+      element.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [camera, gl, bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ]);
 
   useFrame((_, delta) => {
+    const controls = controlsRef.current;
+    if (!controls) return;
     const forward = frontVector(rotation);
-    let desired: THREE.Vector3;
-    let target: THREE.Vector3;
+
     if (driving) {
-      desired = position.clone().addScaledVector(forward, -10).add(new THREE.Vector3(0, 7.2, 0));
-      target = position.clone().addScaledVector(forward, 5);
-    } else if (inside) {
-      const side = rightVector(Math.atan2(homeFront.x, homeFront.z));
-      desired = homePosition.clone()
-        .addScaledVector(homeFront, intro ? 8.2 : 7)
-        .addScaledVector(side, intro ? 2.2 : 1.45)
-        .add(new THREE.Vector3(0, intro ? 6.2 : 5.25, 0));
-      target = position.clone().add(new THREE.Vector3(0, 1.05, 0));
-    } else if (intro) {
-      desired = homePosition.clone()
-        .addScaledVector(homeFront, 13.5)
-        .addScaledVector(neighborDirection, -7)
-        .add(new THREE.Vector3(0, 11.5, 0));
-      target = homePosition.clone().add(new THREE.Vector3(0, 1.65, 0));
-    } else {
-      desired = position.clone()
-        .addScaledVector(homeFront, 10.5)
-        .addScaledVector(neighborDirection, -5)
-        .add(new THREE.Vector3(0, 10.2, 0));
-      target = position.clone().addScaledVector(neighborDirection, 1.4).add(new THREE.Vector3(0, 1.1, 0));
+      if (!wasDriving.current) {
+        lookTarget.current.copy(controls.target);
+      }
+      const desired = position.clone().addScaledVector(forward, -10).add(new THREE.Vector3(0, 7.2, 0));
+      const target = position.clone().addScaledVector(forward, 5);
+      const damping = 1 - Math.exp(-delta * 5.5);
+      camera.position.lerp(desired, damping);
+      lookTarget.current.lerp(target, damping);
+      camera.lookAt(lookTarget.current);
+      wasDriving.current = true;
+      return;
     }
-    const damping = 1 - Math.exp(-delta * (driving ? 5.5 : 4));
-    camera.position.lerp(desired, damping);
-    lookTarget.current.lerp(target, damping);
-    camera.lookAt(lookTarget.current);
+
+    if (!initialized.current) {
+      let desired: THREE.Vector3;
+      let target: THREE.Vector3;
+      if (inside) {
+        const side = rightVector(Math.atan2(homeFront.x, homeFront.z));
+        desired = homePosition.clone()
+          .addScaledVector(homeFront, intro ? 8.2 : 7)
+          .addScaledVector(side, intro ? 2.2 : 1.45)
+          .add(new THREE.Vector3(0, intro ? 6.2 : 5.25, 0));
+        target = position.clone().add(new THREE.Vector3(0, 1.05, 0));
+      } else if (intro) {
+        desired = homePosition.clone()
+          .addScaledVector(homeFront, 13.5)
+          .addScaledVector(neighborDirection, -7)
+          .add(new THREE.Vector3(0, 11.5, 0));
+        target = homePosition.clone().add(new THREE.Vector3(0, 1.65, 0));
+      } else {
+        desired = position.clone()
+          .addScaledVector(homeFront, 10.5)
+          .addScaledVector(neighborDirection, -5)
+          .add(new THREE.Vector3(0, 10.2, 0));
+        target = position.clone().addScaledVector(neighborDirection, 1.4).add(new THREE.Vector3(0, 1.1, 0));
+      }
+      camera.position.copy(desired);
+      controls.target.copy(target);
+      lookTarget.current.copy(target);
+      camera.lookAt(target);
+      controls.update();
+      initialized.current = true;
+    } else if (wasDriving.current) {
+      const target = position.clone().add(new THREE.Vector3(0, 1.1, 0));
+      controls.target.copy(target);
+      lookTarget.current.copy(target);
+      camera.lookAt(target);
+      controls.update();
+    }
+    wasDriving.current = false;
+
+    const x = (keys.current.has("d") || keys.current.has("arrowright") ? 1 : 0)
+      - (keys.current.has("a") || keys.current.has("arrowleft") ? 1 : 0);
+    const z = (keys.current.has("w") || keys.current.has("arrowup") ? 1 : 0)
+      - (keys.current.has("s") || keys.current.has("arrowdown") ? 1 : 0);
+    if (x === 0 && z === 0) return;
+
+    const { right, forward: cameraForward } = getFlatAxes();
+    const move = right.multiplyScalar(x).add(cameraForward.multiplyScalar(z));
+    if (move.lengthSq() > 0) {
+      move.normalize().multiplyScalar(delta * 7.2);
+      panFlat(move);
+    }
   });
 
-  return null;
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      makeDefault
+      enabled={!driving}
+      enableDamping
+      dampingFactor={0.08}
+      enablePan={false}
+      panSpeed={0}
+      mouseButtons={{
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN
+      }}
+      maxPolarAngle={Math.PI / 2.2}
+      minDistance={4.5}
+      maxDistance={38}
+    />
+  );
 }
 
 function Tree({ position, scale = 1, autumn = false }: { position: [number, number, number]; scale?: number; autumn?: boolean }) {
@@ -463,6 +670,7 @@ function House({ resident, isOwn, onEnter }: { resident: NeighborhoodResident; i
       }}
       onClick={(event) => {
         event.stopPropagation();
+        if (!isPrimarySceneClick(event)) return;
         onEnter(resident);
       }}
     >
@@ -645,6 +853,7 @@ function SeamlessHouse({
       }}
       onClick={(event) => {
         event.stopPropagation();
+        if (!isPrimarySceneClick(event)) return;
         onEnter(resident);
       }}
     >
@@ -658,6 +867,7 @@ function SeamlessHouse({
         position={[0, 0.012, 0]}
         onClick={(event) => {
           event.stopPropagation();
+          if (!isPrimarySceneClick(event)) return;
           onFloorClick(event, resident);
         }}
       >
@@ -1094,6 +1304,23 @@ function NeighborhoodWorld({
   }
 
   useEffect(() => {
+    const controlKey = (event: KeyboardEvent) => {
+      const byCode: Record<string, string> = {
+        KeyW: "w",
+        KeyA: "a",
+        KeyS: "s",
+        KeyD: "d",
+        KeyE: "e",
+        KeyF: "f",
+        ArrowUp: "arrowup",
+        ArrowLeft: "arrowleft",
+        ArrowDown: "arrowdown",
+        ArrowRight: "arrowright",
+        Space: " "
+      };
+      return byCode[event.code] ?? event.key.toLowerCase();
+    };
+
     const setDriveState = (next: boolean) => {
       drivingRef.current = next;
       setDriving(next);
@@ -1101,8 +1328,9 @@ function NeighborhoodWorld({
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
-      const key = event.key.toLowerCase();
+      const target = event.target as HTMLElement | null;
+      if (target && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable)) return;
+      const key = controlKey(event);
       keys.current.add(key);
       if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) {
         event.preventDefault();
@@ -1132,12 +1360,21 @@ function NeighborhoodWorld({
         onToast("Подойдите к своей машине ближе");
       }
     };
-    const onKeyUp = (event: KeyboardEvent) => keys.current.delete(event.key.toLowerCase());
+    const onKeyUp = (event: KeyboardEvent) => keys.current.delete(controlKey(event));
+    const clearKeys = () => keys.current.clear();
+    const onVisibilityChange = () => {
+      if (document.hidden) clearKeys();
+    };
     window.addEventListener("keydown", onKeyDown, { passive: false });
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", clearKeys);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", clearKeys);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      clearKeys();
       document.body.style.cursor = "default";
     };
   }, [onDrivingChange, onToast]);
@@ -1208,17 +1445,8 @@ function NeighborhoodWorld({
       playerPosition.current.copy(carPosition.current);
       playerRotation.current = carRotation.current;
     } else {
-      const keyboardDirection = new THREE.Vector3(
-        (keys.current.has("d") || keys.current.has("arrowright") ? 1 : 0) - (keys.current.has("a") || keys.current.has("arrowleft") ? 1 : 0),
-        0,
-        (keys.current.has("s") || keys.current.has("arrowdown") ? 1 : 0) - (keys.current.has("w") || keys.current.has("arrowup") ? 1 : 0)
-      );
-      let direction = keyboardDirection;
-      if (keyboardDirection.lengthSq() > 0) {
-        clickTarget.current = null;
-        clickPath.current = [];
-        pendingVisit.current = null;
-      } else if (clickTarget.current) {
+      let direction = new THREE.Vector3();
+      if (clickTarget.current) {
         direction = clickTarget.current.clone().sub(playerPosition.current);
         direction.y = 0;
         if (direction.length() < 0.16) {
@@ -1278,7 +1506,7 @@ function NeighborhoodWorld({
   });
 
   function handleGroundClick(event: ThreeEvent<MouseEvent>) {
-    if (drivingRef.current) return;
+    if (drivingRef.current || !isPrimarySceneClick(event)) return;
     pendingVisit.current = null;
     const worldPoint = event.point.clone().add(viewOrigin).setY(0);
     const currentInterior = activeInteriorRef.current;
@@ -1291,7 +1519,7 @@ function NeighborhoodWorld({
   }
 
   function handleInteriorFloorClick(event: ThreeEvent<MouseEvent>, resident: NeighborhoodResident) {
-    if (drivingRef.current) return;
+    if (drivingRef.current || !isPrimarySceneClick(event)) return;
     const worldPoint = event.point.clone().add(viewOrigin).setY(0);
     if (buildMode && resident.username === user.username && activeInteriorRef.current?.username === user.username) {
       const local = worldToHouseLocal(worldPoint, resident);
@@ -1319,6 +1547,12 @@ function NeighborhoodWorld({
   const cameraResident = activeInterior ?? ownResident;
   const displayHomePosition = new THREE.Vector3(cameraResident.lot.x, 0, cameraResident.lot.z).sub(viewOrigin);
   const cameraHomeFront = frontVector(cameraResident.lot.rotation);
+  const cameraBounds = {
+    minX: -WORLD_X - viewOrigin.x,
+    maxX: WORLD_X - viewOrigin.x,
+    minZ: -WORLD_Z - viewOrigin.z,
+    maxZ: WORLD_Z - viewOrigin.z
+  };
 
   return (
     <>
@@ -1420,6 +1654,8 @@ function NeighborhoodWorld({
         neighborDirection={neighborDirection}
         intro={introView}
         inside={Boolean(activeInterior)}
+        keys={keys}
+        bounds={cameraBounds}
       />
     </>
   );
@@ -1430,16 +1666,21 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
 
   return (
     <>
-      <Canvas shadows dpr={[1, 1.7]} camera={{ position: [16, 15, 20], fov: 48, near: 0.1, far: 220 }}>
+      <Canvas
+        shadows
+        dpr={[1, 1.7]}
+        camera={{ position: [16, 15, 20], fov: 48, near: 0.1, far: 220 }}
+        onContextMenu={(event) => event.preventDefault()}
+      >
         <NeighborhoodWorld {...props} onDrivingChange={setDriving} />
       </Canvas>
       <div className={driving ? "street-controls driving" : "street-controls"}>
         <span className="control-key">WASD</span>
-        <span>{driving ? "ехать и рулить" : "идти"}</span>
+        <span>{driving ? "ехать и рулить" : "камера"}</span>
+        {!driving ? <><span className="control-dot">·</span><span>клик — идти</span><span className="control-dot">·</span><span>мышь — обзор и масштаб</span></> : null}
         <span className="control-dot">·</span>
         <span className="control-key">E</span>
         <span>{driving ? "выйти" : "сесть в свою машину"}</span>
-        {!driving ? <><span className="control-dot">·</span><span>открытая дверь ведёт прямо в дом</span></> : null}
       </div>
     </>
   );
