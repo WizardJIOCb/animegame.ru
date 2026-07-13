@@ -245,7 +245,7 @@ input:focus {
 .game-layout {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 398px;
+  grid-template-columns: minmax(0, 1fr) clamp(430px, 28vw, 500px);
 }
 
 .scene-wrap {
@@ -272,6 +272,13 @@ input:focus {
   color: #dedbea;
   font-size: 13px;
   backdrop-filter: blur(10px);
+}
+
+.street-scene-hint {
+  top: 16px;
+  bottom: auto;
+  max-width: min(430px, calc(100% - 32px));
+  z-index: 2;
 }
 
 .toast {
@@ -526,6 +533,34 @@ input:focus {
   background: #171820;
 }
 
+.side-panel > .tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
+  gap: 4px;
+}
+
+.side-panel > .tabs button {
+  min-width: 0;
+  min-height: 48px;
+  padding: 5px 3px;
+  flex-direction: column;
+  gap: 3px;
+  color: #cbd5e1;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.side-panel > .tabs button svg {
+  flex: 0 0 auto;
+}
+
+.side-panel > .tabs .active,
+.side-panel .filter-row .active {
+  background: #5eead4;
+  color: #052e2b;
+  box-shadow: 0 5px 16px rgba(45, 212, 191, 0.18);
+}
+
 .panel-body {
   min-height: 0;
   overflow: auto;
@@ -542,38 +577,96 @@ input:focus {
   margin-bottom: 10px;
 }
 
+.side-panel .filter-row {
+  flex-wrap: wrap;
+  overflow: visible;
+  gap: 5px;
+}
+
+.side-panel .filter-row button {
+  flex: 1 1 70px;
+  min-height: 30px;
+  padding: 0 8px;
+  color: #cbd5e1;
+}
+
 .item-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
 }
 
 .shop-card,
 .wide-card {
-  min-height: 92px;
-  border-radius: 8px;
+  min-height: 104px;
+  border-radius: 10px;
   text-align: left;
-  padding: 11px;
-  background: #22242e;
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 12px;
+  background: #252b37;
+  color: #f8fafc;
+  border: 1px solid #394253;
   display: grid;
-  gap: 4px;
+  gap: 6px;
+  box-shadow: 0 7px 18px rgba(5, 8, 15, 0.14);
+}
+
+.shop-card:disabled {
+  opacity: 1;
 }
 
 .shop-card:hover:not(:disabled),
 .wide-card:hover {
-  border-color: rgba(249, 168, 212, 0.55);
-  background: #2a2d39;
+  border-color: #fb923c;
+  background: #303848;
+  transform: translateY(-1px);
+}
+
+.shop-card.owned {
+  background: #1d2430;
+  color: #cbd5e1;
+  border-color: #354052;
+}
+
+.shop-card.unaffordable {
+  background: #1b1f28;
+  color: #8d98aa;
+  border-color: #2d3441;
+}
+
+.shop-card.unavailable {
+  cursor: not-allowed;
+  background: #181c24;
+  color: #758094;
+  border-color: #2a303c;
+  border-style: dashed;
+}
+
+.shop-card.unaffordable .item-meta,
+.shop-card.unavailable .item-meta {
+  color: #8d98aa;
 }
 
 .shop-card.equipped {
-  border-color: rgba(20, 184, 166, 0.72);
-  background: #1f2f34;
+  border-color: #5eead4;
+  background: #123f3b;
+  color: #ecfdf9;
+  box-shadow: inset 4px 0 #2dd4bf, 0 8px 22px rgba(13, 148, 136, 0.16);
 }
 
 .item-emoji {
-  font-size: 22px;
+  width: fit-content;
+  min-width: 42px;
+  min-height: 32px;
+  padding: 5px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: #343c4b;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 800;
 }
 
 .item-name {
@@ -582,7 +675,7 @@ input:focus {
 }
 
 .item-meta {
-  color: #b8b5c7;
+  color: #cbd5e1;
   font-size: 12px;
 }
 
@@ -703,10 +796,10 @@ input:focus {
 }
 
 .street-layout {
-  grid-template-columns: minmax(0, 1fr) 410px;
+  grid-template-columns: minmax(0, 1fr) clamp(420px, 27vw, 480px);
 }
 
-.street-layout .side-panel {
+.side-panel.neighborhood-side-panel {
   display: block;
   overflow: hidden;
   padding: 0;
@@ -1211,14 +1304,27 @@ input:focus {
     grid-template-rows: auto 420px 240px;
   }
 
-  .street-layout .side-panel {
+  .side-panel.neighborhood-side-panel {
     height: 620px;
   }
 
   .street-controls {
+    width: max-content;
     max-width: calc(100% - 20px);
     min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
+    flex-wrap: wrap;
+    justify-content: center;
+    overflow: visible;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 560px) {
+  .item-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .side-panel > .tabs button {
+    font-size: 10px;
   }
 }
