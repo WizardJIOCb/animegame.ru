@@ -868,6 +868,7 @@ export default function App() {
   }
 
   const insideOwnHome = sceneMode === "street" && activeInteriorOwner === user.username;
+  const showNeighborhoodPanel = sceneMode === "street" && neighborhood !== null && !insideOwnHome;
   const canEditHome = ownHome && (sceneMode === "home" || insideOwnHome);
   const seamlessLocationTitle = activeInteriorOwner === user.username
     ? `Мой дом · ${ownNeighborhoodResident?.houseLevel ?? 1} ур.`
@@ -922,7 +923,7 @@ export default function App() {
         <button className="icon-button" onClick={logout} title="Выйти"><LogOut size={18} /></button>
       </section>
 
-      <section className={sceneMode === "street" ? "game-layout street-layout" : "game-layout"}>
+      <section className={showNeighborhoodPanel ? "game-layout street-layout" : "game-layout"}>
         <div className="scene-wrap">
           {sceneMode === "street" && neighborhood ? (
             <NeighborhoodScene
@@ -957,7 +958,7 @@ export default function App() {
             />
           )}
           {sceneMode === "home" || insideOwnHome ? (
-            <div className="scene-hint">
+            <div className={sceneMode === "street" ? "scene-hint street-scene-hint" : "scene-hint"}>
               {buildMode && canEditHome
                 ? "Стройка: выберите предмет и кликните по полу. Правая кнопка двигает камеру."
                 : insideOwnHome
@@ -1017,8 +1018,8 @@ export default function App() {
           {toast ? <div className="toast">{toast}</div> : null}
         </div>
 
-        <aside className="side-panel">
-          {sceneMode === "street" && neighborhood && !insideOwnHome ? (
+        <aside className={showNeighborhoodPanel ? "side-panel neighborhood-side-panel" : "side-panel"}>
+          {showNeighborhoodPanel && neighborhood ? (
             <NeighborhoodPanel
               user={user}
               neighborhood={neighborhood}
@@ -1055,17 +1056,31 @@ export default function App() {
                   const selectable = ["character", "clothing", "pet"].includes(item.type);
                   const equipped = item.id === user.avatar.outfit || item.id === user.avatar.character || item.id === user.avatar.pet;
                   const removableEquipped = equipped && item.type !== "character";
+                  const lockedOwned = owned && !selectable;
+                  const unaffordable = !owned && user.coins < item.price;
+                  const cardClassName = [
+                    "shop-card",
+                    owned ? "owned" : "",
+                    equipped ? "equipped" : "",
+                    unaffordable ? "unaffordable" : ""
+                  ].filter(Boolean).join(" ");
                   return (
                     <button
                       key={item.id}
-                      className={equipped ? "shop-card equipped" : "shop-card"}
+                      className={cardClassName}
                       onClick={() => handleBuy(item.id)}
-                      disabled={(owned && !selectable) || user.coins < item.price}
+                      disabled={lockedOwned || unaffordable}
                     >
                       <span className="item-emoji">{item.emoji}</span>
                       <span className="item-name">{item.name}</span>
                       {equipped ? <span className="item-meta equipped">{removableEquipped ? "снять" : "выбрано"}</span> : null}
-                      <span className="item-meta">{owned && selectable ? "выбрать" : `${rarityLabel(item.rarity)} · ${item.price} монет`}</span>
+                      <span className="item-meta">
+                        {owned
+                          ? selectable ? "выбрать" : "куплено"
+                          : unaffordable
+                            ? `не хватает ${(item.price - user.coins).toLocaleString("ru-RU")}`
+                            : `${rarityLabel(item.rarity)} · ${item.price.toLocaleString("ru-RU")} монет`}
+                      </span>
                     </button>
                   );
                 })}
@@ -1101,7 +1116,12 @@ export default function App() {
                 {inventoryItems.map((item, index) => {
                   const placeable = ownHome && ["furniture", "decor", "outdoor"].includes(item.type);
                   return (
-                    <button key={`${item.id}-${index}`} className="shop-card" onClick={() => placeable && handlePlace(item.id)} disabled={!placeable}>
+                    <button
+                      key={`${item.id}-${index}`}
+                      className={placeable ? "shop-card" : "shop-card unavailable"}
+                      onClick={() => placeable && handlePlace(item.id)}
+                      disabled={!placeable}
+                    >
                       <span className="item-emoji">{item.emoji}</span>
                       <span className="item-name">{item.name}</span>
                       <span className="item-meta">{placeable ? "поставить дома" : item.type}</span>

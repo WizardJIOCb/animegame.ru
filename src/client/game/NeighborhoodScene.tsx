@@ -37,9 +37,42 @@ type CameraBounds = {
   maxZ: number;
 };
 
+type InteriorNavBlocker = {
+  x: number;
+  z: number;
+  halfX: number;
+  halfZ: number;
+  rotation: number;
+};
+
+type InteriorNavCell = {
+  x: number;
+  z: number;
+};
+
+type InteriorNavGrid = {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  columns: number;
+  rows: number;
+  blockers: InteriorNavBlocker[];
+};
+
+type PendingInteriorInteraction = {
+  itemId: string;
+  action: string;
+  residentUsername: string;
+  approachPoint: THREE.Vector3;
+} | null;
+
 const WORLD_X = 42;
 const WORLD_Z = 76;
-const WALK_SPEED = 5.4;
+const WALK_SPEED = 2.35;
+const WALK_DELTA_CAP = 0.05;
+const INTERIOR_GRID_STEP = 0.45;
+const PLAYER_PATH_CLEARANCE = 0.28;
 const CAR_MAX_SPEED = 12.5;
 const DOOR_HALF_WIDTH = 0.72;
 const WALL_THICKNESS = 0.18;
@@ -195,18 +228,280 @@ function resolveWalkPosition(current: THREE.Vector3, requested: THREE.Vector3, r
 
 function blocksInteriorPath(item: CatalogItem) {
   const id = item.id.toLowerCase();
-  if (item.type !== "furniture" && item.type !== "outdoor") return false;
-  return !id.includes("door")
-    && !id.includes("rug")
-    && !id.includes("floor")
-    && !id.includes("grass")
-    && !id.includes("flower")
-    && !id.includes("path")
-    && !id.includes("water")
-    && !id.includes("terrain")
-    && !id.includes("platform")
-    && !id.includes("deck")
-    && !id.includes("lawn");
+  if (item.type !== "furniture" && item.type !== "decor" && item.type !== "outdoor") return false;
+  const isDoorway = id.includes("doorway") || id.includes("build-door");
+  const isFloorSurface = (item.size?.[1] ?? Infinity) <= 0.12
+    || id.startsWith("kenney-floor")
+    || id.includes("rug")
+    || id.includes("terrain")
+    || id.includes("platform")
+    || id.includes("deck")
+    || id.includes("lawn")
+    || id.startsWith("kenney-nature-ground-")
+    || id.startsWith("kenney-nature-path-");
+  const isSoftPlant = id.startsWith("kenney-nature-grass") || id.startsWith("kenney-nature-flower");
+  return !isDoorway && !isFloorSurface && !isSoftPlant;
+}
+
+function makeInteriorNavGrid(resident: NeighborhoodResident, catalog: CatalogItem[]): InteriorNavGrid {
+  const wallPadding = 0.38;
+  const minX = -houseWidth(resident.houseLevel) / 2 + wallPadding;
+  const maxX = houseWidth(resident.houseLevel) / 2 - wallPadding;
+  const minZ = -houseDepth(resident.houseLevel) / 2 + wallPadding;
+  const maxZ = houseDepth(resident.houseLevel) / 2 - wallPadding;
+  const blockers = resident.placedItems.flatMap((placed): InteriorNavBlocker[] => {
+    const item = getCatalogItem(catalog, placed.itemId);
+    if (!item || !blocksInteriorPath(item)) return [];
+    const baseSize = item.size ?? [0.9, 0.9, 0.9];
+    const scale = placed.scale ?? 1;
+    const width = baseSize[0] * scale;
+    const depth = baseSize[2] * scale;
+    return [{
+      x: placed.x,
+      z: placed.z,
+      halfX: width / 2 + PLAYER_PATH_CLEARANCE,
+      halfZ: depth / 2 + PLAYER_PATH_CLEARANCE,
+      rotation: placed.rotation
+    }];
+  });
+
+  return {
+    minX,
+    maxX,
+    minZ,
+    maxZ,
+    columns: Math.floor((maxX - minX) / INTERIOR_GRID_STEP) + 1,
+    rows: Math.floor((maxZ - minZ) / INTERIOR_GRID_STEP) + 1,
+    blockers
+  };
+}
+
+function isInteriorPointClearOfBlockers(x: number, z: number, grid: InteriorNavGrid) {
+  return !grid.blockers.some((blocker) => {
+    const dx = x - blocker.x;
+    const dz = z - blocker.z;
+    const cos = Math.cos(blocker.rotation);
+    const sin = Math.sin(blocker.rotation);
+    const itemX = dx * cos - dz * sin;
+    const itemZ = dx * sin + dz * cos;
+    return Math.abs(itemX) <= blocker.halfX && Math.abs(itemZ) <= blocker.halfZ;
+  });
+}
+
+function isInteriorNavPointWalkable(x: number, z: number, grid: InteriorNavGrid) {
+  if (x < grid.minX || x > grid.maxX || z < grid.minZ || z > grid.maxZ) return false;
+  return isInteriorPointClearOfBlockers(x, z, grid);
+}
+
+function interiorCellKey(cell: InteriorNavCell) {
+  return `${cell.x}:${cell.z}`;
+}
+
+function interiorCellToLocal(cell: InteriorNavCell, grid: InteriorNavGrid) {
+  return new THREE.Vector3(
+    grid.minX + cell.x * INTERIOR_GRID_STEP,
+    0,
+    grid.minZ + cell.z * INTERIOR_GRID_STEP
+  );
+}
+
+function interiorLocalToCell(point: THREE.Vector3, grid: InteriorNavGrid): InteriorNavCell {
+  return {
+    x: THREE.MathUtils.clamp(Math.round((point.x - grid.minX) / INTERIOR_GRID_STEP), 0, grid.columns - 1),
+    z: THREE.MathUtils.clamp(Math.round((point.z - grid.minZ) / INTERIOR_GRID_STEP), 0, grid.rows - 1)
+  };
+}
+
+function isInteriorCellWalkable(cell: InteriorNavCell, grid: InteriorNavGrid) {
+  const point = interiorCellToLocal(cell, grid);
+  return isInteriorNavPointWalkable(point.x, point.z, grid);
+}
+
+function nearestInteriorWalkableCell(
+  cell: InteriorNavCell,
+  grid: InteriorNavGrid,
+  connectsToExactPoint?: (cell: InteriorNavCell) => boolean
+) {
+  const canUse = (candidate: InteriorNavCell) => (
+    isInteriorCellWalkable(candidate, grid) && (connectsToExactPoint?.(candidate) ?? true)
+  );
+  if (canUse(cell)) return cell;
+  const maxRadius = Math.max(grid.columns, grid.rows);
+  for (let radius = 1; radius < maxRadius; radius += 1) {
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      for (let dz = -radius; dz <= radius; dz += 1) {
+        if (Math.abs(dx) !== radius && Math.abs(dz) !== radius) continue;
+        const next = { x: cell.x + dx, z: cell.z + dz };
+        if (next.x < 0 || next.x >= grid.columns || next.z < 0 || next.z >= grid.rows) continue;
+        if (canUse(next)) return next;
+      }
+    }
+  }
+  return null;
+}
+
+function isInteriorSegmentWalkable(from: THREE.Vector3, to: THREE.Vector3, grid: InteriorNavGrid) {
+  const distance = from.distanceTo(to);
+  const samples = Math.max(1, Math.ceil(distance / (INTERIOR_GRID_STEP * 0.4)));
+  for (let index = 0; index <= samples; index += 1) {
+    const point = from.clone().lerp(to, index / samples);
+    if (!isInteriorNavPointWalkable(point.x, point.z, grid)) return false;
+  }
+  return true;
+}
+
+function simplifyInteriorPath(points: THREE.Vector3[], grid: InteriorNavGrid) {
+  if (points.length <= 2) return points;
+  const simplified = [points[0]];
+  let anchor = 0;
+  while (anchor < points.length - 1) {
+    let next = points.length - 1;
+    while (next > anchor + 1 && !isInteriorSegmentWalkable(points[anchor], points[next], grid)) {
+      next -= 1;
+    }
+    simplified.push(points[next]);
+    anchor = next;
+  }
+  return simplified;
+}
+
+function findInteriorPath(
+  startWorld: THREE.Vector3,
+  goalWorld: THREE.Vector3,
+  resident: NeighborhoodResident,
+  catalog: CatalogItem[],
+  existingGrid?: InteriorNavGrid
+) {
+  const grid = existingGrid ?? makeInteriorNavGrid(resident, catalog);
+  const startLocal = worldToHouseLocal(startWorld, resident).setY(0);
+  const goalLocal = worldToHouseLocal(goalWorld, resident).setY(0);
+  if (!isInteriorNavPointWalkable(goalLocal.x, goalLocal.z, grid)) return null;
+  const startWalkable = isInteriorNavPointWalkable(startLocal.x, startLocal.z, grid);
+  const startCell = nearestInteriorWalkableCell(
+    interiorLocalToCell(startLocal, grid),
+    grid,
+    startWalkable
+      ? (candidate) => isInteriorSegmentWalkable(startLocal, interiorCellToLocal(candidate, grid), grid)
+      : undefined
+  );
+  const goalCell = nearestInteriorWalkableCell(
+    interiorLocalToCell(goalLocal, grid),
+    grid,
+    (candidate) => isInteriorSegmentWalkable(interiorCellToLocal(candidate, grid), goalLocal, grid)
+  );
+  if (!startCell || !goalCell) return null;
+
+  const startKey = interiorCellKey(startCell);
+  const goalKey = interiorCellKey(goalCell);
+  const open: InteriorNavCell[] = [startCell];
+  const cameFrom = new Map<string, string>();
+  const cells = new Map<string, InteriorNavCell>([[startKey, startCell], [goalKey, goalCell]]);
+  const gScore = new Map<string, number>([[startKey, 0]]);
+  const directions = [
+    { x: 1, z: 0, cost: 1 },
+    { x: -1, z: 0, cost: 1 },
+    { x: 0, z: 1, cost: 1 },
+    { x: 0, z: -1, cost: 1 },
+    { x: 1, z: 1, cost: Math.SQRT2 },
+    { x: 1, z: -1, cost: Math.SQRT2 },
+    { x: -1, z: 1, cost: Math.SQRT2 },
+    { x: -1, z: -1, cost: Math.SQRT2 }
+  ];
+  const heuristic = (cell: InteriorNavCell) => Math.hypot(cell.x - goalCell.x, cell.z - goalCell.z);
+  const guardLimit = grid.columns * grid.rows * 2;
+
+  for (let guard = 0; open.length > 0 && guard < guardLimit; guard += 1) {
+    open.sort((left, right) => {
+      const leftScore = (gScore.get(interiorCellKey(left)) ?? Infinity) + heuristic(left);
+      const rightScore = (gScore.get(interiorCellKey(right)) ?? Infinity) + heuristic(right);
+      return leftScore - rightScore;
+    });
+    const current = open.shift()!;
+    const currentKey = interiorCellKey(current);
+
+    if (currentKey === goalKey) {
+      const cellPath = [current];
+      let cursor = currentKey;
+      while (cameFrom.has(cursor)) {
+        cursor = cameFrom.get(cursor)!;
+        cellPath.push(cells.get(cursor)!);
+      }
+      cellPath.reverse();
+
+      const localPath = [startLocal.clone()];
+      const startCenter = interiorCellToLocal(startCell, grid);
+      if (startLocal.distanceTo(startCenter) > 0.08) localPath.push(startCenter);
+      for (const cell of cellPath.slice(1)) {
+        localPath.push(interiorCellToLocal(cell, grid));
+      }
+      const finalLocal = goalLocal;
+      if (localPath[localPath.length - 1].distanceTo(finalLocal) > 0.08) localPath.push(finalLocal);
+
+      return simplifyInteriorPath(localPath, grid)
+        .slice(1)
+        .map((point) => houseLocalToWorld(point, resident).setY(0));
+    }
+
+    for (const direction of directions) {
+      const next = { x: current.x + direction.x, z: current.z + direction.z };
+      if (next.x < 0 || next.x >= grid.columns || next.z < 0 || next.z >= grid.rows) continue;
+      if (!isInteriorCellWalkable(next, grid)) continue;
+      const currentPoint = interiorCellToLocal(current, grid);
+      const nextPoint = interiorCellToLocal(next, grid);
+      if (!isInteriorSegmentWalkable(currentPoint, nextPoint, grid)) continue;
+      if (direction.x !== 0 && direction.z !== 0) {
+        if (!isInteriorCellWalkable({ x: current.x + direction.x, z: current.z }, grid)
+          || !isInteriorCellWalkable({ x: current.x, z: current.z + direction.z }, grid)) {
+          continue;
+        }
+      }
+
+      const nextKey = interiorCellKey(next);
+      const tentativeScore = (gScore.get(currentKey) ?? Infinity) + direction.cost;
+      if (tentativeScore >= (gScore.get(nextKey) ?? Infinity)) continue;
+      cameFrom.set(nextKey, currentKey);
+      cells.set(nextKey, next);
+      gScore.set(nextKey, tentativeScore);
+      if (!open.some((cell) => interiorCellKey(cell) === nextKey)) open.push(next);
+    }
+  }
+
+  return null;
+}
+
+function interiorDoorApproach(resident: NeighborhoodResident) {
+  return houseLocalToWorld(
+    new THREE.Vector3(0, 0, houseDepth(resident.houseLevel) / 2 - 0.62),
+    resident
+  );
+}
+
+function isInteriorDoorClear(resident: NeighborhoodResident, catalog: CatalogItem[]) {
+  const innerDoorLocal = worldToHouseLocal(interiorDoorApproach(resident), resident);
+  const outerDoorLocal = worldToHouseLocal(residentDoorPosition(resident), resident);
+  const grid = makeInteriorNavGrid(resident, catalog);
+  if (!isInteriorNavPointWalkable(innerDoorLocal.x, innerDoorLocal.z, grid)) return false;
+  const samples = Math.ceil((outerDoorLocal.z - innerDoorLocal.z) / 0.12);
+  return Array.from({ length: samples + 1 }, (_, index) => (
+    innerDoorLocal.z + (outerDoorLocal.z - innerDoorLocal.z) * index / samples
+  )).every((z) => isInteriorPointClearOfBlockers(innerDoorLocal.x, z, grid));
+}
+
+function appendUniqueRoute(route: THREE.Vector3[], points: THREE.Vector3[]) {
+  for (const point of points) {
+    const last = route[route.length - 1];
+    if (!last || last.distanceTo(point) > 0.08) route.push(point.clone().setY(0));
+  }
+}
+
+function routeLength(start: THREE.Vector3, route: THREE.Vector3[]) {
+  let length = 0;
+  let cursor = start;
+  for (const point of route) {
+    length += cursor.distanceTo(point);
+    cursor = point;
+  }
+  return length;
 }
 
 function resolveInteriorItemCollisions(
@@ -218,11 +513,8 @@ function resolveInteriorItemCollisions(
   const resident = residentAtPosition(requested, residents) ?? residentAtPosition(current, residents);
   if (!resident) return requested;
 
-  const halfDepth = houseDepth(resident.houseLevel) / 2;
   const candidate = worldToHouseLocal(requested, resident);
   const currentLocal = worldToHouseLocal(current, resident);
-  const inExitCorridor = Math.abs(candidate.x) <= DOOR_HALF_WIDTH + 0.32 && candidate.z >= halfDepth - 2.85;
-  if (inExitCorridor) return requested;
 
   for (const placed of resident.placedItems) {
     const item = getCatalogItem(catalog, placed.itemId);
@@ -809,7 +1101,14 @@ type SeamlessHouseProps = {
   selectedPlacedId: string;
   onEnter: (resident: NeighborhoodResident) => void;
   onFloorClick: (event: ThreeEvent<MouseEvent>, resident: NeighborhoodResident) => void;
-  onInteract: (itemId: string, action: string) => void;
+  onInteract: (
+    resident: NeighborhoodResident,
+    item: CatalogItem,
+    x: number,
+    z: number,
+    rotation: number,
+    size: [number, number, number]
+  ) => void;
   onSelectPlaced: (instanceId: string) => void;
 };
 
@@ -996,7 +1295,7 @@ function SeamlessHouse({
             itemScale={placed.scale ?? 1}
             selected={isOwn && selectedPlacedId === placed.instanceId}
             buildMode={isOwn && buildMode}
-            onInteract={(nextItem) => onInteract(nextItem.id, nextItem.type === "furniture" ? "use" : "look")}
+            onInteract={(nextItem, x, z, size) => onInteract(resident, nextItem, x, z, placed.rotation, size)}
             onSelect={onSelectPlaced}
           />
         );
@@ -1257,6 +1556,7 @@ function NeighborhoodWorld({
   const clickTarget = useRef<THREE.Vector3 | null>(null);
   const clickPath = useRef<THREE.Vector3[]>([]);
   const pendingVisit = useRef<NeighborhoodResident | null>(null);
+  const pendingInteraction = useRef<PendingInteriorInteraction>(null);
   const handledVisitRequest = useRef<number | null>(null);
   const drivingRef = useRef(false);
   const lastMoveSent = useRef(0);
@@ -1283,24 +1583,81 @@ function NeighborhoodWorld({
     pet: getCatalogItem(catalog, player.avatar?.pet)
   })), [catalog, remotePlayers]);
 
-  function startClickRoute(points: THREE.Vector3[]) {
+  function finishInteriorInteraction(interaction: NonNullable<PendingInteriorInteraction>) {
+    const stillInsideTargetHome = activeInteriorRef.current?.username === interaction.residentUsername;
+    const reachedApproachPoint = playerPosition.current.distanceTo(interaction.approachPoint) <= 0.42;
+    if (!stillInsideTargetHome || !reachedApproachPoint) {
+      onToast("Не получилось подойти к предмету достаточно близко");
+      return;
+    }
+    onInteract(interaction.itemId, interaction.action);
+  }
+
+  function startClickRoute(points: THREE.Vector3[], interaction: PendingInteriorInteraction = null) {
     const route = points.filter((point, index) => index === 0 || point.distanceTo(points[index - 1]) > 0.08);
     clickTarget.current = route.shift() ?? null;
     clickPath.current = route;
+    pendingInteraction.current = interaction;
+    if (!clickTarget.current && interaction) {
+      pendingInteraction.current = null;
+      finishInteriorInteraction(interaction);
+    }
+  }
+
+  function buildRouteToInteriorEntry(resident: NeighborhoodResident) {
+    const currentInterior = activeInteriorRef.current;
+    const route: THREE.Vector3[] = [];
+    let cursor = playerPosition.current.clone();
+
+    if (currentInterior && currentInterior.username !== resident.username) {
+      if (!isInteriorDoorClear(currentInterior, catalog)) {
+        onToast("Путь к двери перекрыт предметами");
+        return null;
+      }
+      const innerDoor = interiorDoorApproach(currentInterior);
+      const exitPath = findInteriorPath(cursor, innerDoor, currentInterior, catalog);
+      if (!exitPath) {
+        onToast("Путь к двери перекрыт предметами");
+        return null;
+      }
+      appendUniqueRoute(route, exitPath);
+      appendUniqueRoute(route, [residentDoorPosition(currentInterior)]);
+      cursor = residentDoorPosition(currentInterior);
+    }
+
+    if (!currentInterior || currentInterior.username !== resident.username) {
+      const outerDoor = residentDoorPosition(resident);
+      const innerDoor = interiorDoorApproach(resident);
+      if (!isInteriorDoorClear(resident, catalog)) {
+        onToast("Вход в дом перекрыт предметами");
+        return null;
+      }
+      appendUniqueRoute(route, [outerDoor, innerDoor]);
+      cursor = innerDoor;
+    }
+
+    return { route, cursor };
   }
 
   function routeToResident(resident: NeighborhoodResident) {
-    const currentInterior = activeInteriorRef.current;
-    const route: THREE.Vector3[] = [];
-    if (currentInterior && currentInterior.username !== resident.username) {
-      route.push(residentDoorPosition(currentInterior));
+    clickTarget.current = null;
+    clickPath.current = [];
+    pendingVisit.current = null;
+    pendingInteraction.current = null;
+    const entry = buildRouteToInteriorEntry(resident);
+    if (!entry) return false;
+    const { route, cursor } = entry;
+
+    const target = residentInteriorTarget(resident);
+    const interiorPath = findInteriorPath(cursor, target, resident, catalog);
+    if (!interiorPath) {
+      onToast("Не получается проложить путь внутри дома");
+      return false;
     }
-    if (!currentInterior || currentInterior.username !== resident.username) {
-      route.push(residentDoorPosition(resident));
-    }
-    route.push(residentInteriorTarget(resident));
+    appendUniqueRoute(route, interiorPath);
     pendingVisit.current = resident;
     startClickRoute(route);
+    return true;
   }
 
   useEffect(() => {
@@ -1352,6 +1709,7 @@ function NeighborhoodWorld({
         clickTarget.current = null;
         clickPath.current = [];
         pendingVisit.current = null;
+        pendingInteraction.current = null;
         playerPosition.current.copy(carPosition.current);
         playerRotation.current = carRotation.current;
         setDriveState(true);
@@ -1414,12 +1772,14 @@ function NeighborhoodWorld({
       onToast("Сначала выйдите из машины");
       return;
     }
-    routeToResident(resident);
-    onToast(resident.username === user.username ? "Идём домой" : `Идём в гости к ${resident.username}`);
+    if (routeToResident(resident)) {
+      onToast(resident.username === user.username ? "Идём домой" : `Идём в гости к ${resident.username}`);
+    }
   }, [onToast, user.username, visitRequest, worldResidents]);
 
   useFrame((_, delta) => {
     let didMove = false;
+    let completedClickRoute = false;
     if (drivingRef.current) {
       const throttle = (keys.current.has("w") || keys.current.has("arrowup") ? 1 : 0)
         - (keys.current.has("s") || keys.current.has("arrowdown") ? 1 : 0);
@@ -1445,26 +1805,36 @@ function NeighborhoodWorld({
       playerPosition.current.copy(carPosition.current);
       playerRotation.current = carRotation.current;
     } else {
-      let direction = new THREE.Vector3();
       if (clickTarget.current) {
-        direction = clickTarget.current.clone().sub(playerPosition.current);
+        const direction = clickTarget.current.clone().sub(playerPosition.current);
         direction.y = 0;
-        if (direction.length() < 0.16) {
+        const distance = direction.length();
+        const maxStep = WALK_SPEED * Math.min(delta, WALK_DELTA_CAP);
+        if (distance <= maxStep + 0.001) {
+          didMove = distance > 0.001;
           playerPosition.current.copy(clickTarget.current);
           clickTarget.current = clickPath.current.shift() ?? null;
-          direction.set(0, 0, 0);
+          completedClickRoute = !clickTarget.current && clickPath.current.length === 0;
+        } else {
+          direction.normalize();
+          playerRotation.current = Math.atan2(direction.x, direction.z);
+          const currentPosition = playerPosition.current.clone();
+          const nextPosition = currentPosition.clone().addScaledVector(direction, maxStep);
+          const shellResolved = resolveWalkPosition(currentPosition, nextPosition, worldResidents);
+          const itemResolved = resolveInteriorItemCollisions(currentPosition, shellResolved, worldResidents, catalog);
+          const actualDistance = currentPosition.distanceTo(itemResolved);
+          if (actualDistance > 0.0005) {
+            playerPosition.current.copy(itemResolved);
+            didMove = true;
+          }
         }
       }
+    }
 
-      if (direction.lengthSq() > 0) {
-        direction.normalize();
-        playerRotation.current = Math.atan2(direction.x, direction.z);
-        const nextPosition = playerPosition.current.clone().addScaledVector(direction, WALK_SPEED * delta);
-        const currentPosition = playerPosition.current.clone();
-        const shellResolved = resolveWalkPosition(currentPosition, nextPosition, worldResidents);
-        playerPosition.current.copy(resolveInteriorItemCollisions(currentPosition, shellResolved, worldResidents, catalog));
-        didMove = true;
-      }
+    if (!drivingRef.current && !clickTarget.current && clickPath.current.length === 0 && pendingInteraction.current) {
+      const interaction = pendingInteraction.current;
+      pendingInteraction.current = null;
+      finishInteriorInteraction(interaction);
     }
 
     const nextInterior = residentAtPosition(playerPosition.current, worldResidents) ?? null;
@@ -1493,7 +1863,7 @@ function NeighborhoodWorld({
     setRenderCarRotation(carRotation.current);
 
     const now = performance.now();
-    if (didMove && now - lastMoveSent.current > 120) {
+    if (didMove && (completedClickRoute || now - lastMoveSent.current > 120)) {
       lastMoveSent.current = now;
       onMove({
         x: playerPosition.current.x,
@@ -1505,14 +1875,121 @@ function NeighborhoodWorld({
     }
   });
 
+  function handleInteriorObjectInteract(
+    resident: NeighborhoodResident,
+    item: CatalogItem,
+    x: number,
+    z: number,
+    rotation: number,
+    size: [number, number, number]
+  ) {
+    if (drivingRef.current) return;
+    clickTarget.current = null;
+    clickPath.current = [];
+    pendingVisit.current = null;
+    pendingInteraction.current = null;
+    const start = playerPosition.current.clone();
+    const entry = buildRouteToInteriorEntry(resident);
+    if (!entry) return;
+    const playerLocal = worldToHouseLocal(entry.cursor, resident).setY(0);
+    const objectLocal = new THREE.Vector3(x, 0, z);
+    const towardPlayer = playerLocal.clone().sub(objectLocal).setY(0);
+    if (towardPlayer.lengthSq() < 0.001) towardPlayer.set(0, 0, 1);
+    towardPlayer.normalize();
+    const itemRight = new THREE.Vector3(Math.cos(rotation), 0, -Math.sin(rotation));
+    const itemForward = new THREE.Vector3(Math.sin(rotation), 0, Math.cos(rotation));
+    const directions = [
+      towardPlayer,
+      itemRight,
+      itemRight.clone().multiplyScalar(-1),
+      itemForward,
+      itemForward.clone().multiplyScalar(-1)
+    ];
+    const grid = makeInteriorNavGrid(resident, catalog);
+    let bestRoute: THREE.Vector3[] | null = null;
+    let bestApproachPoint: THREE.Vector3 | null = null;
+    let bestLength = Infinity;
+
+    for (const direction of directions) {
+      const normalized = direction.clone().normalize();
+      const itemSpaceDirection = normalized.clone().applyAxisAngle(UP, -rotation);
+      const supportDistance = Math.abs(itemSpaceDirection.x) * size[0] / 2
+        + Math.abs(itemSpaceDirection.z) * size[2] / 2
+        + 0.72;
+      const candidateLocal = objectLocal.clone().addScaledVector(normalized, supportDistance);
+      candidateLocal.x = THREE.MathUtils.clamp(candidateLocal.x, grid.minX, grid.maxX);
+      candidateLocal.z = THREE.MathUtils.clamp(candidateLocal.z, grid.minZ, grid.maxZ);
+      const candidateWorld = houseLocalToWorld(candidateLocal, resident).setY(0);
+      const interiorRoute = findInteriorPath(entry.cursor, candidateWorld, resident, catalog, grid);
+      if (!interiorRoute) continue;
+      const route = entry.route.map((point) => point.clone());
+      appendUniqueRoute(route, interiorRoute);
+      const length = routeLength(start, route);
+      if (length < bestLength) {
+        bestLength = length;
+        bestRoute = route;
+        bestApproachPoint = candidateWorld;
+      }
+    }
+
+    if (!bestRoute) {
+      onToast("К предмету не получается подойти — путь перекрыт");
+      return;
+    }
+    if (!bestApproachPoint) {
+      onToast("К предмету не получается подойти — путь перекрыт");
+      return;
+    }
+    startClickRoute(bestRoute, {
+      itemId: item.id,
+      action: item.type === "furniture" ? "use" : "look",
+      residentUsername: resident.username,
+      approachPoint: bestApproachPoint
+    });
+  }
+
   function handleGroundClick(event: ThreeEvent<MouseEvent>) {
     if (drivingRef.current || !isPrimarySceneClick(event)) return;
+    clickTarget.current = null;
+    clickPath.current = [];
     pendingVisit.current = null;
+    pendingInteraction.current = null;
     const worldPoint = event.point.clone().add(viewOrigin).setY(0);
     const currentInterior = activeInteriorRef.current;
     const targetInterior = residentAtPosition(worldPoint, worldResidents);
+
+    if (targetInterior && targetInterior.username !== currentInterior?.username) {
+      if (routeToResident(targetInterior)) {
+        onToast(targetInterior.username === user.username ? "Идём домой" : `Идём в гости к ${targetInterior.username}`);
+      }
+      return;
+    }
+
+    if (currentInterior && targetInterior?.username === currentInterior.username) {
+      const path = findInteriorPath(playerPosition.current, worldPoint, currentInterior, catalog);
+      if (!path) {
+        onToast("Не получается проложить путь между предметами");
+        return;
+      }
+      startClickRoute(path);
+      return;
+    }
+
     if (currentInterior && targetInterior?.username !== currentInterior.username) {
-      startClickRoute([residentDoorPosition(currentInterior), worldPoint]);
+      if (!isInteriorDoorClear(currentInterior, catalog)) {
+        onToast("Путь к двери перекрыт предметами");
+        return;
+      }
+      const innerDoor = interiorDoorApproach(currentInterior);
+      const exitPath = findInteriorPath(playerPosition.current, innerDoor, currentInterior, catalog);
+      if (!exitPath) {
+        onToast("Путь к двери перекрыт предметами");
+        return;
+      }
+      const route: THREE.Vector3[] = [];
+      appendUniqueRoute(route, exitPath);
+      appendUniqueRoute(route, [residentDoorPosition(currentInterior), worldPoint]);
+      startClickRoute(route);
       return;
     }
     startClickRoute([worldPoint]);
@@ -1520,6 +1997,10 @@ function NeighborhoodWorld({
 
   function handleInteriorFloorClick(event: ThreeEvent<MouseEvent>, resident: NeighborhoodResident) {
     if (drivingRef.current || !isPrimarySceneClick(event)) return;
+    clickTarget.current = null;
+    clickPath.current = [];
+    pendingVisit.current = null;
+    pendingInteraction.current = null;
     const worldPoint = event.point.clone().add(viewOrigin).setY(0);
     if (buildMode && resident.username === user.username && activeInteriorRef.current?.username === user.username) {
       const local = worldToHouseLocal(worldPoint, resident);
@@ -1529,8 +2010,12 @@ function NeighborhoodWorld({
       );
       return;
     }
-    pendingVisit.current = null;
-    startClickRoute([worldPoint]);
+    const path = findInteriorPath(playerPosition.current, worldPoint, resident, catalog);
+    if (!path) {
+      onToast("Не получается проложить путь между предметами");
+      return;
+    }
+    startClickRoute(path);
   }
 
   function handleHouseEnter(resident: NeighborhoodResident) {
@@ -1538,8 +2023,9 @@ function NeighborhoodWorld({
       onToast("Сначала выйдите из машины возле дома");
       return;
     }
-    routeToResident(resident);
-    onToast(resident.username === user.username ? "Идём домой" : `Идём в гости к ${resident.username}`);
+    if (routeToResident(resident)) {
+      onToast(resident.username === user.username ? "Идём домой" : `Идём в гости к ${resident.username}`);
+    }
   }
 
   const controlledCarTransform = { position: renderCarPosition, rotation: renderCarRotation };
@@ -1596,7 +2082,7 @@ function NeighborhoodWorld({
             selectedPlacedId={selectedPlacedId}
             onEnter={handleHouseEnter}
             onFloorClick={handleInteriorFloorClick}
-            onInteract={onInteract}
+            onInteract={handleInteriorObjectInteract}
             onSelectPlaced={onSelectPlaced}
           />
         ))}
