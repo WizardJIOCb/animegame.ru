@@ -1,9 +1,15 @@
 import { Html, OrbitControls, Sparkles, useGLTF } from "@react-three/drei";
-import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Canvas, createPortal, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import * as THREE from "three";
-import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { clone as cloneSkeleton, retargetClip } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { CatalogItem, HomeState, PublicUser, RemotePlayer } from "../types";
+import {
+  isLocomotionMotion,
+  WEAPON_MODELS,
+  type CharacterMotion,
+  type WeaponKind
+} from "./combat";
 
 type GameSceneProps = {
   user: PublicUser;
@@ -964,56 +970,138 @@ function makeOutfitDecalTexture(item: CatalogItem | undefined, kind: OutfitDecal
   return texture;
 }
 
-function poseCharacterBones(
-  bones: Record<string, THREE.Bone>,
-  initialRotations: Record<string, THREE.Euler>,
-  time: number,
-  moving: boolean
+const CHARACTER_ANIMATION_URL = "/assets/animations/quaternius-universal/UAL1_Standard.glb";
+
+const MOTION_CLIPS: Record<CharacterMotion, string> = {
+  idle: "Idle_Loop",
+  armedIdle: "Pistol_Idle_Loop",
+  walk: "Walk_Loop",
+  run: "Sprint_Loop",
+  jumpStart: "Jump_Start",
+  jumpLoop: "Jump_Loop",
+  jumpLand: "Jump_Land",
+  crouchIdle: "Crouch_Idle_Loop",
+  crouchWalk: "Crouch_Fwd_Loop",
+  aim: "Pistol_Aim_Neutral",
+  shoot: "Pistol_Shoot",
+  death: "Death01"
+};
+
+const MOTION_SPEED: Record<CharacterMotion, number> = {
+  idle: 1,
+  armedIdle: 1,
+  walk: 1.35,
+  run: 1.15,
+  jumpStart: 2.9,
+  jumpLoop: 1,
+  jumpLand: 3.1,
+  crouchIdle: 1,
+  crouchWalk: 1.3,
+  aim: 1,
+  shoot: 1.75,
+  death: 1
+};
+
+const ONE_SHOT_MOTIONS = new Set<CharacterMotion>(["jumpStart", "jumpLand", "shoot", "death"]);
+const retargetedAnimationCache = new Map<string, Map<string, THREE.AnimationClip>>();
+
+function findFirstSkinnedMesh(root: THREE.Object3D): THREE.SkinnedMesh | null {
+  let result: THREE.SkinnedMesh | null = null;
+  root.traverse((node) => {
+    if (!result && (node as THREE.SkinnedMesh).isSkinnedMesh) result = node as THREE.SkinnedMesh;
+  });
+  return result as THREE.SkinnedMesh | null;
+}
+
+function retargetCharacterAnimations(
+  cacheKey: string,
+  targetScene: THREE.Object3D,
+  sourceScene: THREE.Object3D,
+  sourceClips: THREE.AnimationClip[]
 ) {
-  const phase = Math.sin(time);
-  const counterPhase = Math.sin(time + Math.PI);
-  const idle = Math.sin(time) * 0.035;
-  const leftArmDown = -1.18;
-  const rightArmDown = 1.18;
+  const cached = retargetedAnimationCache.get(cacheKey);
+  if (cached) return cached;
 
-  const setBone = (name: string, x = 0, y = 0, z = 0) => {
-    const bone = bones[name];
-    const initial = initialRotations[name];
-    if (!bone || !initial) {
-      return;
-    }
-    bone.rotation.set(initial.x + x, initial.y + y, initial.z + z);
-  };
+  const result = new Map<string, THREE.AnimationClip>();
+  const targetMesh = findFirstSkinnedMesh(targetScene);
+  const sourceMesh = findFirstSkinnedMesh(sourceScene);
+  if (!targetMesh || !sourceMesh) return result;
 
-  if (moving) {
-    setBone("upperarm_l", phase * 0.24, 0.04, leftArmDown + phase * 0.05);
-    setBone("lowerarm_l", 0.16 + Math.max(0, counterPhase) * 0.14, 0, -0.08);
-    setBone("hand_l", -0.08, 0, -0.02);
-    setBone("upperarm_r", counterPhase * 0.24, -0.04, rightArmDown + counterPhase * 0.05);
-    setBone("lowerarm_r", 0.16 + Math.max(0, phase) * 0.14, 0, 0.08);
-    setBone("hand_r", -0.08, 0, 0.02);
-    setBone("thigh_l", counterPhase * 0.62, 0, 0);
-    setBone("calf_l", Math.max(0, phase) * 0.52, 0, 0);
-    setBone("foot_l", Math.max(0, phase) * -0.22, 0, 0);
-    setBone("thigh_r", phase * 0.62, 0, 0);
-    setBone("calf_r", Math.max(0, counterPhase) * 0.52, 0, 0);
-    setBone("foot_r", Math.max(0, counterPhase) * -0.22, 0, 0);
-    setBone("spine_01", 0.04, phase * 0.035, phase * 0.025);
-  } else {
-    setBone("upperarm_l", idle, 0.08, leftArmDown);
-    setBone("lowerarm_l", 0.16, 0, -0.08);
-    setBone("hand_l", -0.08, 0, -0.02);
-    setBone("upperarm_r", idle, -0.08, rightArmDown);
-    setBone("lowerarm_r", 0.16, 0, 0.08);
-    setBone("hand_r", -0.08, 0, 0.02);
-    setBone("spine_01", idle * 0.35, 0, 0);
-    setBone("thigh_l");
-    setBone("thigh_r");
-    setBone("calf_l");
-    setBone("calf_r");
-    setBone("foot_l");
-    setBone("foot_r");
+  const wantedNames = new Set(Object.values(MOTION_CLIPS));
+  for (const sourceClip of sourceClips) {
+    if (!wantedNames.has(sourceClip.name)) continue;
+    targetMesh.skeleton.pose();
+    targetScene.updateMatrixWorld(true);
+    sourceMesh.skeleton.pose();
+    sourceScene.updateMatrixWorld(true);
+    const clip = retargetClip(targetMesh, sourceMesh, sourceClip, {
+      hip: "pelvis",
+      fps: 30,
+      getBoneName: (bone) => bone.name
+    });
+    clip.name = sourceClip.name;
+    result.set(clip.name, clip.optimize());
   }
+  targetMesh.skeleton.pose();
+  targetScene.updateMatrixWorld(true);
+  retargetedAnimationCache.set(cacheKey, result);
+  return result;
+}
+
+function useCharacterAnimation(
+  scene: THREE.Object3D,
+  cacheKey: string,
+  motion: CharacterMotion,
+  motionRef?: RefObject<CharacterMotion>,
+  actionNonce = 0
+) {
+  const animationGltf = useGLTF(CHARACTER_ANIMATION_URL);
+  const targetMesh = useMemo(() => findFirstSkinnedMesh(scene), [scene]);
+  const clips = useMemo(
+    () => retargetCharacterAnimations(cacheKey, scene, animationGltf.scene, animationGltf.animations),
+    [animationGltf.animations, animationGltf.scene, cacheKey, scene]
+  );
+  const mixer = useMemo(() => targetMesh ? new THREE.AnimationMixer(targetMesh) : null, [targetMesh]);
+  const activeAction = useRef<THREE.AnimationAction | null>(null);
+  const activeMotion = useRef<CharacterMotion | null>(null);
+  const handledNonce = useRef(actionNonce);
+
+  useFrame((_, delta) => {
+    if (!mixer) return;
+    const desiredMotion = motionRef?.current ?? motion;
+    const shouldRetrigger = desiredMotion === "shoot" && handledNonce.current !== actionNonce;
+    if (activeMotion.current !== desiredMotion || shouldRetrigger) {
+      const clip = clips.get(MOTION_CLIPS[desiredMotion]);
+      if (clip) {
+        const previous = activeAction.current;
+        const next = mixer.clipAction(clip);
+        next.enabled = true;
+        next.clampWhenFinished = ONE_SHOT_MOTIONS.has(desiredMotion);
+        next.setLoop(ONE_SHOT_MOTIONS.has(desiredMotion) ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
+        next.reset();
+        next.setEffectiveTimeScale(MOTION_SPEED[desiredMotion]);
+        next.setEffectiveWeight(1);
+        next.play();
+        if (previous && previous !== next) {
+          previous.fadeOut(desiredMotion === "death" ? 0.08 : 0.16);
+          next.fadeIn(desiredMotion === "death" ? 0.08 : 0.16);
+        }
+        activeAction.current = next;
+        activeMotion.current = desiredMotion;
+      }
+      handledNonce.current = actionNonce;
+    }
+    mixer.update(Math.min(delta, 0.08));
+  });
+
+  useEffect(() => {
+    activeAction.current = null;
+    activeMotion.current = null;
+    handledNonce.current = actionNonce;
+    return () => {
+      mixer?.stopAllAction();
+    };
+  }, [mixer]);
 }
 
 function applyPaintedClothingMaterial(material: THREE.MeshStandardMaterial, style?: string) {
@@ -1190,7 +1278,47 @@ function outfitShape(item?: CatalogItem) {
   };
 }
 
-function OutfitOverlay({ outfit, character }: { outfit?: CatalogItem; character: CatalogItem }) {
+function BoneAttachment({
+  targetScene,
+  boneName,
+  modelScale,
+  children
+}: {
+  targetScene: THREE.Object3D;
+  boneName: string;
+  modelScale: number;
+  children: ReactNode;
+}) {
+  const binding = useMemo(() => {
+    const mesh = findFirstSkinnedMesh(targetScene);
+    if (!mesh) return null;
+    const boneIndex = mesh.skeleton.bones.findIndex((bone) => bone.name === boneName);
+    if (boneIndex < 0) return null;
+    const scaleCompensation = 1 / Math.max(0.001, modelScale);
+    return {
+      bone: mesh.skeleton.bones[boneIndex],
+      inverseBindMatrix: mesh.skeleton.boneInverses[boneIndex]
+        .clone()
+        .multiply(new THREE.Matrix4().makeScale(scaleCompensation, scaleCompensation, scaleCompensation))
+    };
+  }, [boneName, modelScale, targetScene]);
+
+  if (!binding) return null;
+  return createPortal(
+    <group matrix={binding.inverseBindMatrix} matrixAutoUpdate={false}>{children}</group>,
+    binding.bone
+  );
+}
+
+function OutfitOverlay({
+  outfit,
+  character,
+  targetScene
+}: {
+  outfit?: CatalogItem;
+  character: CatalogItem;
+  targetScene: THREE.Object3D;
+}) {
   const clothTexture = useMemo(() => makeClothCanvasTexture(outfit, 1.45), [outfit?.id]);
   const topTexture = useMemo(() => makeOutfitDecalTexture(outfit, "top"), [outfit?.id]);
   const bottomTexture = useMemo(() => makeOutfitDecalTexture(outfit, "bottom"), [outfit?.id]);
@@ -1297,66 +1425,134 @@ function OutfitOverlay({ outfit, character }: { outfit?: CatalogItem; character:
         </>
       ) : null}
       {shape.scarf ? (
-        <mesh castShadow position={[0, 1.32, -0.02]} rotation={[Math.PI / 2, 0, 0]} scale={[1.12, 0.8, 1]}>
-          <torusGeometry args={[0.23, 0.035, 8, 28]} />
-          <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.78} />
-        </mesh>
+        <BoneAttachment targetScene={targetScene} boneName="spine_03" modelScale={character.modelScale ?? 1}>
+          <mesh castShadow position={[0, 1.32, -0.02]} rotation={[Math.PI / 2, 0, 0]} scale={[1.12, 0.8, 1]}>
+            <torusGeometry args={[0.23, 0.035, 8, 28]} />
+            <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.78} />
+          </mesh>
+        </BoneAttachment>
       ) : null}
       {shape.shoes ? (
         <>
-          <mesh castShadow position={[-0.12, 0.045, -0.05]} scale={[1, 0.48, 1.55]}>
-            <capsuleGeometry args={[0.065, 0.14, 6, 10]} />
-            <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.55} />
-          </mesh>
-          <mesh castShadow position={[0.12, 0.045, -0.05]} scale={[1, 0.48, 1.55]}>
-            <capsuleGeometry args={[0.065, 0.14, 6, 10]} />
-            <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.55} />
-          </mesh>
+          <BoneAttachment targetScene={targetScene} boneName="foot_l" modelScale={character.modelScale ?? 1}>
+            <mesh castShadow position={[-0.12, 0.045, -0.05]} scale={[1, 0.48, 1.55]}>
+              <capsuleGeometry args={[0.065, 0.14, 6, 10]} />
+              <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.55} />
+            </mesh>
+          </BoneAttachment>
+          <BoneAttachment targetScene={targetScene} boneName="foot_r" modelScale={character.modelScale ?? 1}>
+            <mesh castShadow position={[0.12, 0.045, -0.05]} scale={[1, 0.48, 1.55]}>
+              <capsuleGeometry args={[0.065, 0.14, 6, 10]} />
+              <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.55} />
+            </mesh>
+          </BoneAttachment>
         </>
       ) : null}
       {shape.hat ? (
-        <>
-          <mesh castShadow position={[0, 1.68, 0]} scale={[1, 0.34, 1]}>
-            <sphereGeometry args={[0.21, 24, 12]} />
-            <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.7} />
-          </mesh>
-          <mesh castShadow position={[0, 1.62, -0.19]} scale={[1.2, 0.16, 0.45]}>
-            <boxGeometry args={[0.24, 0.05, 0.18]} />
-            <meshStandardMaterial color={colors.accent} roughness={0.7} />
-          </mesh>
-        </>
+        <BoneAttachment targetScene={targetScene} boneName="Head" modelScale={character.modelScale ?? 1}>
+          <>
+            <mesh castShadow position={[0, 1.68, 0]} scale={[1, 0.34, 1]}>
+              <sphereGeometry args={[0.21, 24, 12]} />
+              <meshStandardMaterial map={clothTexture} color="#ffffff" roughness={0.7} />
+            </mesh>
+            <mesh castShadow position={[0, 1.62, -0.19]} scale={[1.2, 0.16, 0.45]}>
+              <boxGeometry args={[0.24, 0.05, 0.18]} />
+              <meshStandardMaterial color={colors.accent} roughness={0.7} />
+            </mesh>
+          </>
+        </BoneAttachment>
       ) : null}
       {shape.wings ? (
-        <>
-          <mesh castShadow position={[-0.32, 1.2, 0.22]} rotation={[0.12, 0.45, 0.55]}>
-            <coneGeometry args={[0.16, 0.62, 4]} />
-            <meshStandardMaterial color={colors.trim} emissive={colors.accent} emissiveIntensity={0.25} transparent opacity={0.78} />
-          </mesh>
-          <mesh castShadow position={[0.32, 1.2, 0.22]} rotation={[0.12, -0.45, -0.55]}>
-            <coneGeometry args={[0.16, 0.62, 4]} />
-            <meshStandardMaterial color={colors.trim} emissive={colors.accent} emissiveIntensity={0.25} transparent opacity={0.78} />
-          </mesh>
-        </>
+        <BoneAttachment targetScene={targetScene} boneName="spine_03" modelScale={character.modelScale ?? 1}>
+          <>
+            <mesh castShadow position={[-0.32, 1.2, 0.22]} rotation={[0.12, 0.45, 0.55]}>
+              <coneGeometry args={[0.16, 0.62, 4]} />
+              <meshStandardMaterial color={colors.trim} emissive={colors.accent} emissiveIntensity={0.25} transparent opacity={0.78} />
+            </mesh>
+            <mesh castShadow position={[0.32, 1.2, 0.22]} rotation={[0.12, -0.45, -0.55]}>
+              <coneGeometry args={[0.16, 0.62, 4]} />
+              <meshStandardMaterial color={colors.trim} emissive={colors.accent} emissiveIntensity={0.25} transparent opacity={0.78} />
+            </mesh>
+          </>
+        </BoneAttachment>
       ) : null}
     </group>
   );
 }
 
-function CharacterModel({ item, moving, outfit }: { item: CatalogItem; moving: boolean; outfit?: CatalogItem }) {
+function WeaponAttachment({ targetScene, weapon }: { targetScene: THREE.Object3D; weapon: WeaponKind }) {
+  const spec = WEAPON_MODELS[weapon];
+  const gltf = useGLTF(spec.url);
+  const attachment = useMemo(() => {
+    const wrapper = new THREE.Group();
+    const model = gltf.scene.clone(true);
+    model.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return;
+      node.castShadow = true;
+      node.receiveShadow = false;
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      const clonedMaterials = materials.map((material) => {
+        const clone = material.clone();
+        if (weapon === "laser" && clone instanceof THREE.MeshStandardMaterial) {
+          const isAccent = /grey/i.test(clone.name) && !/dark/i.test(clone.name);
+          clone.color.lerp(new THREE.Color("#49e9ff"), isAccent ? 0.58 : 0.08);
+          if (isAccent) {
+            clone.emissive.set("#22d3ee");
+            clone.emissiveIntensity = 0.42;
+            clone.roughness = 0.32;
+          }
+        }
+        return clone;
+      });
+      node.material = Array.isArray(node.material) ? clonedMaterials : clonedMaterials[0];
+    });
+    wrapper.add(model);
+    wrapper.position.set(...spec.position);
+    wrapper.rotation.set(...spec.rotation);
+    wrapper.scale.setScalar(spec.scale);
+    return wrapper;
+  }, [gltf.scene, spec.position, spec.rotation, spec.scale, weapon]);
+
+  useEffect(() => {
+    const hand = targetScene.getObjectByName("hand_r");
+    if (!hand) return;
+    hand.add(attachment);
+    return () => {
+      hand.remove(attachment);
+      const materials = new Set<THREE.Material>();
+      attachment.traverse((node) => {
+        if (!(node instanceof THREE.Mesh)) return;
+        const next = Array.isArray(node.material) ? node.material : [node.material];
+        next.forEach((material) => materials.add(material));
+      });
+      materials.forEach((material) => material.dispose());
+    };
+  }, [attachment, targetScene]);
+
+  return null;
+}
+
+function CharacterModel({
+  item,
+  motion,
+  motionRef,
+  outfit,
+  weapon,
+  actionNonce
+}: {
+  item: CatalogItem;
+  motion: CharacterMotion;
+  motionRef?: RefObject<CharacterMotion>;
+  outfit?: CatalogItem;
+  weapon?: WeaponKind;
+  actionNonce?: number;
+}) {
   const gltf = useGLTF(item.modelUrl ?? "");
-  const bones = useRef<Record<string, THREE.Bone>>({});
-  const initialRotations = useRef<Record<string, THREE.Euler>>({});
-  const time = useRef(0);
   const scene = useMemo(() => {
-    bones.current = {};
-    initialRotations.current = {};
     const clone = cloneSkeleton(gltf.scene);
     prepareClonedSkinnedScene(clone);
     clone.traverse((node) => {
-      if (node instanceof THREE.Bone) {
-        bones.current[node.name] = node;
-        initialRotations.current[node.name] = node.rotation.clone();
-      } else if (node instanceof THREE.Mesh) {
+      if (node instanceof THREE.Mesh) {
         const materials = Array.isArray(node.material) ? node.material : [node.material];
         for (const material of materials) {
           if (material instanceof THREE.MeshStandardMaterial) {
@@ -1383,48 +1579,47 @@ function CharacterModel({ item, moving, outfit }: { item: CatalogItem; moving: b
     }
     return clone;
   }, [gltf.scene, outfit?.id]);
-
-  useFrame((_, delta) => {
-    time.current += delta * (moving ? 8.5 : 1.4);
-    poseCharacterBones(bones.current, initialRotations.current, time.current, moving);
-  });
+  useCharacterAnimation(scene, item.modelUrl ?? item.id, motion, motionRef, actionNonce);
 
   return (
     <>
       <primitive object={scene} scale={item.modelScale ?? 1} />
+      {weapon ? (
+        <Suspense fallback={null}>
+          <WeaponAttachment targetScene={scene} weapon={weapon} />
+        </Suspense>
+      ) : null}
       {outfit?.clothingModelUrl && !outfit.clothingPaintStyle ? (
         <Suspense fallback={null}>
-          <SkinnedOutfitModel outfit={outfit} moving={moving} />
+          <SkinnedOutfitModel outfit={outfit} motion={motion} motionRef={motionRef} actionNonce={actionNonce} />
         </Suspense>
       ) : (
-        <OutfitOverlay outfit={outfit} character={item} />
+        <OutfitOverlay outfit={outfit} character={item} targetScene={scene} />
       )}
     </>
   );
 }
 
-function SkinnedOutfitModel({ outfit, moving }: { outfit: CatalogItem; moving: boolean }) {
+function SkinnedOutfitModel({
+  outfit,
+  motion,
+  motionRef,
+  actionNonce
+}: {
+  outfit: CatalogItem;
+  motion: CharacterMotion;
+  motionRef?: RefObject<CharacterMotion>;
+  actionNonce?: number;
+}) {
   const gltf = useGLTF(outfit.clothingModelUrl ?? "");
-  const bones = useRef<Record<string, THREE.Bone>>({});
-  const initialRotations = useRef<Record<string, THREE.Euler>>({});
-  const time = useRef(0);
   const scene = useMemo(() => {
     const clone = cloneSkeleton(gltf.scene);
     prepareClonedSkinnedScene(clone);
-    clone.traverse((node) => {
-      if (node instanceof THREE.Bone) {
-        bones.current[node.name] = node;
-        initialRotations.current[node.name] = node.rotation.clone();
-      }
-    });
     clone.updateMatrixWorld(true);
     return clone;
   }, [gltf.scene]);
 
-  useFrame((_, delta) => {
-    time.current += delta * (moving ? 8.5 : 1.4);
-    poseCharacterBones(bones.current, initialRotations.current, time.current, moving);
-  });
+  useCharacterAnimation(scene, outfit.clothingModelUrl ?? outfit.id, motion, motionRef, actionNonce);
 
   return <primitive object={scene} scale={outfit.clothingModelScale ?? 1} />;
 }
@@ -1520,12 +1715,14 @@ function PetCompanion({
   item,
   ownerMoving,
   ownerPosition,
-  ownerRotation
+  ownerRotation,
+  ownerRotationRef
 }: {
   item?: CatalogItem;
   ownerMoving: boolean;
   ownerPosition: THREE.Vector3;
   ownerRotation: number;
+  ownerRotationRef?: RefObject<number>;
 }) {
   const root = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
@@ -1560,8 +1757,9 @@ function PetCompanion({
     const shouldCatchUp = ownerMoving || ownerDistance > 1.35;
 
     if (shouldCatchUp) {
-      const forward = new THREE.Vector2(Math.sin(ownerRotation), Math.cos(ownerRotation));
-      const right = new THREE.Vector2(Math.cos(ownerRotation), -Math.sin(ownerRotation));
+      const currentOwnerRotation = ownerRotationRef?.current ?? ownerRotation;
+      const forward = new THREE.Vector2(Math.sin(currentOwnerRotation), Math.cos(currentOwnerRotation));
+      const right = new THREE.Vector2(Math.cos(currentOwnerRotation), -Math.sin(currentOwnerRotation));
       const side = seed % 2 === 0 ? 1 : -1;
       const sway = Math.sin(behaviorTime.current * 0.8 + seed) * 0.16;
       targetPosition.current.set(
@@ -1767,7 +1965,16 @@ export function Player({
   character,
   outfit,
   moving = false,
-  rotation = 0
+  motion,
+  motionRef,
+  weapon,
+  actionNonce = 0,
+  rotation = 0,
+  rotationRef,
+  teleportNonce = 0,
+  health,
+  maxHealth = 100,
+  onClick
 }: {
   username: string;
   color: string;
@@ -1777,7 +1984,16 @@ export function Player({
   character?: CatalogItem;
   outfit?: CatalogItem;
   moving?: boolean;
+  motion?: CharacterMotion;
+  motionRef?: RefObject<CharacterMotion>;
+  weapon?: WeaponKind;
+  actionNonce?: number;
   rotation?: number;
+  rotationRef?: RefObject<number>;
+  teleportNonce?: number;
+  health?: number;
+  maxHealth?: number;
+  onClick?: (event: ThreeEvent<MouseEvent>) => void;
 }) {
   const group = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
@@ -1787,42 +2003,87 @@ export function Player({
   const [isActuallyMoving, setIsActuallyMoving] = useState(moving);
   const movingRef = useRef(moving);
 
+  useEffect(() => {
+    group.current?.position.copy(position);
+  }, [teleportNonce]);
+
   useFrame((_, delta) => {
     if (group.current) {
-      const distance = group.current.position.distanceTo(position);
-      const actuallyMoving = moving || distance > 0.035;
+      const distance = Math.hypot(
+        group.current.position.x - position.x,
+        group.current.position.z - position.z
+      );
+      const requestedMotion = motionRef?.current ?? motion;
+      const actuallyMoving = Boolean(requestedMotion && isLocomotionMotion(requestedMotion)) || moving || distance > 0.035;
       if (movingRef.current !== actuallyMoving) {
         movingRef.current = actuallyMoving;
         setIsActuallyMoving(actuallyMoving);
       }
       bob.current += delta * (actuallyMoving ? 9 : 1.8);
       const lerpSpeed = actuallyMoving ? 10 : 7;
-      group.current.position.lerp(position, Math.min(1, delta * lerpSpeed));
+      if (distance > 8) {
+        group.current.position.copy(position);
+      } else {
+        const alpha = Math.min(1, delta * lerpSpeed);
+        group.current.position.x = THREE.MathUtils.lerp(group.current.position.x, position.x, alpha);
+        group.current.position.z = THREE.MathUtils.lerp(group.current.position.z, position.z, alpha);
+        group.current.position.y = position.y;
+      }
       if (body.current) {
+        const targetRotation = rotationRef?.current ?? rotation;
         body.current.position.y = playerVisualYOffset;
-        body.current.rotation.y += shortestAngleDelta(body.current.rotation.y, rotation) * Math.min(1, delta * 9);
-        body.current.rotation.z = actuallyMoving ? Math.sin(bob.current) * 0.035 : 0;
+        body.current.rotation.y += shortestAngleDelta(body.current.rotation.y, targetRotation) * Math.min(1, delta * 9);
+        body.current.rotation.z = character?.modelUrl ? 0 : actuallyMoving ? Math.sin(bob.current) * 0.035 : 0;
       }
     }
   });
 
+  const renderedMotion = motion ?? (isActuallyMoving ? "walk" : "idle");
+  const healthPercent = THREE.MathUtils.clamp((health ?? maxHealth) / Math.max(1, maxHealth), 0, 1);
+
   return (
     <>
       <group ref={group} position={initialPosition.current}>
+        {onClick ? (
+          <mesh position={[0, 0.88, 0]} onClick={onClick}>
+            <capsuleGeometry args={[0.42, 1.05, 6, 12]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
+          </mesh>
+        ) : null}
         <group ref={body} position={[0, playerVisualYOffset, 0]} rotation={[0, initialRotation.current, 0]}>
           {character?.modelUrl ? (
             <Suspense fallback={<ProceduralPlayerBody color={color} isSelf={isSelf} />}>
-              <CharacterModel item={character} moving={isActuallyMoving} outfit={outfit} />
+              <CharacterModel
+                item={character}
+                motion={renderedMotion}
+                motionRef={motionRef}
+                outfit={outfit}
+                weapon={weapon}
+                actionNonce={actionNonce}
+              />
             </Suspense>
           ) : (
             <ProceduralPlayerBody color={color} isSelf={isSelf} />
           )}
         </group>
-        <Html center position={[0, 1.95, 0]} distanceFactor={7}>
-          <div className="name-tag">{username}</div>
+        <Html center position={[0, 1.95, 0]} distanceFactor={7} style={{ pointerEvents: "none" }}>
+          <div className={health !== undefined ? "name-tag combat-name-tag" : "name-tag"}>
+            <span>{username}</span>
+            {health !== undefined ? (
+              <span className="npc-health-track">
+                <i style={{ width: `${healthPercent * 100}%` }} />
+              </span>
+            ) : null}
+          </div>
         </Html>
       </group>
-      <PetCompanion item={pet} ownerMoving={isActuallyMoving} ownerPosition={position} ownerRotation={rotation} />
+      <PetCompanion
+        item={pet}
+        ownerMoving={isActuallyMoving}
+        ownerPosition={position}
+        ownerRotation={rotation}
+        ownerRotationRef={rotationRef}
+      />
     </>
   );
 }
@@ -1954,7 +2215,7 @@ export function HomePlacedObject({
         </mesh>
       )}
       {hovered ? (
-        <Html center position={[0, size[1] + 0.28, 0]}>
+        <Html center position={[0, size[1] + 0.28, 0]} style={{ pointerEvents: "none" }}>
           <div className="object-tip">{item.emoji} {item.name}</div>
         </Html>
       ) : null}

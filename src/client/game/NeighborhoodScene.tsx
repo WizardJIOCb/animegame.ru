@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { CatalogItem, HomeState, NeighborhoodResident, PublicUser, RemotePlayer } from "../types";
 import { HomePlacedObject, Player } from "./GameScene";
+import { WEAPONS, WEAPON_ORDER, type CharacterMotion, type WeaponKind } from "./combat";
 
 type WorldPosition = { x: number; y: number; z: number; rotation?: number; vehicle?: boolean };
 
@@ -70,7 +71,13 @@ type PendingInteriorInteraction = {
 const WORLD_X = 42;
 const WORLD_Z = 76;
 const WALK_SPEED = 2.35;
+const RUN_SPEED = 5.15;
+const CROUCH_SPEED = 1.15;
 const WALK_DELTA_CAP = 0.05;
+const JUMP_DURATION_MS = 1180;
+const JUMP_HEIGHT = 1.15;
+const NPC_MAX_HEALTH = 100;
+const NPC_RESPAWN_MS = 6200;
 const INTERIOR_GRID_STEP = 0.45;
 const PLAYER_PATH_CLEARANCE = 0.28;
 const CAR_MAX_SPEED = 12.5;
@@ -78,6 +85,34 @@ const DOOR_HALF_WIDTH = 0.72;
 const WALL_THICKNESS = 0.18;
 const UP = new THREE.Vector3(0, 1, 0);
 const CAR_COLORS = ["#f472b6", "#38bdf8", "#f59e0b", "#34d399", "#a78bfa", "#fb7185"];
+
+type TravelMode = "walk" | "run";
+
+type NpcRuntime = {
+  username: string;
+  position: THREE.Vector3;
+  rotationRef: { current: number };
+  motionRef: { current: CharacterMotion };
+  health: number;
+  dead: boolean;
+  respawnAt: number;
+  targetIndex: number;
+  idleUntil: number;
+  speed: number;
+  seed: number;
+  respawnNonce: number;
+};
+
+type ShotEffect = {
+  id: number;
+  start: THREE.Vector3;
+  end: THREE.Vector3;
+  color: string;
+  width: number;
+  createdAt: number;
+  duration: number;
+  blastRadius?: number;
+};
 
 function isPrimarySceneClick(event: ThreeEvent<MouseEvent>) {
   return event.nativeEvent.button === 0 && event.delta <= 6;
@@ -570,6 +605,7 @@ function StreetCamera({
   const controlsRef = useRef<any>(null);
   const initialized = useRef(false);
   const wasDriving = useRef(driving);
+  const wasInside = useRef(inside);
   const drivingState = useRef(driving);
   const lookTarget = useRef(new THREE.Vector3());
   const dragRef = useRef<{ x: number; y: number } | null>(null);
@@ -724,7 +760,8 @@ function StreetCamera({
       return;
     }
 
-    if (!initialized.current) {
+    const changedArea = wasInside.current !== inside;
+    if (!initialized.current || changedArea) {
       let desired: THREE.Vector3;
       let target: THREE.Vector3;
       if (inside) {
@@ -753,6 +790,7 @@ function StreetCamera({
       camera.lookAt(target);
       controls.update();
       initialized.current = true;
+      wasInside.current = inside;
     } else if (wasDriving.current) {
       const target = position.clone().add(new THREE.Vector3(0, 1.1, 0));
       controls.target.copy(target);
@@ -1313,32 +1351,97 @@ function SeamlessHouse({
   );
 }
 
-function ResidentFigure({ resident }: { resident: NeighborhoodResident }) {
-  const front = frontVector(resident.lot.rotation);
-  const right = rightVector(resident.lot.rotation);
-  const position = new THREE.Vector3(resident.lot.x, 0, resident.lot.z)
-    .addScaledVector(front, houseDepth(resident.houseLevel) / 2 + 1.55)
-    .addScaledVector(right, resident.plotId % 2 ? -1.6 : 1.6);
-  const color = resident.colors.roof;
+const NPC_PATROL_ROUTE = [
+  new THREE.Vector3(-6.1, 0, -68),
+  new THREE.Vector3(-6.1, 0, -45),
+  new THREE.Vector3(-6.1, 0, -22),
+  new THREE.Vector3(-6.1, 0, 0),
+  new THREE.Vector3(-6.1, 0, 22),
+  new THREE.Vector3(-6.1, 0, 45),
+  new THREE.Vector3(-6.1, 0, 68),
+  new THREE.Vector3(6.1, 0, 68),
+  new THREE.Vector3(6.1, 0, 45),
+  new THREE.Vector3(6.1, 0, 22),
+  new THREE.Vector3(6.1, 0, 0),
+  new THREE.Vector3(6.1, 0, -22),
+  new THREE.Vector3(6.1, 0, -45),
+  new THREE.Vector3(6.1, 0, -68)
+];
+
+function stableNameSeed(name: string) {
+  return [...name].reduce((total, character) => (total * 31 + character.charCodeAt(0)) >>> 0, 17);
+}
+
+function nearestPatrolIndex(position: THREE.Vector3) {
+  let bestIndex = 0;
+  let bestDistance = Infinity;
+  NPC_PATROL_ROUTE.forEach((point, index) => {
+    const distance = point.distanceToSquared(position);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+function createNpcRuntime(resident: NeighborhoodResident): NpcRuntime {
+  const seed = stableNameSeed(resident.username);
+  const streetSide = resident.lot.x < 0 ? -6.1 : 6.1;
+  const position = new THREE.Vector3(streetSide, 0, THREE.MathUtils.clamp(resident.lot.z + (seed % 7) - 3, -67, 67));
+  return {
+    username: resident.username,
+    position,
+    rotationRef: { current: resident.lot.rotation },
+    motionRef: { current: "idle" },
+    health: NPC_MAX_HEALTH,
+    dead: false,
+    respawnAt: 0,
+    targetIndex: (nearestPatrolIndex(position) + 1 + (seed % 3)) % NPC_PATROL_ROUTE.length,
+    idleUntil: performance.now() + (seed % 2200),
+    speed: 0.92 + (seed % 36) / 100,
+    seed,
+    respawnNonce: 0
+  };
+}
+
+function ShotEffectView({ effect }: { effect: ShotEffect }) {
+  const group = useRef<THREE.Group>(null);
+  const tracerMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const blastMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const transform = useMemo(() => {
+    const direction = effect.end.clone().sub(effect.start);
+    const length = Math.max(0.01, direction.length());
+    const midpoint = effect.start.clone().add(effect.end).multiplyScalar(0.5);
+    const quaternion = new THREE.Quaternion().setFromUnitVectors(UP, direction.normalize());
+    return { length, midpoint, quaternion };
+  }, [effect.end, effect.start]);
+
+  useFrame(() => {
+    const elapsed = performance.now() - effect.createdAt;
+    const progress = THREE.MathUtils.clamp(elapsed / effect.duration, 0, 1);
+    if (group.current) group.current.visible = progress < 1;
+    if (tracerMaterial.current) tracerMaterial.current.opacity = (1 - progress) * 0.9;
+    if (blastMaterial.current) blastMaterial.current.opacity = (1 - progress) * 0.48;
+    const blast = group.current?.getObjectByName("blast");
+    if (blast) {
+      const radius = (effect.blastRadius ?? 0.45) * (0.22 + progress * 0.78);
+      blast.scale.setScalar(radius);
+    }
+  });
 
   return (
-    <group position={position} rotation={[0, resident.lot.rotation + Math.PI, 0]}>
-      <mesh castShadow position={[0, 1.48, 0]}>
-        <sphereGeometry args={[0.29, 18, 18]} />
-        <meshStandardMaterial color="#f2c7a5" roughness={0.8} />
+    <group ref={group}>
+      <mesh position={transform.midpoint} quaternion={transform.quaternion} raycast={() => null}>
+        <cylinderGeometry args={[effect.width, effect.width, transform.length, 8]} />
+        <meshBasicMaterial ref={tracerMaterial} color={effect.color} transparent opacity={0.9} depthWrite={false} toneMapped={false} />
       </mesh>
-      <mesh castShadow position={[0, 0.88, 0]}>
-        <capsuleGeometry args={[0.3, 0.72, 8, 16]} />
-        <meshStandardMaterial color={color} roughness={0.78} />
-      </mesh>
-      <mesh castShadow position={[-0.18, 0.26, 0]}>
-        <capsuleGeometry args={[0.095, 0.48, 5, 10]} />
-        <meshStandardMaterial color="#384152" roughness={0.84} />
-      </mesh>
-      <mesh castShadow position={[0.18, 0.26, 0]}>
-        <capsuleGeometry args={[0.095, 0.48, 5, 10]} />
-        <meshStandardMaterial color="#384152" roughness={0.84} />
-      </mesh>
+      {effect.blastRadius ? (
+        <mesh name="blast" position={effect.end} raycast={() => null}>
+          <sphereGeometry args={[1, 18, 12]} />
+          <meshBasicMaterial ref={blastMaterial} color={effect.color} transparent opacity={0.48} depthWrite={false} toneMapped={false} />
+        </mesh>
+      ) : null}
     </group>
   );
 }
@@ -1517,8 +1620,18 @@ function NeighborhoodWorld({
   onSelectPlaced,
   onBuildMove,
   onToast,
-  onDrivingChange
-}: NeighborhoodSceneProps & { onDrivingChange: (driving: boolean) => void }) {
+  onDrivingChange,
+  selectedWeapon,
+  onWeaponChange,
+  onAimingChange,
+  onInsideChange
+}: NeighborhoodSceneProps & {
+  onDrivingChange: (driving: boolean) => void;
+  selectedWeapon: WeaponKind;
+  onWeaponChange: (weapon: WeaponKind) => void;
+  onAimingChange: (aiming: boolean) => void;
+  onInsideChange: (inside: boolean) => void;
+}) {
   const worldResidents = useMemo(() => residents.map((resident) => resident.username === user.username ? {
     ...resident,
     avatar: home.avatar,
@@ -1555,6 +1668,12 @@ function NeighborhoodWorld({
   const keys = useRef(new Set<string>());
   const clickTarget = useRef<THREE.Vector3 | null>(null);
   const clickPath = useRef<THREE.Vector3[]>([]);
+  const travelMode = useRef<TravelMode>("walk");
+  const jumpStartedAt = useRef<number | null>(null);
+  const shootingUntil = useRef(0);
+  const nextShotAt = useRef(0);
+  const shotId = useRef(0);
+  const playerMotionRef = useRef<CharacterMotion>("idle");
   const pendingVisit = useRef<NeighborhoodResident | null>(null);
   const pendingInteraction = useRef<PendingInteriorInteraction>(null);
   const handledVisitRequest = useRef<number | null>(null);
@@ -1567,6 +1686,10 @@ function NeighborhoodWorld({
   const [renderCarPosition, setRenderCarPosition] = useState(() => carPosition.current.clone());
   const [renderCarRotation, setRenderCarRotation] = useState(carRotation.current);
   const [moving, setMoving] = useState(false);
+  const [playerMotion, setPlayerMotion] = useState<CharacterMotion>("idle");
+  const [shotNonce, setShotNonce] = useState(0);
+  const [shotEffects, setShotEffects] = useState<ShotEffect[]>([]);
+  const [, setNpcUiVersion] = useState(0);
   const [driving, setDriving] = useState(false);
   const [introView, setIntroView] = useState(!initialPosition);
   const [activeInterior, setActiveInterior] = useState<NeighborhoodResident | null>(activeInteriorRef.current);
@@ -1574,6 +1697,35 @@ function NeighborhoodWorld({
   const ownOutfit = getCatalogItem(catalog, user.avatar.outfit);
   const ownCharacter = getCatalogItem(catalog, user.avatar.character);
   const ownPet = getCatalogItem(catalog, user.avatar.pet);
+  const onToastRef = useRef(onToast);
+
+  useEffect(() => {
+    onToastRef.current = onToast;
+  }, [onToast]);
+
+  useEffect(() => {
+    onInsideChange(Boolean(activeInterior));
+    if (activeInterior) {
+      keys.current.delete("q");
+      onAimingChange(false);
+      document.body.style.cursor = "default";
+    }
+  }, [activeInterior, onAimingChange, onInsideChange]);
+
+  const npcRuntimeMap = useRef(new Map<string, NpcRuntime>());
+  const npcActors = useMemo(() => {
+    const remoteNames = new Set(remotePlayers.map((player) => player.username.toLowerCase()));
+    return worldResidents.filter((resident) => (
+      resident.username !== user.username && !remoteNames.has(resident.username.toLowerCase())
+    )).map((resident) => {
+    let runtime = npcRuntimeMap.current.get(resident.username);
+    if (!runtime) {
+      runtime = createNpcRuntime(resident);
+      npcRuntimeMap.current.set(resident.username, runtime);
+    }
+    return { resident, runtime };
+    });
+  }, [remotePlayers, user.username, worldResidents]);
 
   const remoteVectors = useMemo(() => remotePlayers.map((player) => ({
     ...player,
@@ -1593,8 +1745,13 @@ function NeighborhoodWorld({
     onInteract(interaction.itemId, interaction.action);
   }
 
-  function startClickRoute(points: THREE.Vector3[], interaction: PendingInteriorInteraction = null) {
+  function startClickRoute(
+    points: THREE.Vector3[],
+    interaction: PendingInteriorInteraction = null,
+    requestedMode?: TravelMode
+  ) {
     const route = points.filter((point, index) => index === 0 || point.distanceTo(points[index - 1]) > 0.08);
+    travelMode.current = requestedMode ?? (keys.current.has("shift") ? "run" : "walk");
     clickTarget.current = route.shift() ?? null;
     clickPath.current = route;
     pendingInteraction.current = interaction;
@@ -1660,6 +1817,109 @@ function NeighborhoodWorld({
     return true;
   }
 
+  function updatePlayerMotion(next: CharacterMotion) {
+    if (playerMotionRef.current === next) return;
+    playerMotionRef.current = next;
+    setPlayerMotion(next);
+  }
+
+  function damageNpc(runtime: NpcRuntime, damage: number, now: number) {
+    if (runtime.dead || damage <= 0) return;
+    runtime.health = Math.max(0, runtime.health - Math.round(damage));
+    if (runtime.health === 0) {
+      runtime.dead = true;
+      runtime.respawnAt = now + NPC_RESPAWN_MS;
+      runtime.motionRef.current = "death";
+      onToast(`${runtime.username} повержен — вернётся в центре города`);
+    }
+    setNpcUiVersion((version) => version + 1);
+  }
+
+  function shootAt(target: THREE.Vector3, preferredUsername?: string) {
+    if (drivingRef.current) return;
+    if (jumpStartedAt.current !== null) return;
+    if (activeInteriorRef.current) {
+      onToast("Чтобы стрелять, сначала выйдите на улицу");
+      return;
+    }
+
+    const config = WEAPONS[selectedWeapon];
+    const now = performance.now();
+    if (now < nextShotAt.current) return;
+    nextShotAt.current = now + config.cooldownMs;
+    clickTarget.current = null;
+    clickPath.current = [];
+    pendingVisit.current = null;
+    pendingInteraction.current = null;
+
+    const origin = playerPosition.current.clone();
+    const direction = target.clone().sub(origin).setY(0);
+    if (direction.lengthSq() < 0.01) direction.copy(frontVector(playerRotation.current));
+    const targetDistance = Math.max(0.1, direction.length());
+    direction.normalize();
+    playerRotation.current = Math.atan2(direction.x, direction.z);
+    setRenderPlayerRotation(playerRotation.current);
+
+    const shotDistance = Math.min(config.range, targetDistance);
+    const flatEnd = origin.clone().addScaledVector(direction, shotDistance);
+    const aliveRuntimes = npcActors.map(({ runtime }) => runtime).filter((runtime) => !runtime.dead);
+    let hitRuntime: NpcRuntime | undefined;
+    let bestProjection = Infinity;
+
+    for (const runtime of aliveRuntimes) {
+      const toNpc = runtime.position.clone().sub(origin).setY(0);
+      const projection = toNpc.dot(direction);
+      if (projection < 0 || projection > shotDistance + 0.8) continue;
+      const lateralDistance = toNpc.addScaledVector(direction, -projection).length();
+      const isPreferred = runtime.username === preferredUsername;
+      if ((isPreferred || lateralDistance <= 0.82) && projection < bestProjection) {
+        bestProjection = projection;
+        hitRuntime = runtime;
+      }
+    }
+
+    if (preferredUsername && !hitRuntime) {
+      const preferred = aliveRuntimes.find((runtime) => runtime.username === preferredUsername);
+      if (preferred && preferred.position.distanceTo(origin) <= config.range + 0.8) hitRuntime = preferred;
+    }
+
+    const impact = hitRuntime ? hitRuntime.position.clone() : flatEnd;
+    if (config.blastRadius) {
+      for (const runtime of aliveRuntimes) {
+        const distance = runtime.position.distanceTo(impact);
+        if (distance > config.blastRadius) continue;
+        const falloff = THREE.MathUtils.clamp(1 - distance / (config.blastRadius * 1.35), 0.35, 1);
+        damageNpc(runtime, config.damage * falloff, now);
+      }
+    } else if (hitRuntime) {
+      damageNpc(hitRuntime, config.damage, now);
+    }
+
+    shotId.current += 1;
+    setShotEffects((effects) => [
+      ...effects.filter((effect) => now - effect.createdAt < effect.duration),
+      {
+        id: shotId.current,
+        start: origin.clone().setY(1.15),
+        end: impact.clone().setY(hitRuntime ? 1.05 : selectedWeapon === "rocket" ? 0.2 : 0.78),
+        color: config.color,
+        width: config.tracerWidth,
+        createdAt: now,
+        duration: selectedWeapon === "rocket" ? 560 : selectedWeapon === "laser" ? 360 : 240,
+        blastRadius: config.blastRadius
+      }
+    ].slice(-16));
+    shootingUntil.current = now + 370;
+    setShotNonce((nonce) => nonce + 1);
+    onMove({
+      x: playerPosition.current.x,
+      y: 0,
+      z: playerPosition.current.z,
+      rotation: playerRotation.current,
+      vehicle: false
+    });
+  }
+
   useEffect(() => {
     const controlKey = (event: KeyboardEvent) => {
       const byCode: Record<string, string> = {
@@ -1669,6 +1929,11 @@ function NeighborhoodWorld({
         KeyD: "d",
         KeyE: "e",
         KeyF: "f",
+        KeyQ: "q",
+        ShiftLeft: "shift",
+        ShiftRight: "shift",
+        ControlLeft: "control",
+        ControlRight: "control",
         ArrowUp: "arrowup",
         ArrowLeft: "arrowleft",
         ArrowDown: "arrowdown",
@@ -1682,16 +1947,45 @@ function NeighborhoodWorld({
       drivingRef.current = next;
       setDriving(next);
       onDrivingChange(next);
+      if (next) {
+        jumpStartedAt.current = null;
+        keys.current.delete("q");
+        onAimingChange(false);
+        document.body.style.cursor = "default";
+      }
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable)) return;
       const key = controlKey(event);
+      if (key === "q" && (drivingRef.current || activeInteriorRef.current)) {
+        event.preventDefault();
+        return;
+      }
       keys.current.add(key);
-      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) {
+      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " ", "control", "q"].includes(key)) {
         event.preventDefault();
       }
+
+      const weaponIndex = Number(key) - 1;
+      if (Number.isInteger(weaponIndex) && weaponIndex >= 0 && weaponIndex < WEAPON_ORDER.length) {
+        onWeaponChange(WEAPON_ORDER[weaponIndex]);
+      }
+
+      if (key === "q") {
+        clickTarget.current = null;
+        clickPath.current = [];
+        pendingVisit.current = null;
+        pendingInteraction.current = null;
+        onAimingChange(true);
+        document.body.style.cursor = "crosshair";
+      }
+
+      if (key === " " && !drivingRef.current && !event.repeat && jumpStartedAt.current === null) {
+        jumpStartedAt.current = performance.now();
+      }
+
       if (key !== "e" && key !== "f") return;
       if (event.repeat) return;
 
@@ -1701,7 +1995,7 @@ function NeighborhoodWorld({
         playerRotation.current = carRotation.current;
         carSpeed.current = 0;
         setDriveState(false);
-        onToast("Вы вышли из машины");
+        onToastRef.current("Вы вышли из машины");
         return;
       }
 
@@ -1713,13 +2007,24 @@ function NeighborhoodWorld({
         playerPosition.current.copy(carPosition.current);
         playerRotation.current = carRotation.current;
         setDriveState(true);
-        onToast("Машина заведена — WASD для езды, E чтобы выйти");
+        onToastRef.current("Машина заведена — WASD для езды, E чтобы выйти");
       } else {
-        onToast("Подойдите к своей машине ближе");
+        onToastRef.current("Подойдите к своей машине ближе");
       }
     };
-    const onKeyUp = (event: KeyboardEvent) => keys.current.delete(controlKey(event));
-    const clearKeys = () => keys.current.clear();
+    const onKeyUp = (event: KeyboardEvent) => {
+      const key = controlKey(event);
+      keys.current.delete(key);
+      if (key === "q") {
+        onAimingChange(false);
+        document.body.style.cursor = "default";
+      }
+    };
+    const clearKeys = () => {
+      keys.current.clear();
+      onAimingChange(false);
+      document.body.style.cursor = "default";
+    };
     const onVisibilityChange = () => {
       if (document.hidden) clearKeys();
     };
@@ -1735,7 +2040,17 @@ function NeighborhoodWorld({
       clearKeys();
       document.body.style.cursor = "default";
     };
-  }, [onDrivingChange, onToast]);
+  }, [onAimingChange, onDrivingChange, onWeaponChange]);
+
+  useEffect(() => {
+    if (shotEffects.length === 0) return;
+    const nextExpiry = Math.min(...shotEffects.map((effect) => effect.createdAt + effect.duration));
+    const timeout = window.setTimeout(() => {
+      const now = performance.now();
+      setShotEffects((effects) => effects.filter((effect) => now < effect.createdAt + effect.duration));
+    }, Math.max(16, nextExpiry - performance.now() + 24));
+    return () => window.clearTimeout(timeout);
+  }, [shotEffects]);
 
   useEffect(() => {
     const announcePosition = () => onMove({
@@ -1778,6 +2093,47 @@ function NeighborhoodWorld({
   }, [onToast, user.username, visitRequest, worldResidents]);
 
   useFrame((_, delta) => {
+    const now = performance.now();
+    for (const { runtime } of npcActors) {
+      if (runtime.dead) {
+        if (now >= runtime.respawnAt) {
+          runtime.dead = false;
+          runtime.health = NPC_MAX_HEALTH;
+          runtime.respawnNonce += 1;
+          const angle = (runtime.seed * 0.73 + runtime.respawnNonce * 2.17) % (Math.PI * 2);
+          const radius = 0.8 + ((runtime.seed + runtime.respawnNonce * 17) % 24) / 10;
+          runtime.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+          runtime.rotationRef.current = angle;
+          runtime.targetIndex = nearestPatrolIndex(runtime.position);
+          runtime.idleUntil = now + 900;
+          runtime.motionRef.current = "idle";
+          setNpcUiVersion((version) => version + 1);
+          onToast(`${runtime.username} воскрес в центре города`);
+        }
+        continue;
+      }
+
+      if (now < runtime.idleUntil) {
+        runtime.motionRef.current = "idle";
+        continue;
+      }
+
+      const target = NPC_PATROL_ROUTE[runtime.targetIndex];
+      const direction = target.clone().sub(runtime.position).setY(0);
+      const distance = direction.length();
+      if (distance < 0.13) {
+        runtime.position.copy(target);
+        runtime.targetIndex = (runtime.targetIndex + 1) % NPC_PATROL_ROUTE.length;
+        runtime.idleUntil = now + 650 + ((runtime.seed + runtime.targetIndex * 211) % 1450);
+        runtime.motionRef.current = "idle";
+      } else {
+        direction.normalize();
+        runtime.rotationRef.current = Math.atan2(direction.x, direction.z);
+        runtime.position.addScaledVector(direction, Math.min(distance, runtime.speed * Math.min(delta, WALK_DELTA_CAP)));
+        runtime.motionRef.current = "walk";
+      }
+    }
+
     let didMove = false;
     let completedClickRoute = false;
     if (drivingRef.current) {
@@ -1809,7 +2165,12 @@ function NeighborhoodWorld({
         const direction = clickTarget.current.clone().sub(playerPosition.current);
         direction.y = 0;
         const distance = direction.length();
-        const maxStep = WALK_SPEED * Math.min(delta, WALK_DELTA_CAP);
+        const movementSpeed = keys.current.has("control")
+          ? CROUCH_SPEED
+          : travelMode.current === "run"
+            ? RUN_SPEED
+            : WALK_SPEED;
+        const maxStep = movementSpeed * Math.min(delta, WALK_DELTA_CAP);
         if (distance <= maxStep + 0.001) {
           didMove = distance > 0.001;
           playerPosition.current.copy(clickTarget.current);
@@ -1852,17 +2213,43 @@ function NeighborhoodWorld({
       pendingVisit.current = null;
     }
 
-    setMoving(didMove);
+    const locomoting = !drivingRef.current && (didMove || Boolean(clickTarget.current) || clickPath.current.length > 0);
+    setMoving(locomoting);
     if (didMove && introViewRef.current) {
       introViewRef.current = false;
       setIntroView(false);
     }
-    setRenderPlayerPosition(playerPosition.current.clone());
+    let jumpHeight = 0;
+    let jumpMotion: CharacterMotion | null = null;
+    if (!drivingRef.current && jumpStartedAt.current !== null) {
+      const jumpProgress = (now - jumpStartedAt.current) / JUMP_DURATION_MS;
+      if (jumpProgress >= 1) {
+        jumpStartedAt.current = null;
+      } else {
+        jumpHeight = Math.sin(Math.PI * THREE.MathUtils.clamp(jumpProgress, 0, 1)) * JUMP_HEIGHT;
+        jumpMotion = jumpProgress < 0.3 ? "jumpStart" : jumpProgress < 0.7 ? "jumpLoop" : "jumpLand";
+      }
+    }
+
+    const nextMotion: CharacterMotion = jumpMotion
+      ?? (now < shootingUntil.current
+        ? "shoot"
+        : keys.current.has("q")
+          ? "aim"
+          : keys.current.has("control")
+            ? locomoting ? "crouchWalk" : "crouchIdle"
+            : locomoting
+              ? travelMode.current === "run" ? "run" : "walk"
+              : activeInteriorRef.current ? "idle" : "armedIdle");
+    updatePlayerMotion(nextMotion);
+
+    const visualPlayerPosition = playerPosition.current.clone();
+    visualPlayerPosition.y = jumpHeight;
+    setRenderPlayerPosition(visualPlayerPosition);
     setRenderPlayerRotation(playerRotation.current);
     setRenderCarPosition(carPosition.current.clone());
     setRenderCarRotation(carRotation.current);
 
-    const now = performance.now();
     if (didMove && (completedClickRoute || now - lastMoveSent.current > 120)) {
       lastMoveSent.current = now;
       onMove({
@@ -1884,6 +2271,10 @@ function NeighborhoodWorld({
     size: [number, number, number]
   ) {
     if (drivingRef.current) return;
+    if (keys.current.has("q")) {
+      shootAt(houseLocalToWorld(new THREE.Vector3(x, 0, z), resident));
+      return;
+    }
     clickTarget.current = null;
     clickPath.current = [];
     pendingVisit.current = null;
@@ -1950,11 +2341,15 @@ function NeighborhoodWorld({
 
   function handleGroundClick(event: ThreeEvent<MouseEvent>) {
     if (drivingRef.current || !isPrimarySceneClick(event)) return;
+    const worldPoint = event.point.clone().add(viewOrigin).setY(0);
+    if (keys.current.has("q") && !buildMode) {
+      shootAt(worldPoint);
+      return;
+    }
     clickTarget.current = null;
     clickPath.current = [];
     pendingVisit.current = null;
     pendingInteraction.current = null;
-    const worldPoint = event.point.clone().add(viewOrigin).setY(0);
     const currentInterior = activeInteriorRef.current;
     const targetInterior = residentAtPosition(worldPoint, worldResidents);
 
@@ -1971,7 +2366,7 @@ function NeighborhoodWorld({
         onToast("Не получается проложить путь между предметами");
         return;
       }
-      startClickRoute(path);
+      startClickRoute(path, null, event.nativeEvent.shiftKey ? "run" : "walk");
       return;
     }
 
@@ -1989,10 +2384,10 @@ function NeighborhoodWorld({
       const route: THREE.Vector3[] = [];
       appendUniqueRoute(route, exitPath);
       appendUniqueRoute(route, [residentDoorPosition(currentInterior), worldPoint]);
-      startClickRoute(route);
+      startClickRoute(route, null, event.nativeEvent.shiftKey ? "run" : "walk");
       return;
     }
-    startClickRoute([worldPoint]);
+    startClickRoute([worldPoint], null, event.nativeEvent.shiftKey ? "run" : "walk");
   }
 
   function handleInteriorFloorClick(event: ThreeEvent<MouseEvent>, resident: NeighborhoodResident) {
@@ -2002,6 +2397,10 @@ function NeighborhoodWorld({
     pendingVisit.current = null;
     pendingInteraction.current = null;
     const worldPoint = event.point.clone().add(viewOrigin).setY(0);
+    if (keys.current.has("q") && !buildMode) {
+      shootAt(worldPoint);
+      return;
+    }
     if (buildMode && resident.username === user.username && activeInteriorRef.current?.username === user.username) {
       const local = worldToHouseLocal(worldPoint, resident);
       onBuildMove(
@@ -2015,12 +2414,16 @@ function NeighborhoodWorld({
       onToast("Не получается проложить путь между предметами");
       return;
     }
-    startClickRoute(path);
+    startClickRoute(path, null, event.nativeEvent.shiftKey ? "run" : "walk");
   }
 
   function handleHouseEnter(resident: NeighborhoodResident) {
     if (drivingRef.current) {
       onToast("Сначала выйдите из машины возле дома");
+      return;
+    }
+    if (keys.current.has("q")) {
+      shootAt(residentDoorPosition(resident));
       return;
     }
     if (routeToResident(resident)) {
@@ -2086,9 +2489,33 @@ function NeighborhoodWorld({
             onSelectPlaced={onSelectPlaced}
           />
         ))}
-        {worldResidents.filter((resident) => resident.username !== user.username).map((resident) => (
-          <ResidentFigure key={`resident-${resident.plotId}`} resident={resident} />
-        ))}
+        {npcActors.map(({ resident, runtime }) => {
+          const npcOutfit = getCatalogItem(catalog, resident.avatar.outfit);
+          const npcCharacter = getCatalogItem(catalog, resident.avatar.character);
+          const npcPet = runtime.dead ? undefined : getCatalogItem(catalog, resident.avatar.pet);
+          return (
+            <Player
+              key={`resident-${resident.plotId}`}
+              username={runtime.dead ? `${resident.username} · повержен` : resident.username}
+              color={npcOutfit?.color ?? resident.colors.roof}
+              position={runtime.position}
+              pet={npcPet}
+              character={npcCharacter}
+              outfit={npcOutfit}
+              motionRef={runtime.motionRef}
+              rotation={runtime.rotationRef.current}
+              rotationRef={runtime.rotationRef}
+              teleportNonce={runtime.respawnNonce}
+              health={runtime.health}
+              maxHealth={NPC_MAX_HEALTH}
+              onClick={(event) => {
+                if (!keys.current.has("q") || runtime.dead || !isPrimarySceneClick(event)) return;
+                event.stopPropagation();
+                shootAt(runtime.position.clone(), runtime.username);
+              }}
+            />
+          );
+        })}
         {worldResidents.filter((resident) => resident.username !== user.username).map((resident) => (
           <Car
             key={`car-${resident.plotId}`}
@@ -2108,9 +2535,13 @@ function NeighborhoodWorld({
             character={ownCharacter}
             outfit={ownOutfit}
             moving={moving}
+            motion={playerMotion}
+            weapon={activeInterior ? undefined : selectedWeapon}
+            actionNonce={shotNonce}
             rotation={renderPlayerRotation}
           />
         ) : null}
+        {shotEffects.map((effect) => <ShotEffectView key={effect.id} effect={effect} />)}
         {remoteVectors.map((player) => player.position.vehicle ? (
           <Car
             key={player.id ?? player.username}
@@ -2126,7 +2557,6 @@ function NeighborhoodWorld({
             pet={player.pet}
             character={player.character}
             outfit={player.outfit}
-            moving
             rotation={player.position.rotation ?? 0}
           />
         ))}
@@ -2149,6 +2579,13 @@ function NeighborhoodWorld({
 
 export function NeighborhoodScene(props: NeighborhoodSceneProps) {
   const [driving, setDriving] = useState(false);
+  const [inside, setInside] = useState(() => {
+    if (!props.initialPosition) return true;
+    const position = new THREE.Vector3(props.initialPosition.x, 0, props.initialPosition.z);
+    return Boolean(residentAtPosition(position, props.residents));
+  });
+  const [selectedWeapon, setSelectedWeapon] = useState<WeaponKind>("pistol");
+  const [aiming, setAiming] = useState(false);
 
   return (
     <>
@@ -2158,12 +2595,49 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
         camera={{ position: [16, 15, 20], fov: 48, near: 0.1, far: 220 }}
         onContextMenu={(event) => event.preventDefault()}
       >
-        <NeighborhoodWorld {...props} onDrivingChange={setDriving} />
+        <NeighborhoodWorld
+          {...props}
+          onDrivingChange={setDriving}
+          selectedWeapon={selectedWeapon}
+          onWeaponChange={setSelectedWeapon}
+          onAimingChange={setAiming}
+          onInsideChange={setInside}
+        />
       </Canvas>
+      {!driving && !inside ? (
+        <div className={aiming ? "weapon-hud aiming" : "weapon-hud"}>
+          <div className="weapon-hud-title">
+            <b>{aiming ? "Режим прицеливания" : WEAPONS[selectedWeapon].label}</b>
+            <span>{aiming ? "кликните по точке или соседу" : "1–5 — сменить оружие"}</span>
+          </div>
+          <div className="weapon-hotbar">
+            {WEAPON_ORDER.map((weapon, index) => (
+              <button
+                key={weapon}
+                className={weapon === selectedWeapon ? "active" : ""}
+                type="button"
+                onClick={() => setSelectedWeapon(weapon)}
+                title={WEAPONS[weapon].label}
+              >
+                <small>{index + 1}</small>
+                <span>{WEAPONS[weapon].shortLabel}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div className={driving ? "street-controls driving" : "street-controls"}>
         <span className="control-key">WASD</span>
         <span>{driving ? "ехать и рулить" : "камера"}</span>
-        {!driving ? <><span className="control-dot">·</span><span>клик — идти</span><span className="control-dot">·</span><span>мышь — обзор и масштаб</span></> : null}
+        {!driving ? (
+          <>
+            <span className="control-dot">·</span><span>клик — идти</span>
+            <span className="control-dot">·</span><span><b>Shift</b> + клик — бег</span>
+            <span className="control-dot">·</span><span><b>Space</b> — прыжок</span>
+            <span className="control-dot">·</span><span><b>Ctrl</b> — присесть</span>
+            {!inside ? <><span className="control-dot">·</span><span><b>Q</b> + клик — огонь</span></> : null}
+          </>
+        ) : null}
         <span className="control-dot">·</span>
         <span className="control-key">E</span>
         <span>{driving ? "выйти" : "сесть в свою машину"}</span>

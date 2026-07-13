@@ -18,6 +18,18 @@
   - License: Creative Commons CC0
   - Runtime files used: `public/assets/models/kenney-nature/*.glb`
 
+- Quaternius Universal Animation Library
+  - Source: https://quaternius.com/packs/universalanimationlibrary.html
+  - License: Creative Commons CC0
+  - Runtime files used: `public/assets/animations/quaternius-universal/UAL1_Standard.glb`
+  - The non-root-motion Standard file is used so click-to-move remains authoritative.
+
+- Quaternius Toon Shooter Game Kit
+  - Source: https://quaternius.com/packs/toonshootergamekit.html
+  - License: Creative Commons CC0
+  - Runtime files used: `public/assets/models/quaternius-weapons/*.gltf`
+  - The pack's `ShortCannon` asset is bundled as `laser.gltf` and presented as the laser weapon.
+
 ## Planned Character Pipeline
 
 - Quaternius Universal Base Characters
