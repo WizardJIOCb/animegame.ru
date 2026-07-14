@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="frame" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fb923c"/>
+      <stop offset="0.48" stop-color="#fb7185"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+    <linearGradient id="home" x1="18" y1="24" x2="47" y2="52" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2dd4bf"/>
+      <stop offset="1" stop-color="#0f766e"/>
+    </linearGradient>
+    <linearGradient id="roof" x1="10" y1="13" x2="54" y2="36" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fdba74"/>
+      <stop offset="0.56" stop-color="#fb7185"/>
+      <stop offset="1" stop-color="#f43f5e"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#101116"/>
+  <rect x="3" y="3" width="58" height="58" rx="14" fill="none" stroke="url(#frame)" stroke-width="2"/>
+
+  <path d="M16.5 32 32 17l15.5 15v20H16.5V32Z" fill="url(#home)"/>
+  <path d="m10.5 34 21.5-21 21.5 21" fill="none" stroke="url(#roof)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="24.5" y="34" width="15" height="18" rx="4" fill="#151722"/>
+  <path d="m29 39 7 4.5-7 4.5v-9Z" fill="#fde68a"/>
+  <circle cx="47.5" cy="14.5" r="3.5" fill="#fff7d6"/>
+  <path d="M47.5 8.5v12M41.5 14.5h12" stroke="#fff7d6" stroke-width="2" stroke-linecap="round"/>
+</svg>
