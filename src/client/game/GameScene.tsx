@@ -7,9 +7,12 @@ import type { CatalogItem, HomeState, PublicUser, RemotePlayer } from "../types"
 import {
   isLocomotionMotion,
   WEAPON_MODELS,
+  type BodyPart,
   type CharacterMotion,
+  type RagdollImpact,
   type WeaponKind
 } from "./combat";
+import { SkeletonRagdoll } from "./ragdoll";
 
 type GameSceneProps = {
   user: PublicUser;
@@ -1053,7 +1056,8 @@ function useCharacterAnimation(
   cacheKey: string,
   motion: CharacterMotion,
   motionRef?: RefObject<CharacterMotion>,
-  actionNonce = 0
+  actionNonce = 0,
+  paused = false
 ) {
   const animationGltf = useGLTF(CHARACTER_ANIMATION_URL);
   const targetMesh = useMemo(() => findFirstSkinnedMesh(scene), [scene]);
@@ -1067,7 +1071,7 @@ function useCharacterAnimation(
   const handledNonce = useRef(actionNonce);
 
   useFrame((_, delta) => {
-    if (!mixer) return;
+    if (!mixer || paused) return;
     const desiredMotion = motionRef?.current ?? motion;
     const shouldRetrigger = desiredMotion === "shoot" && handledNonce.current !== actionNonce;
     if (activeMotion.current !== desiredMotion || shouldRetrigger) {
@@ -1158,6 +1162,7 @@ function prepareClonedSkinnedScene(scene: THREE.Object3D) {
       node.castShadow = true;
       node.receiveShadow = false;
       node.frustumCulled = false;
+      node.raycast = () => undefined;
       node.material = Array.isArray(node.material)
         ? node.material.map((material) => material.clone())
         : node.material.clone();
@@ -1480,16 +1485,140 @@ function OutfitOverlay({
   );
 }
 
-function WeaponAttachment({ targetScene, weapon }: { targetScene: THREE.Object3D; weapon: WeaponKind }) {
+type CombatHitboxSpec = {
+  bodyPart: BodyPart;
+  boneName: string;
+  childBoneName?: string;
+  radius: number;
+  offset?: [number, number, number];
+  scale?: [number, number, number];
+};
+
+const COMBAT_HITBOX_UP = new THREE.Vector3(0, 1, 0);
+const COMBAT_HITBOX_SPECS: CombatHitboxSpec[] = [
+  { bodyPart: "head", boneName: "Head", radius: 0.18, offset: [0, 0.1, 0], scale: [1, 1.08, 0.92] },
+  { bodyPart: "chest", boneName: "spine_03", radius: 0.2, offset: [0, 0.025, 0], scale: [1.3, 1.12, 0.82] },
+  { bodyPart: "abdomen", boneName: "spine_01", radius: 0.18, offset: [0, 0.05, 0], scale: [1.16, 1.05, 0.82] },
+  { bodyPart: "pelvis", boneName: "pelvis", radius: 0.18, offset: [0, 0.015, 0], scale: [1.22, 0.88, 0.88] },
+  { bodyPart: "leftUpperArm", boneName: "upperarm_l", childBoneName: "lowerarm_l", radius: 0.085 },
+  { bodyPart: "leftLowerArm", boneName: "lowerarm_l", childBoneName: "hand_l", radius: 0.075 },
+  { bodyPart: "leftHand", boneName: "hand_l", radius: 0.09, offset: [0, 0.055, 0] },
+  { bodyPart: "rightUpperArm", boneName: "upperarm_r", childBoneName: "lowerarm_r", radius: 0.085 },
+  { bodyPart: "rightLowerArm", boneName: "lowerarm_r", childBoneName: "hand_r", radius: 0.075 },
+  { bodyPart: "rightHand", boneName: "hand_r", radius: 0.09, offset: [0, 0.055, 0] },
+  { bodyPart: "leftThigh", boneName: "thigh_l", childBoneName: "calf_l", radius: 0.115 },
+  { bodyPart: "leftCalf", boneName: "calf_l", childBoneName: "foot_l", radius: 0.095 },
+  { bodyPart: "leftFoot", boneName: "foot_l", childBoneName: "ball_l", radius: 0.085 },
+  { bodyPart: "rightThigh", boneName: "thigh_r", childBoneName: "calf_r", radius: 0.115 },
+  { bodyPart: "rightCalf", boneName: "calf_r", childBoneName: "foot_r", radius: 0.095 },
+  { bodyPart: "rightFoot", boneName: "foot_r", childBoneName: "ball_r", radius: 0.085 }
+];
+
+function BoneCombatHitbox({
+  targetScene,
+  spec,
+  username,
+  onCombatHit
+}: {
+  targetScene: THREE.Object3D;
+  spec: CombatHitboxSpec;
+  username: string;
+  onCombatHit: (event: ThreeEvent<MouseEvent>) => void;
+}) {
+  const binding = useMemo(() => {
+    const bone = targetScene.getObjectByName(spec.boneName);
+    if (!(bone instanceof THREE.Bone)) return null;
+
+    if (!spec.childBoneName) {
+      return {
+        bone,
+        position: new THREE.Vector3(...(spec.offset ?? [0, 0, 0])),
+        quaternion: new THREE.Quaternion(),
+        capsuleLength: 0
+      };
+    }
+
+    const childBone = targetScene.getObjectByName(spec.childBoneName);
+    if (!(childBone instanceof THREE.Bone) || childBone.parent !== bone) return null;
+    const segment = childBone.position.clone();
+    const segmentLength = segment.length();
+    if (segmentLength < 0.001) return null;
+    return {
+      bone,
+      position: segment.clone().multiplyScalar(0.5),
+      quaternion: new THREE.Quaternion().setFromUnitVectors(COMBAT_HITBOX_UP, segment.normalize()),
+      capsuleLength: Math.max(0.01, segmentLength - spec.radius * 2)
+    };
+  }, [spec, targetScene]);
+
+  if (!binding) return null;
+  const userData = {
+    combatHitbox: true,
+    username,
+    bodyPart: spec.bodyPart,
+    boneName: spec.boneName
+  };
+
+  return createPortal(
+    <mesh
+      name={`combat-hitbox:${username}:${spec.bodyPart}`}
+      position={binding.position}
+      quaternion={binding.quaternion}
+      scale={spec.scale ?? [1, 1, 1]}
+      userData={userData}
+      onClick={onCombatHit}
+      frustumCulled={false}
+    >
+      {spec.childBoneName ? (
+        <capsuleGeometry args={[spec.radius, binding.capsuleLength, 4, 8]} />
+      ) : (
+        <sphereGeometry args={[spec.radius, 12, 8]} />
+      )}
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} side={THREE.DoubleSide} />
+    </mesh>,
+    binding.bone
+  );
+}
+
+function CharacterCombatHitboxes({
+  targetScene,
+  username,
+  onCombatHit
+}: {
+  targetScene: THREE.Object3D;
+  username: string;
+  onCombatHit: (event: ThreeEvent<MouseEvent>) => void;
+}) {
+  return COMBAT_HITBOX_SPECS.map((spec) => (
+    <BoneCombatHitbox
+      key={spec.bodyPart}
+      targetScene={targetScene}
+      spec={spec}
+      username={username}
+      onCombatHit={onCombatHit}
+    />
+  ));
+}
+
+function WeaponAttachment({
+  targetScene,
+  weapon,
+  muzzleRef
+}: {
+  targetScene: THREE.Object3D;
+  weapon: WeaponKind;
+  muzzleRef?: RefObject<THREE.Object3D | null>;
+}) {
   const spec = WEAPON_MODELS[weapon];
   const gltf = useGLTF(spec.url);
-  const attachment = useMemo(() => {
+  const { attachment, muzzle } = useMemo(() => {
     const wrapper = new THREE.Group();
     const model = gltf.scene.clone(true);
     model.traverse((node) => {
       if (!(node instanceof THREE.Mesh)) return;
       node.castShadow = true;
       node.receiveShadow = false;
+      node.raycast = () => undefined;
       const materials = Array.isArray(node.material) ? node.material : [node.material];
       const clonedMaterials = materials.map((material) => {
         const clone = material.clone();
@@ -1506,18 +1635,24 @@ function WeaponAttachment({ targetScene, weapon }: { targetScene: THREE.Object3D
       });
       node.material = Array.isArray(node.material) ? clonedMaterials : clonedMaterials[0];
     });
-    wrapper.add(model);
+    const nextMuzzle = new THREE.Object3D();
+    nextMuzzle.name = `weapon-muzzle:${weapon}`;
+    nextMuzzle.position.set(...spec.muzzlePosition);
+    nextMuzzle.userData.weapon = weapon;
+    wrapper.add(model, nextMuzzle);
     wrapper.position.set(...spec.position);
     wrapper.rotation.set(...spec.rotation);
     wrapper.scale.setScalar(spec.scale);
-    return wrapper;
-  }, [gltf.scene, spec.position, spec.rotation, spec.scale, weapon]);
+    return { attachment: wrapper, muzzle: nextMuzzle };
+  }, [gltf.scene, spec.muzzlePosition, spec.position, spec.rotation, spec.scale, weapon]);
 
   useEffect(() => {
     const hand = targetScene.getObjectByName("hand_r");
     if (!hand) return;
     hand.add(attachment);
+    if (muzzleRef) muzzleRef.current = muzzle;
     return () => {
+      if (muzzleRef?.current === muzzle) muzzleRef.current = null;
       hand.remove(attachment);
       const materials = new Set<THREE.Material>();
       attachment.traverse((node) => {
@@ -1527,7 +1662,7 @@ function WeaponAttachment({ targetScene, weapon }: { targetScene: THREE.Object3D
       });
       materials.forEach((material) => material.dispose());
     };
-  }, [attachment, targetScene]);
+  }, [attachment, muzzle, muzzleRef, targetScene]);
 
   return null;
 }
@@ -1538,16 +1673,27 @@ function CharacterModel({
   motionRef,
   outfit,
   weapon,
-  actionNonce
+  muzzleRef,
+  actionNonce,
+  combatUsername,
+  combatDead = false,
+  onCombatHit,
+  ragdollImpact
 }: {
   item: CatalogItem;
   motion: CharacterMotion;
   motionRef?: RefObject<CharacterMotion>;
   outfit?: CatalogItem;
   weapon?: WeaponKind;
+  muzzleRef?: RefObject<THREE.Object3D | null>;
   actionNonce?: number;
+  combatUsername?: string;
+  combatDead?: boolean;
+  onCombatHit?: (event: ThreeEvent<MouseEvent>) => void;
+  ragdollImpact?: RagdollImpact;
 }) {
   const gltf = useGLTF(item.modelUrl ?? "");
+  const ragdollRef = useRef<SkeletonRagdoll | null>(null);
   const scene = useMemo(() => {
     const clone = cloneSkeleton(gltf.scene);
     prepareClonedSkinnedScene(clone);
@@ -1579,14 +1725,39 @@ function CharacterModel({
     }
     return clone;
   }, [gltf.scene, outfit?.id]);
-  useCharacterAnimation(scene, item.modelUrl ?? item.id, motion, motionRef, actionNonce);
+  const ragdollActive = combatDead && Boolean(ragdollImpact);
+  useCharacterAnimation(scene, item.modelUrl ?? item.id, motion, motionRef, actionNonce, ragdollActive);
+
+  useEffect(() => {
+    ragdollRef.current?.dispose();
+    ragdollRef.current = null;
+    if (!combatDead || !ragdollImpact) return;
+
+    const ragdoll = new SkeletonRagdoll(scene, ragdollImpact);
+    ragdollRef.current = ragdoll;
+    return () => {
+      if (ragdollRef.current === ragdoll) ragdollRef.current = null;
+      ragdoll.dispose();
+    };
+  }, [combatDead, ragdollImpact?.nonce, scene]);
+
+  useFrame((_, delta) => {
+    ragdollRef.current?.step(Math.min(delta, 0.08));
+  });
 
   return (
     <>
       <primitive object={scene} scale={item.modelScale ?? 1} />
+      {combatUsername && onCombatHit && !combatDead ? (
+        <CharacterCombatHitboxes
+          targetScene={scene}
+          username={combatUsername}
+          onCombatHit={onCombatHit}
+        />
+      ) : null}
       {weapon ? (
         <Suspense fallback={null}>
-          <WeaponAttachment targetScene={scene} weapon={weapon} />
+          <WeaponAttachment targetScene={scene} weapon={weapon} muzzleRef={muzzleRef} />
         </Suspense>
       ) : null}
       {outfit?.clothingModelUrl && !outfit.clothingPaintStyle ? (
@@ -1647,6 +1818,37 @@ function ProceduralPlayerBody({ color, isSelf }: { color: string; isSelf: boolea
         <coneGeometry args={[0.09, 0.25, 12]} />
         <meshStandardMaterial color={isSelf ? "#ff8ab3" : "#8b5cf6"} />
       </mesh>
+    </>
+  );
+}
+
+function CombatCharacterFallback({
+  color,
+  isSelf,
+  username,
+  dead,
+  onCombatHit
+}: {
+  color: string;
+  isSelf: boolean;
+  username?: string;
+  dead: boolean;
+  onCombatHit?: (event: ThreeEvent<MouseEvent>) => void;
+}) {
+  return (
+    <>
+      <ProceduralPlayerBody color={color} isSelf={isSelf} />
+      {username && onCombatHit && !dead ? (
+        <mesh
+          name={`combat-hitbox:${username}:fallback`}
+          position={[0, 0.88, 0]}
+          userData={{ combatHitbox: true, username, bodyPart: "chest", boneName: "spine_03" }}
+          onClick={onCombatHit}
+        >
+          <capsuleGeometry args={[0.36, 1.05, 6, 12]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      ) : null}
     </>
   );
 }
@@ -1968,13 +2170,18 @@ export function Player({
   motion,
   motionRef,
   weapon,
+  muzzleRef,
   actionNonce = 0,
   rotation = 0,
   rotationRef,
   teleportNonce = 0,
   health,
   maxHealth = 100,
-  onClick
+  onClick,
+  combatUsername,
+  combatDead = false,
+  onCombatHit,
+  ragdollImpact
 }: {
   username: string;
   color: string;
@@ -1987,6 +2194,7 @@ export function Player({
   motion?: CharacterMotion;
   motionRef?: RefObject<CharacterMotion>;
   weapon?: WeaponKind;
+  muzzleRef?: RefObject<THREE.Object3D | null>;
   actionNonce?: number;
   rotation?: number;
   rotationRef?: RefObject<number>;
@@ -1994,6 +2202,10 @@ export function Player({
   health?: number;
   maxHealth?: number;
   onClick?: (event: ThreeEvent<MouseEvent>) => void;
+  combatUsername?: string;
+  combatDead?: boolean;
+  onCombatHit?: (event: ThreeEvent<MouseEvent>) => void;
+  ragdollImpact?: RagdollImpact;
 }) {
   const group = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
@@ -2043,8 +2255,12 @@ export function Player({
 
   return (
     <>
-      <group ref={group} position={initialPosition.current}>
-        {onClick ? (
+      <group
+        ref={group}
+        position={initialPosition.current}
+        userData={{ playerUsername: combatUsername ?? username, isSelf }}
+      >
+        {onClick && !(combatUsername && onCombatHit) ? (
           <mesh position={[0, 0.88, 0]} onClick={onClick}>
             <capsuleGeometry args={[0.42, 1.05, 6, 12]} />
             <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
@@ -2052,38 +2268,62 @@ export function Player({
         ) : null}
         <group ref={body} position={[0, playerVisualYOffset, 0]} rotation={[0, initialRotation.current, 0]}>
           {character?.modelUrl ? (
-            <Suspense fallback={<ProceduralPlayerBody color={color} isSelf={isSelf} />}>
+            <Suspense fallback={(
+              <CombatCharacterFallback
+                color={color}
+                isSelf={isSelf}
+                username={combatUsername}
+                dead={combatDead}
+                onCombatHit={onCombatHit}
+              />
+            )}>
               <CharacterModel
+                key={`${character.id}:${teleportNonce}`}
                 item={character}
                 motion={renderedMotion}
                 motionRef={motionRef}
                 outfit={outfit}
                 weapon={weapon}
+                muzzleRef={muzzleRef}
                 actionNonce={actionNonce}
+                combatUsername={combatUsername}
+                combatDead={combatDead}
+                onCombatHit={onCombatHit}
+                ragdollImpact={ragdollImpact}
               />
             </Suspense>
           ) : (
-            <ProceduralPlayerBody color={color} isSelf={isSelf} />
+            <CombatCharacterFallback
+              color={color}
+              isSelf={isSelf}
+              username={combatUsername}
+              dead={combatDead}
+              onCombatHit={onCombatHit}
+            />
           )}
         </group>
-        <Html center position={[0, 1.95, 0]} distanceFactor={7} style={{ pointerEvents: "none" }}>
-          <div className={health !== undefined ? "name-tag combat-name-tag" : "name-tag"}>
-            <span>{username}</span>
-            {health !== undefined ? (
-              <span className="npc-health-track">
-                <i style={{ width: `${healthPercent * 100}%` }} />
-              </span>
-            ) : null}
-          </div>
-        </Html>
+        {!combatDead ? (
+          <Html center position={[0, 1.95, 0]} distanceFactor={7} style={{ pointerEvents: "none" }}>
+            <div className={health !== undefined ? "name-tag combat-name-tag" : "name-tag"}>
+              <span>{username}</span>
+              {health !== undefined ? (
+                <span className="npc-health-track">
+                  <i style={{ width: `${healthPercent * 100}%` }} />
+                </span>
+              ) : null}
+            </div>
+          </Html>
+        ) : null}
       </group>
-      <PetCompanion
-        item={pet}
-        ownerMoving={isActuallyMoving}
-        ownerPosition={position}
-        ownerRotation={rotation}
-        ownerRotationRef={rotationRef}
-      />
+      <group userData={{ playerUsername: combatUsername ?? username, isPet: true }}>
+        <PetCompanion
+          item={pet}
+          ownerMoving={isActuallyMoving}
+          ownerPosition={position}
+          ownerRotation={rotation}
+          ownerRotationRef={rotationRef}
+        />
+      </group>
     </>
   );
 }
