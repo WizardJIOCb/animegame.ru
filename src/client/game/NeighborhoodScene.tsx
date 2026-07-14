@@ -1,6 +1,6 @@
 import { Html, OrbitControls, Sky, Sparkles, useGLTF } from "@react-three/drei";
 import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import type { CatalogItem, HomeState, NeighborhoodResident, PublicUser, RemotePlayer } from "../types";
 import {
@@ -18,6 +18,7 @@ import {
   WEAPONS,
   WEAPON_ORDER,
   type BodyPart,
+  type CharacterBloodMark,
   type CharacterMotion,
   type RagdollImpact,
   type UpperBodyMotion,
@@ -128,6 +129,7 @@ type NpcRuntime = {
   seed: number;
   respawnNonce: number;
   deathNonce: number;
+  bloodMarks: CharacterBloodMark[];
   ragdollImpact?: RagdollImpact;
   ragdollControllerRef: { current: SkeletonRagdoll | null };
 };
@@ -138,7 +140,10 @@ type CombatHit = {
   runtime: NpcRuntime;
   bodyPart: BodyPart;
   boneName: string;
+  bone?: THREE.Bone;
+  modelRoot?: THREE.Object3D;
   point: THREE.Vector3;
+  normal: THREE.Vector3;
   distance: number;
 };
 
@@ -149,11 +154,20 @@ type ShotEffect = {
   color: string;
   weapon: WeaponKind;
   width: number;
+  tracerLength: number;
   createdAt: number;
   duration: number;
   tracerDuration: number;
   blastDuration: number;
   blastRadius?: number;
+};
+
+type WeaponAmmoState = Record<WeaponKind, number>;
+
+type WeaponReloadState = {
+  weapon: WeaponKind;
+  startedAt: number;
+  endsAt: number;
 };
 
 type BloodEffect = {
@@ -188,6 +202,13 @@ const DEFAULT_BODY_BONE = "spine_03";
 const AIM_CENTER = new THREE.Vector2(0, 0);
 const BLOOD_EFFECT_DURATION = 7200;
 const SURFACE_IMPACT_DURATION = 1350;
+const CHARACTER_BLOOD_MARK_LIMIT = 8;
+
+function createWeaponAmmoState(): WeaponAmmoState {
+  return Object.fromEntries(
+    WEAPON_ORDER.map((weapon) => [weapon, WEAPONS[weapon].magazineSize])
+  ) as WeaponAmmoState;
+}
 
 function impactMarkLimits() {
   if (typeof navigator === "undefined" || typeof window === "undefined") return { bullet: 112, rocket: 16 };
@@ -1642,6 +1663,7 @@ function createNpcRuntime(resident: NeighborhoodResident): NpcRuntime {
     seed,
     respawnNonce: 0,
     deathNonce: 0,
+    bloodMarks: [],
     ragdollControllerRef: { current: null }
   };
 }
@@ -1652,22 +1674,39 @@ function ShotEffectView({ effect }: { effect: ShotEffect }) {
   const tracerMaterial = useRef<THREE.MeshBasicMaterial>(null);
   const blastMaterial = useRef<THREE.MeshBasicMaterial>(null);
   const blastRef = useRef<THREE.Mesh>(null);
+  const tracerStartedAt = useRef<number | null>(null);
   const transform = useMemo(() => {
     const direction = effect.end.clone().sub(effect.start);
     const length = Math.max(0.01, direction.length());
-    const midpoint = effect.start.clone().add(effect.end).multiplyScalar(0.5);
     direction.normalize();
     const quaternion = new THREE.Quaternion().setFromUnitVectors(UP, direction);
-    return { direction, length, midpoint, quaternion };
+    return { direction, length, quaternion };
   }, [effect.end, effect.start]);
 
   useFrame(() => {
-    const elapsed = performance.now() - effect.createdAt;
-    const tracerProgress = THREE.MathUtils.clamp(elapsed / effect.tracerDuration, 0, 1);
+    const now = performance.now();
+    const elapsed = now - effect.createdAt;
+    if (tracerStartedAt.current === null) tracerStartedAt.current = now;
+    const tracerElapsed = now - tracerStartedAt.current;
+    const tracerProgress = THREE.MathUtils.clamp(tracerElapsed / effect.tracerDuration, 0, 1);
     const blastProgress = THREE.MathUtils.clamp(elapsed / effect.blastDuration, 0, 1);
-    if (group.current) group.current.visible = elapsed < effect.duration;
-    if (tracerRef.current) tracerRef.current.visible = tracerProgress < 1;
-    if (tracerMaterial.current) tracerMaterial.current.opacity = (1 - tracerProgress) * 0.9;
+    const tracerAlive = tracerElapsed < effect.tracerDuration;
+    if (group.current) group.current.visible = tracerAlive || elapsed < effect.duration;
+    if (tracerRef.current) {
+      const segmentLength = Math.min(effect.tracerLength, transform.length);
+      const headDistance = THREE.MathUtils.lerp(segmentLength, transform.length, tracerProgress);
+      const tailDistance = Math.max(0, headDistance - segmentLength);
+      const visibleLength = Math.max(0.01, headDistance - tailDistance);
+      tracerRef.current.visible = tracerAlive;
+      tracerRef.current.position.copy(effect.start)
+        .addScaledVector(transform.direction, (headDistance + tailDistance) * 0.5);
+      tracerRef.current.scale.set(1, visibleLength, 1);
+    }
+    if (tracerMaterial.current) {
+      tracerMaterial.current.opacity = tracerAlive
+        ? 0.82 + Math.sin(tracerProgress * Math.PI) * 0.16
+        : 0;
+    }
     if (blastMaterial.current) blastMaterial.current.opacity = (1 - blastProgress) * 0.48;
     if (blastRef.current) {
       blastRef.current.visible = blastProgress < 1;
@@ -1678,8 +1717,8 @@ function ShotEffectView({ effect }: { effect: ShotEffect }) {
 
   return (
     <group ref={group}>
-      <mesh ref={tracerRef} name={`shot-tracer:${effect.id}`} position={transform.midpoint} quaternion={transform.quaternion} raycast={() => null}>
-        <cylinderGeometry args={[effect.width, effect.width, transform.length, 8]} />
+      <mesh ref={tracerRef} name={`shot-tracer:${effect.id}`} position={effect.start} quaternion={transform.quaternion} raycast={() => null}>
+        <cylinderGeometry args={[effect.width, effect.width, 1, 8]} />
         <meshBasicMaterial ref={tracerMaterial} color={effect.color} transparent opacity={0.9} depthWrite={false} toneMapped={false} />
       </mesh>
       {effect.blastRadius ? (
@@ -2027,6 +2066,9 @@ function NeighborhoodWorld({
   onDrivingChange,
   selectedWeapon,
   onWeaponChange,
+  reloadState,
+  onConsumeRound,
+  onReload,
   aiming,
   onAimingChange,
   onInsideChange,
@@ -2038,6 +2080,9 @@ function NeighborhoodWorld({
   onDrivingChange: (driving: boolean) => void;
   selectedWeapon: WeaponKind;
   onWeaponChange: (weapon: WeaponKind) => void;
+  reloadState: WeaponReloadState | null;
+  onConsumeRound: (weapon: WeaponKind) => number | null;
+  onReload: (weapon: WeaponKind) => void;
   aiming: boolean;
   onAimingChange: (aiming: boolean) => void;
   onInsideChange: (inside: boolean) => void;
@@ -2089,6 +2134,7 @@ function NeighborhoodWorld({
   const nextShotAt = useRef(0);
   const shotId = useRef(0);
   const bloodId = useRef(0);
+  const bodyBloodId = useRef(0);
   const impactId = useRef(0);
   const shotNonceRef = useRef(0);
   const worldGroupRef = useRef<THREE.Group>(null);
@@ -2102,7 +2148,9 @@ function NeighborhoodWorld({
   const aimingRef = useRef(aiming);
   const thirdPersonFireHeld = useRef(false);
   const lastPointerLockErrorAt = useRef(0);
+  const lastWeaponWheelAt = useRef(0);
   const selectedWeaponRef = useRef(selectedWeapon);
+  const reloadStateRef = useRef(reloadState);
   const shootAtRef = useRef<(target: THREE.Vector3) => void>(() => undefined);
   const shotRaycaster = useRef(new THREE.Raycaster());
   const aimRaycaster = useRef(new THREE.Raycaster());
@@ -2144,6 +2192,7 @@ function NeighborhoodWorld({
   cameraModeRef.current = cameraMode;
   aimingRef.current = aiming;
   selectedWeaponRef.current = selectedWeapon;
+  reloadStateRef.current = reloadState;
 
   useEffect(() => {
     onToastRef.current = onToast;
@@ -2329,7 +2378,13 @@ function NeighborhoodWorld({
     return {
       runtime,
       bodyPart: (object.userData.bodyPart ?? DEFAULT_BODY_PART) as BodyPart,
-      boneName: String(object.userData.boneName ?? DEFAULT_BODY_BONE)
+      boneName: String(object.userData.boneName ?? DEFAULT_BODY_BONE),
+      bone: object.userData.combatBone instanceof THREE.Bone
+        ? object.userData.combatBone as THREE.Bone
+        : undefined,
+      modelRoot: object.userData.combatRoot instanceof THREE.Object3D
+        ? object.userData.combatRoot as THREE.Object3D
+        : undefined
     };
   }
 
@@ -2350,10 +2405,40 @@ function NeighborhoodWorld({
     return null;
   }
 
+  function intersectionWorldNormal(intersection: THREE.Intersection, incoming: THREE.Vector3) {
+    const normal = intersection.face
+      ? intersection.face.normal.clone().applyNormalMatrix(
+          new THREE.Matrix3().getNormalMatrix(intersection.object.matrixWorld)
+        ).normalize()
+      : incoming.clone().negate();
+    if (normal.dot(incoming) > 0) normal.negate();
+    return normal;
+  }
+
+  function preciseCombatIntersection(combat: ReturnType<typeof combatMetadata>) {
+    if (!combat?.modelRoot) return null;
+    combat.modelRoot.updateWorldMatrix(true, true);
+    const intersections: THREE.Intersection[] = [];
+    combat.modelRoot.traverse((object) => {
+      if (!(object instanceof THREE.SkinnedMesh) || !objectIsWorldVisible(object)) return;
+      object.computeBoundingBox();
+      object.computeBoundingSphere();
+      THREE.SkinnedMesh.prototype.raycast.call(object, shotRaycaster.current, intersections);
+    });
+    intersections.sort((left, right) => left.distance - right.distance);
+    return intersections[0] ?? null;
+  }
+
   function closestCombatZone(runtime: NpcRuntime, referencePoint: THREE.Vector3) {
     const group = worldGroupRef.current;
     if (!group) return null;
-    let best: { bodyPart: BodyPart; boneName: string; point: THREE.Vector3 } | null = null;
+    let best: {
+      bodyPart: BodyPart;
+      boneName: string;
+      bone?: THREE.Bone;
+      modelRoot?: THREE.Object3D;
+      point: THREE.Vector3;
+    } | null = null;
     let bestDistance = Infinity;
     group.traverse((object) => {
       const metadata = combatMetadata(object);
@@ -2372,7 +2457,13 @@ function NeighborhoodWorld({
       const distance = point.distanceToSquared(referencePoint);
       if (distance >= bestDistance) return;
       bestDistance = distance;
-      best = { bodyPart: metadata.bodyPart, boneName: metadata.boneName, point };
+      best = {
+        bodyPart: metadata.bodyPart,
+        boneName: metadata.boneName,
+        bone: metadata.bone,
+        modelRoot: metadata.modelRoot,
+        point
+      };
     });
     return best;
   }
@@ -2496,6 +2587,42 @@ function NeighborhoodWorld({
     ].slice(-12));
   }
 
+  function addCharacterBloodMark(
+    runtime: NpcRuntime,
+    bodyPart: BodyPart,
+    boneName: string,
+    bone: THREE.Bone | undefined,
+    pointWorld: THREE.Vector3,
+    normalWorld: THREE.Vector3,
+    weapon: WeaponKind
+  ) {
+    if (!bone?.parent) return;
+    bone.updateWorldMatrix(true, false);
+    const normal = normalWorld.clone();
+    if (normal.lengthSq() < 0.000001) normal.set(0, 0, 1);
+    else normal.normalize();
+    const localNormal = normal.clone().applyMatrix3(
+      new THREE.Matrix3().setFromMatrix4(bone.matrixWorld).transpose()
+    ).normalize();
+    const localPoint = bone.worldToLocal(pointWorld.clone().addScaledVector(normal, 0.006));
+    const worldScale = bone.getWorldScale(new THREE.Vector3());
+    const scale = Math.max(0.001, (Math.abs(worldScale.x) + Math.abs(worldScale.y) + Math.abs(worldScale.z)) / 3);
+    const limb = bodyPart.includes("Arm") || bodyPart.includes("Hand") || bodyPart.includes("Thigh")
+      || bodyPart.includes("Calf") || bodyPart.includes("Foot");
+    const baseRadius = weapon === "rocket" ? 0.125 : bodyPart === "head" ? 0.072 : limb ? 0.052 : 0.088;
+    bodyBloodId.current += 1;
+    const mark: CharacterBloodMark = {
+      id: bodyBloodId.current,
+      boneName,
+      localPoint: localPoint.toArray(),
+      localNormal: localNormal.toArray(),
+      radius: baseRadius * (0.86 + bloodRandom(bodyBloodId.current * 313) * 0.28) / scale,
+      rotation: bloodRandom(bodyBloodId.current * 347) * Math.PI * 2
+    };
+    runtime.bloodMarks = [...runtime.bloodMarks, mark].slice(-CHARACTER_BLOOD_MARK_LIMIT);
+    setNpcUiVersion((version) => version + 1);
+  }
+
   function spawnSurfaceImpact(
     impactWorld: THREE.Vector3,
     normalWorld: THREE.Vector3,
@@ -2570,6 +2697,8 @@ function NeighborhoodWorld({
     if (now < nextShotAt.current) return;
     const group = worldGroupRef.current;
     if (!group) return;
+    const remainingRounds = onConsumeRound(weapon);
+    if (remainingRounds === null) return;
     nextShotAt.current = now + config.cooldownMs;
     clickTarget.current = null;
     clickPath.current = [];
@@ -2601,21 +2730,21 @@ function NeighborhoodWorld({
     raycaster.set(shotStartWorld, directionWorld);
     raycaster.far = shotDistance;
     const valid = validRayIntersection(raycaster.intersectObject(group, true));
-    const impactWorld = valid?.intersection.point.clone()
+    let impactWorld = valid?.intersection.point.clone()
       ?? shotStartWorld.clone().addScaledVector(directionWorld, Math.min(config.range, targetDistance));
+    const preciseCombat = valid?.combat ? preciseCombatIntersection(valid.combat) : null;
+    if (preciseCombat) impactWorld = preciseCombat.point.clone();
     const directCombat: CombatHit | null = valid?.combat ? {
       ...valid.combat,
       point: impactWorld.clone(),
-      distance: valid.intersection.distance
+      normal: preciseCombat
+        ? intersectionWorldNormal(preciseCombat, directionWorld)
+        : intersectionWorldNormal(valid.intersection, directionWorld),
+      distance: preciseCombat?.distance ?? valid.intersection.distance
     } : null;
     let impactSurfaceNormal: THREE.Vector3 | null = null;
     if (valid && !valid.combat) {
-      impactSurfaceNormal = valid.intersection.face
-        ? valid.intersection.face.normal.clone().applyNormalMatrix(
-            new THREE.Matrix3().getNormalMatrix(valid.intersection.object.matrixWorld)
-          ).normalize()
-        : directionWorld.clone().negate();
-      if (impactSurfaceNormal.dot(directionWorld) > 0) impactSurfaceNormal.negate();
+      impactSurfaceNormal = intersectionWorldNormal(valid.intersection, directionWorld);
       spawnSurfaceImpact(
         impactWorld,
         impactSurfaceNormal,
@@ -2654,6 +2783,18 @@ function NeighborhoodWorld({
         } else {
           damageNpc(runtime, config.damage * falloff, now, impact);
         }
+        const markNormal = directCombat?.runtime === runtime
+          ? directCombat.normal
+          : impactWorld.clone().sub(bodyPoint).normalize();
+        addCharacterBloodMark(
+          runtime,
+          exactZone?.bodyPart ?? DEFAULT_BODY_PART,
+          exactZone?.boneName ?? DEFAULT_BODY_BONE,
+          exactZone?.bone,
+          bodyPoint,
+          markNormal,
+          weapon
+        );
         spawnBloodEffect(bodyPoint, bloodDirection, now);
       }
     } else if (directCombat) {
@@ -2676,9 +2817,24 @@ function NeighborhoodWorld({
           impact
         );
       }
+      addCharacterBloodMark(
+        directCombat.runtime,
+        directCombat.bodyPart,
+        directCombat.boneName,
+        directCombat.bone,
+        directCombat.point,
+        directCombat.normal,
+        weapon
+      );
       spawnBloodEffect(directCombat.point, directionWorld, now);
     }
 
+    const tracerDistance = shotStartWorld.distanceTo(impactWorld);
+    const tracerDuration = THREE.MathUtils.clamp(
+      tracerDistance / config.tracerSpeed * 1000,
+      72,
+      150
+    );
     const shotStart = group.worldToLocal(shotStartWorld.clone());
     const impact = group.worldToLocal(impactWorld.clone());
     shotId.current += 1;
@@ -2691,15 +2847,17 @@ function NeighborhoodWorld({
         color: config.color,
         weapon,
         width: config.tracerWidth,
+        tracerLength: config.tracerLength,
         createdAt: now,
         duration: weapon === "rocket" ? 900 : weapon === "laser" ? 620 : 520,
-        tracerDuration: weapon === "rocket" ? 560 : weapon === "laser" ? 360 : 240,
+        tracerDuration,
         blastDuration: weapon === "rocket" ? 620 : 360,
         blastRadius: config.blastRadius
       }
     ].slice(-16));
-    shootingUntil.current = now + 370;
+    shootingUntil.current = now + (remainingRounds === 0 ? Math.min(150, config.cooldownMs) : 370);
     shotNonceRef.current += 1;
+    if (remainingRounds === 0) onReload(weapon);
     applyWeaponRecoil(config);
     lastRotationSent.current = playerRotation.current;
     lastMoveSent.current = now;
@@ -2724,6 +2882,7 @@ function NeighborhoodWorld({
         KeyE: "e",
         KeyF: "f",
         KeyQ: "q",
+        KeyR: "r",
         KeyB: "b",
         KeyV: "v",
         ShiftLeft: "shift",
@@ -2776,6 +2935,13 @@ function NeighborhoodWorld({
         event.preventDefault();
         return;
       }
+      if (key === "r") {
+        event.preventDefault();
+        if (!event.repeat && !drivingRef.current && !activeInteriorRef.current) {
+          onReload(selectedWeaponRef.current);
+        }
+        return;
+      }
       keys.current.add(key);
       if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " ", "control", "q"].includes(key)) {
         event.preventDefault();
@@ -2783,7 +2949,9 @@ function NeighborhoodWorld({
 
       const weaponIndex = Number(key) - 1;
       if (Number.isInteger(weaponIndex) && weaponIndex >= 0 && weaponIndex < WEAPON_ORDER.length) {
-        onWeaponChange(WEAPON_ORDER[weaponIndex]);
+        const weapon = WEAPON_ORDER[weaponIndex];
+        selectedWeaponRef.current = weapon;
+        onWeaponChange(weapon);
       }
 
       if (key === "q") {
@@ -2852,19 +3020,36 @@ function NeighborhoodWorld({
     const onVisibilityChange = () => {
       if (document.hidden) clearKeys();
     };
+    const onWheel = (event: WheelEvent) => {
+      const weaponWheelActive = cameraModeRef.current === "thirdPerson" || keys.current.has("q");
+      if (!weaponWheelActive || drivingRef.current || activeInteriorRef.current || Math.abs(event.deltaY) < 0.5) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const now = performance.now();
+      if (now - lastWeaponWheelAt.current < 110) return;
+      lastWeaponWheelAt.current = now;
+      const currentIndex = WEAPON_ORDER.indexOf(selectedWeaponRef.current);
+      const direction = event.deltaY > 0 ? 1 : -1;
+      const nextIndex = (currentIndex + direction + WEAPON_ORDER.length) % WEAPON_ORDER.length;
+      const weapon = WEAPON_ORDER[nextIndex];
+      selectedWeaponRef.current = weapon;
+      onWeaponChange(weapon);
+    };
     window.addEventListener("keydown", onKeyDown, { passive: false });
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", clearKeys);
     document.addEventListener("visibilitychange", onVisibilityChange);
+    gl.domElement.addEventListener("wheel", onWheel, { passive: false, capture: true });
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", clearKeys);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      gl.domElement.removeEventListener("wheel", onWheel, { capture: true });
       clearKeys();
       document.body.style.cursor = "default";
     };
-  }, [buildMode, gl, onAimingChange, onCameraModeChange, onDrivingChange, onWeaponChange]);
+  }, [buildMode, gl, onAimingChange, onCameraModeChange, onDrivingChange, onReload, onWeaponChange]);
 
   useEffect(() => {
     const element = gl.domElement;
@@ -3048,6 +3233,7 @@ function NeighborhoodWorld({
           runtime.dead = false;
           runtime.health = NPC_MAX_HEALTH;
           runtime.ragdollImpact = undefined;
+          runtime.bloodMarks = [];
           runtime.ragdollControllerRef.current = null;
           runtime.respawnNonce += 1;
           const angle = (runtime.seed * 0.73 + runtime.respawnNonce * 2.17) % (Math.PI * 2);
@@ -3209,11 +3395,15 @@ function NeighborhoodWorld({
       ? aimingRef.current || thirdPersonFireHeld.current
       : keys.current.has("q");
     const currentlyShooting = now < shootingUntil.current;
-    playerUpperMotionRef.current = currentlyShooting
-      ? "shoot"
-      : currentlyAiming
-        ? "aim"
-        : null;
+    const currentlyReloading = reloadStateRef.current?.weapon === selectedWeaponRef.current
+      && now < reloadStateRef.current.endsAt;
+    playerUpperMotionRef.current = currentlyReloading
+      ? "reload"
+      : currentlyShooting
+        ? "shoot"
+        : currentlyAiming
+          ? "aim"
+          : null;
     const nextMotion: CharacterMotion = jumpMotion
       ?? (keys.current.has("control")
         ? locomoting ? "crouchWalk" : "crouchIdle"
@@ -3505,6 +3695,7 @@ function NeighborhoodWorld({
               maxHealth={NPC_MAX_HEALTH}
               combatUsername={runtime.username}
               combatDead={runtime.dead}
+              bloodMarks={runtime.bloodMarks}
               ragdollImpact={runtime.ragdollImpact}
               ragdollControllerRef={runtime.ragdollControllerRef}
               onCombatHit={(event) => {
@@ -3634,10 +3825,72 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
     return Boolean(residentAtPosition(position, props.residents));
   });
   const [selectedWeapon, setSelectedWeapon] = useState<WeaponKind>("pistol");
+  const selectedWeaponStateRef = useRef<WeaponKind>("pistol");
+  selectedWeaponStateRef.current = selectedWeapon;
+  const [ammoByWeapon, setAmmoByWeapon] = useState<WeaponAmmoState>(createWeaponAmmoState);
+  const ammoRef = useRef(ammoByWeapon);
+  const [reloadState, setReloadState] = useState<WeaponReloadState | null>(null);
+  const reloadRef = useRef<WeaponReloadState | null>(null);
+  const reloadTimerRef = useRef<number | null>(null);
   const [aiming, setAiming] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>("strategy");
   const [pointerLocked, setPointerLocked] = useState(false);
   const recoilRef = useRef<WeaponRecoilState>({ x: 0, y: 0, kick: 0 });
+
+  const cancelReload = useCallback(() => {
+    if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current);
+    reloadTimerRef.current = null;
+    reloadRef.current = null;
+    setReloadState(null);
+  }, []);
+
+  const startReload = useCallback((weapon: WeaponKind) => {
+    const config = WEAPONS[weapon];
+    if (ammoRef.current[weapon] >= config.magazineSize) return;
+    if (reloadRef.current?.weapon === weapon) return;
+    if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current);
+    const startedAt = performance.now();
+    const nextReload = { weapon, startedAt, endsAt: startedAt + config.reloadMs };
+    reloadRef.current = nextReload;
+    setReloadState(nextReload);
+    reloadTimerRef.current = window.setTimeout(() => {
+      if (reloadRef.current?.startedAt !== startedAt || reloadRef.current.weapon !== weapon) return;
+      const nextAmmo = { ...ammoRef.current, [weapon]: config.magazineSize };
+      ammoRef.current = nextAmmo;
+      setAmmoByWeapon(nextAmmo);
+      reloadRef.current = null;
+      reloadTimerRef.current = null;
+      setReloadState(null);
+    }, config.reloadMs);
+  }, []);
+
+  const consumeRound = useCallback((weapon: WeaponKind) => {
+    if (reloadRef.current) return null;
+    const current = ammoRef.current[weapon];
+    if (current <= 0) {
+      startReload(weapon);
+      return null;
+    }
+    const remaining = current - 1;
+    const nextAmmo = { ...ammoRef.current, [weapon]: remaining };
+    ammoRef.current = nextAmmo;
+    setAmmoByWeapon(nextAmmo);
+    return remaining;
+  }, [startReload]);
+
+  const selectWeapon = useCallback((weapon: WeaponKind) => {
+    if (selectedWeaponStateRef.current === weapon) return;
+    selectedWeaponStateRef.current = weapon;
+    cancelReload();
+    setSelectedWeapon(weapon);
+  }, [cancelReload]);
+
+  useEffect(() => () => {
+    if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current);
+  }, []);
+
+  const weaponConfig = WEAPONS[selectedWeapon];
+  const activeReload = reloadState?.weapon === selectedWeapon ? reloadState : null;
 
   return (
     <>
@@ -3651,7 +3904,10 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
           {...props}
           onDrivingChange={setDriving}
           selectedWeapon={selectedWeapon}
-          onWeaponChange={setSelectedWeapon}
+          onWeaponChange={selectWeapon}
+          reloadState={reloadState}
+          onConsumeRound={consumeRound}
+          onReload={startReload}
           aiming={aiming}
           onAimingChange={setAiming}
           onInsideChange={setInside}
@@ -3672,17 +3928,32 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
       {!driving && !inside ? (
         <div className={aiming ? "weapon-hud aiming" : "weapon-hud"}>
           <div className="weapon-hud-title">
-            <b>{aiming ? "Режим прицеливания" : WEAPONS[selectedWeapon].label}</b>
-            <span>{aiming ? cameraMode === "thirdPerson" ? "ЛКМ — огонь по центру прицела" : "кликните по точке или соседу" : "1–5 — сменить оружие"}</span>
+            <div className="weapon-hud-copy">
+              <b>{activeReload ? "Перезарядка" : aiming ? "Режим прицеливания" : weaponConfig.label}</b>
+              <span>{activeReload
+                ? weaponConfig.label
+                : aiming
+                  ? cameraMode === "thirdPerson" ? "ЛКМ — огонь по центру прицела" : "кликните по точке или соседу"
+                  : "1–5 — оружие · R — перезарядка"}</span>
+            </div>
+            <div className={activeReload ? "weapon-ammo reloading" : "weapon-ammo"}>
+              <div><strong>{ammoByWeapon[selectedWeapon]}</strong><span>/ {weaponConfig.magazineSize}</span></div>
+              <small>{activeReload ? "заряжаем магазин" : "магазины ∞"}</small>
+            </div>
           </div>
+          {activeReload ? (
+            <div className="weapon-reload-track" aria-label="Перезарядка">
+              <i key={activeReload.startedAt} style={{ animationDuration: `${activeReload.endsAt - activeReload.startedAt}ms` }} />
+            </div>
+          ) : null}
           <div className="weapon-hotbar">
             {WEAPON_ORDER.map((weapon, index) => (
               <button
                 key={weapon}
                 className={weapon === selectedWeapon ? "active" : ""}
                 type="button"
-                onClick={() => setSelectedWeapon(weapon)}
-                title={WEAPONS[weapon].label}
+                onClick={() => selectWeapon(weapon)}
+                title={`${WEAPONS[weapon].label}: ${ammoByWeapon[weapon]} / ${WEAPONS[weapon].magazineSize}`}
               >
                 <small>{index + 1}</small>
                 <span>{WEAPONS[weapon].shortLabel}</span>
@@ -3699,6 +3970,8 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
             <span className="control-dot">·</span><span>мышь — обзор</span>
             <span className="control-dot">·</span><span><b>ПКМ</b> — прицел</span>
             {!inside ? <><span className="control-dot">·</span><span><b>ЛКМ</b> — огонь</span></> : null}
+            {!inside ? <><span className="control-dot">·</span><span><b>колесо</b> — оружие</span></> : null}
+            {!inside ? <><span className="control-dot">·</span><span><b>R</b> — перезарядка</span></> : null}
             <span className="control-dot">·</span><span><b>Shift</b> — бег</span>
             <span className="control-dot">·</span><span><b>Space</b> — прыжок</span>
             <span className="control-dot">·</span><span><b>Ctrl</b> — присесть</span>
@@ -3712,6 +3985,8 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
             <span className="control-dot">·</span><span><b>Space</b> — прыжок</span>
             <span className="control-dot">·</span><span><b>Ctrl</b> — присесть</span>
             {!inside ? <><span className="control-dot">·</span><span><b>Q</b> + клик — огонь</span></> : null}
+            {!inside ? <><span className="control-dot">·</span><span><b>Q</b> + колесо — оружие</span></> : null}
+            {!inside ? <><span className="control-dot">·</span><span><b>R</b> — перезарядка</span></> : null}
             <span className="control-dot">·</span><span><b>V</b> — от третьего лица</span>
           </>
         ) : null}

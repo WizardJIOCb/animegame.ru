@@ -1447,9 +1447,15 @@ input:focus {
 
 .weapon-hud-title {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
+}
+
+.weapon-hud-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
 }
 
 .weapon-hud-title b {
@@ -1459,6 +1465,76 @@ input:focus {
 .weapon-hud-title span {
   color: #cbd5e1;
   font-size: 10px;
+}
+
+.weapon-ammo {
+  min-width: 86px;
+  display: grid;
+  justify-items: end;
+  padding: 6px 9px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.42);
+  font-variant-numeric: tabular-nums;
+}
+
+.weapon-ammo div {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.weapon-ammo strong {
+  color: #fef3c7;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.weapon-ammo span {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.weapon-ammo small {
+  margin-top: 3px;
+  color: #99f6e4;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.weapon-ammo.reloading {
+  border-color: rgba(251, 191, 36, 0.52);
+  background: rgba(120, 53, 15, 0.32);
+}
+
+.weapon-ammo.reloading small {
+  color: #fde68a;
+}
+
+.weapon-reload-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.weapon-reload-track i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f59e0b, #fde68a);
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.7);
+  animation-name: weapon-reload-fill;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes weapon-reload-fill {
+  to { width: 100%; }
 }
 
 .weapon-hotbar {
@@ -1805,6 +1881,11 @@ input:focus {
 
   .weapon-hud-title span {
     display: none;
+  }
+
+  .weapon-ammo span,
+  .weapon-ammo small {
+    display: inline;
   }
 
   .weapon-hotbar {
