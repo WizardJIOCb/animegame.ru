@@ -353,6 +353,11 @@ export class SkeletonRagdoll {
     this.applyImpact(impact);
   }
 
+  addImpact(impact: RagdollImpact, responseScale = 1) {
+    if (this.disposed) return;
+    this.applyImpact(impact, responseScale);
+  }
+
   step(delta: number) {
     if (this.disposed || this.particles.length === 0 || !Number.isFinite(delta) || delta <= 0) return;
     if (this.sleeping) return;
@@ -662,8 +667,10 @@ export class SkeletonRagdoll {
     });
   }
 
-  private applyImpact(impact: RagdollImpact) {
+  private applyImpact(impact: RagdollImpact, responseScale = 1) {
     if (this.particles.length === 0) return;
+    const safeResponseScale = Number.isFinite(responseScale) ? Math.max(0, responseScale) : 1;
+    if (safeResponseScale < EPSILON) return;
     const point = new THREE.Vector3().fromArray(impact.point);
     const pointIsFinite = point.toArray().every(Number.isFinite);
     let hit = this.particleByName.get(impact.boneName);
@@ -682,6 +689,8 @@ export class SkeletonRagdoll {
     const velocity = new THREE.Vector3().fromArray(impact.velocity);
     if (!Number.isFinite(velocity.lengthSq()) || velocity.lengthSq() < EPSILON) return;
     velocity.clampLength(0, MAX_IMPACT_SPEED);
+    this.sleeping = false;
+    this.sleepTime = 0;
 
     const localShares = new Map<Particle, number>([[hit, LOCAL_IMPACT_SHARE]]);
     const hitChild = hit.spec.aimChild ? this.particleByName.get(hit.spec.aimChild) : undefined;
@@ -760,8 +769,14 @@ export class SkeletonRagdoll {
       const launchVelocity = bodyVelocity.clone().multiplyScalar(bodyShare)
         .addScaledVector(velocity, localShare)
         .add(new THREE.Vector3().crossVectors(spinAxis, radius))
+        .multiplyScalar(safeResponseScale)
         .clampLength(0, MAX_PARTICLE_SPEED);
-      particle.previous.addScaledVector(launchVelocity, -FIXED_STEP);
+      const accumulatedVelocity = particle.position.clone()
+        .sub(particle.previous)
+        .multiplyScalar(1 / FIXED_STEP)
+        .add(launchVelocity)
+        .clampLength(0, MAX_PARTICLE_SPEED);
+      particle.previous.copy(particle.position).addScaledVector(accumulatedVelocity, -FIXED_STEP);
     }
   }
 
