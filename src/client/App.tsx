@@ -4,6 +4,7 @@ import { io, Socket } from "socket.io-client";
 import { AdminPanel } from "./components/AdminPanel";
 import { AuthScreen } from "./components/AuthScreen";
 import { ExpeditionPanel } from "./components/ExpeditionPanel";
+import type { ProgressionTabId } from "./components/ProgressionHub";
 import { createGameAssetPlan, GameAssetGate } from "./components/GameAssetGate";
 import { NeighborhoodPanel } from "./components/NeighborhoodPanel";
 import {
@@ -15,6 +16,7 @@ import {
   claimNeighborhoodIncome,
   craftExpeditionItem,
   earn,
+  equipExpeditionGear,
   extractExpedition,
   getCatalog,
   getExpeditionProfile,
@@ -40,6 +42,7 @@ import {
   syncExpeditionPlayerStatus,
   updateHomeStyle,
   useExpeditionBandage,
+  useExpeditionTactical,
   upgradeCareer,
   upgradeExpeditionSkill,
   upgradeHouse
@@ -48,16 +51,20 @@ import { trackGoal, trackItemGoal, trackPurchase } from "./analytics";
 import { GameScene } from "./game/GameScene";
 import { NeighborhoodScene } from "./game/NeighborhoodScene";
 import type { WorldRegion } from "./game/outlands";
-import { EXPEDITION_ITEMS, EXPEDITION_WEAPONS } from "../shared/expedition";
+import { EXPEDITION_ARTIFACT_IDS, EXPEDITION_GRENADE_IDS, EXPEDITION_ITEMS, EXPEDITION_WEAPONS } from "../shared/expedition";
 import type {
   ExpeditionContainerId,
   ExpeditionEnemyId,
+  ExpeditionGearId,
+  ExpeditionGearSlot,
   ExpeditionHitInput,
   ExpeditionItemId,
   ExpeditionProfile,
   ExpeditionRecipeId,
   ExpeditionRunSnapshot,
   ExpeditionSkillId,
+  ExpeditionTacticalId,
+  ExpeditionTacticalTarget,
   ExpeditionWeaponId,
   PartyInvite,
   PartyInvitesSnapshot,
@@ -127,6 +134,7 @@ export default function App() {
     downed: false
   });
   const [showExpeditionPanel, setShowExpeditionPanel] = useState(false);
+  const [requestedExpeditionTab, setRequestedExpeditionTab] = useState<ProgressionTabId>();
   const [worldRegion, setWorldRegion] = useState<WorldRegion>("city");
   const [canExtractExpedition, setCanExtractExpedition] = useState(false);
   const [party, setParty] = useState<PartySnapshot | null>(null);
@@ -149,6 +157,7 @@ export default function App() {
   const pendingContainersRef = useRef(new Set<ExpeditionContainerId>());
   const pendingEnemyLootRef = useRef(new Set<ExpeditionEnemyId>());
   const pendingBandageRef = useRef(false);
+  const pendingTacticalRef = useRef(false);
   const expeditionPlayerStatusRef = useRef(expeditionPlayerStatus);
   const expeditionBusyRef = useRef("");
   const playerStatusSyncQueueRef = useRef(Promise.resolve());
@@ -176,6 +185,7 @@ export default function App() {
       setPendingExpeditionShots(0);
       pendingEnemyLootRef.current.clear();
       pendingBandageRef.current = false;
+      pendingTacticalRef.current = false;
       setExpeditionHealPulse(0);
       lastSubmittedPlayerStatusRef.current = "";
       const resetStatus = run
@@ -1126,6 +1136,26 @@ export default function App() {
     }
   }
 
+  async function handleEquipExpeditionGear(slot: ExpeditionGearSlot, gearId: ExpeditionGearId | null) {
+    if (expeditionBusy || expeditionRun) return;
+    const session = captureSession();
+    if (!session) return;
+    setExpeditionBusy(`gear:${slot}`);
+    try {
+      const response = await equipExpeditionGear(slot, gearId);
+      if (!isCurrentSession(session) || expeditionRunRef.current) return;
+      setExpeditionProfile(response.profile);
+      showToast(response.equipped ? `${response.equipped.name} экипирован` : "Слот экипировки освобождён");
+      trackGoal("expedition_gear_equip", { slot, gear: gearId ?? "none" });
+    } catch (expeditionError) {
+      if (isCurrentSession(session) && !expeditionRunRef.current) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось изменить экипировку");
+      }
+    } finally {
+      if (isCurrentSession(session)) setExpeditionBusy("");
+    }
+  }
+
   async function handleBuyExpeditionWeapon(weaponId: ExpeditionWeaponId) {
     if (expeditionBusy || expeditionRun) return;
     const session = captureSession();
@@ -1426,6 +1456,36 @@ export default function App() {
         expeditionBusyRef.current = "";
         setExpeditionBusy("");
       }
+    }
+  }
+
+  async function handleUseExpeditionTactical(
+    itemId: ExpeditionTacticalId,
+    origin: { x: number; z: number },
+    targets: ExpeditionTacticalTarget[]
+  ) {
+    const session = captureSession();
+    const runId = expeditionRunRef.current?.id;
+    if (!session || !runId || pendingTacticalRef.current || expeditionPlayerStatusRef.current.downed) return false;
+    pendingTacticalRef.current = true;
+    setExpeditionBusy(`tactical:${itemId}`);
+    try {
+      const response = await useExpeditionTactical(itemId, origin, targets);
+      if (!isCurrentSession(session) || expeditionRunRef.current?.id !== runId) return false;
+      updateExpeditionRun(response.run);
+      const defeated = response.hits.filter((hit) => hit.killed).length;
+      const suffix = defeated > 0 ? ` · уничтожено целей: ${defeated}` : "";
+      showToast(`${response.item.name} применён${suffix}`);
+      trackGoal("expedition_tactical_use", { item: itemId, hits: response.hits.length, kills: defeated });
+      return true;
+    } catch (expeditionError) {
+      if (isCurrentSession(session) && expeditionRunRef.current?.id === runId) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось использовать предмет");
+      }
+      return false;
+    } finally {
+      pendingTacticalRef.current = false;
+      if (isCurrentSession(session)) setExpeditionBusy("");
     }
   }
 
@@ -1833,6 +1893,15 @@ export default function App() {
               expeditionActive={Boolean(expeditionRun)}
               expeditionWeapon={expeditionRun?.selectedWeapon}
               expeditionSkills={expeditionProfile?.skills}
+              expeditionGear={expeditionProfile?.equippedGear}
+              expeditionTacticalCounts={expeditionRun
+                ? Object.fromEntries([...EXPEDITION_GRENADE_IDS, ...EXPEDITION_ARTIFACT_IDS].map((itemId) => [
+                    itemId,
+                    expeditionRun.backpack.reduce((total, stack) => stack.itemId === itemId ? total + stack.quantity : total, 0)
+                  ]))
+                : undefined}
+              expeditionSupportRobotUntil={expeditionRun?.supportRobotUntil}
+              expeditionScannerUntil={expeditionRun?.scannerUntil}
               lootedContainerIds={expeditionRun?.lootedContainerIds ?? []}
               lootedEnemyIds={expeditionRun?.lootedEnemyIds ?? []}
               defeatedEnemyIds={expeditionRun?.killedEnemyIds ?? []}
@@ -1859,6 +1928,11 @@ export default function App() {
               onLootContainer={(containerId) => void handleLootExpeditionContainer(containerId)}
               onLootEnemy={(enemyId) => void handleLootExpeditionEnemy(enemyId)}
               onUseBandage={handleUseExpeditionBandage}
+              onUseTactical={handleUseExpeditionTactical}
+              onOpenExpeditionPanel={(tab) => {
+                setRequestedExpeditionTab(tab === "gear" ? "equipment" : tab ?? "raid");
+                setShowExpeditionPanel(true);
+              }}
               onExpeditionShot={handleExpeditionShot}
               onExtract={() => void handleExtractExpedition()}
               onPlayerDefeated={() => handleAbandonExpedition(true)}
@@ -1967,6 +2041,8 @@ export default function App() {
               playerDowned={expeditionPlayerStatus.downed}
               onCraft={(recipeId) => void handleCraftExpeditionItem(recipeId)}
               onUpgradeSkill={(skillId) => void handleUpgradeExpeditionSkill(skillId)}
+              onEquipGear={(slot, gearId) => void handleEquipExpeditionGear(slot, gearId)}
+              requestedTab={requestedExpeditionTab}
               onInvite={handlePartyInvite}
               onAcceptInvite={handlePartyAccept}
               onDeclineInvite={handlePartyDecline}

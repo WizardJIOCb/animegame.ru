@@ -13,7 +13,7 @@ import {
   type SurfaceImpactMark
 } from "./CombatEffects";
 import { HomePlacedObject, Player } from "./GameScene";
-import { OUTLAND_TREE_BLOCKERS, OutlandsEnvironment, OutlandsRobot, type RobotMotion } from "./OutlandsWorld";
+import { OUTLAND_TREE_BLOCKERS, OutlandsEnemyVariantAttachments, OutlandsEnvironment, OutlandsRobot, type RobotMotion } from "./OutlandsWorld";
 import {
   TOWN_CAR_MODEL_URL,
   WEAPONS,
@@ -39,18 +39,29 @@ import {
   WORLD_REGION_LABELS,
   worldRegionAt,
   type OutlandsEnemyDefinition,
+  type OutlandsEnemyBehavior,
   type OutlandsEnemyKind,
   type WorldRegion
 } from "./outlands";
 import type { SkeletonRagdoll } from "./ragdoll";
 import type {
   ExpeditionEnemyId,
+  ExpeditionGearId,
+  ExpeditionGearSlot,
+  ExpeditionGrenadeId,
   ExpeditionHitInput,
   ExpeditionHitZone,
-  ExpeditionSkillId
+  ExpeditionSkillId,
+  ExpeditionTacticalId,
+  ExpeditionTacticalTarget
 } from "../../shared/expedition";
 import {
+  EXPEDITION_ARTIFACTS,
+  EXPEDITION_ARTIFACT_IDS,
   EXPEDITION_DOWNED_BLEED_OUT_MS,
+  EXPEDITION_GEAR,
+  EXPEDITION_GRENADE_IDS,
+  EXPEDITION_GRENADES,
   EXPEDITION_SHIELD_PER_MODULE
 } from "../../shared/expedition";
 
@@ -75,6 +86,10 @@ type NeighborhoodSceneProps = {
   expeditionActive?: boolean;
   expeditionWeapon?: WeaponKind;
   expeditionSkills?: Record<ExpeditionSkillId, number>;
+  expeditionGear?: Record<ExpeditionGearSlot, ExpeditionGearId | null>;
+  expeditionTacticalCounts?: Partial<Record<ExpeditionTacticalId, number>>;
+  expeditionSupportRobotUntil?: number | null;
+  expeditionScannerUntil?: number | null;
   lootedContainerIds?: string[];
   lootedEnemyIds?: string[];
   defeatedEnemyIds?: string[];
@@ -93,6 +108,12 @@ type NeighborhoodSceneProps = {
   onLootContainer?: (containerId: string) => void;
   onLootEnemy?: (enemyId: string) => void;
   onUseBandage?: () => void | boolean | Promise<void | boolean>;
+  onUseTactical?: (
+    itemId: ExpeditionTacticalId,
+    origin: { x: number; z: number },
+    targets: ExpeditionTacticalTarget[]
+  ) => void | boolean | Promise<void | boolean>;
+  onOpenExpeditionPanel?: (tab?: "inventory" | "skills" | "gear" | "traders") => void;
   onExpeditionShot?: (hits: ExpeditionHitInput[]) => void;
   onExtract?: () => void;
   onPlayerDefeated?: () => boolean | Promise<boolean>;
@@ -177,6 +198,11 @@ const DOOR_HALF_WIDTH = 0.72;
 const WALL_THICKNESS = 0.18;
 const UP = new THREE.Vector3(0, 1, 0);
 const CAR_COLORS = ["#f472b6", "#38bdf8", "#f59e0b", "#34d399", "#a78bfa", "#fb7185"];
+const CITY_TRADERS = [
+  { id: "gunsmith", name: "Оружейник Марк", subtitle: "оружие · патроны · гранаты", position: new THREE.Vector3(9.5, 0, -78), color: "#d9773f" },
+  { id: "quartermaster", name: "Снабженец Ирис", subtitle: "броня · каски · материалы", position: new THREE.Vector3(-9.5, 0, -78), color: "#3aa67e" },
+  { id: "artifacts", name: "Артефактор Нокс", subtitle: "редкие технологии", position: new THREE.Vector3(16.5, 0, -84), color: "#7c5dcc" }
+] as const;
 
 type TravelMode = "walk" | "run";
 type CameraMode = "strategy" | "thirdPerson";
@@ -207,6 +233,7 @@ type NpcRuntime = {
   aggroRange: number;
   attackRange: number;
   attackStyle: "melee" | "ranged";
+  behavior: OutlandsEnemyBehavior;
   respawnMs: number;
   homePosition: THREE.Vector3;
   patrol: THREE.Vector3[];
@@ -1868,6 +1895,7 @@ function createNpcRuntime(resident: NeighborhoodResident): NpcRuntime {
     aggroRange: 0,
     attackRange: 0,
     attackStyle: "melee",
+    behavior: "patrol",
     respawnMs: NPC_RESPAWN_MS,
     homePosition: position.clone(),
     patrol: NPC_PATROL_ROUTE,
@@ -1920,6 +1948,7 @@ function createOutlandsRuntime(definition: OutlandsEnemyDefinition): NpcRuntime 
     aggroRange: definition.aggroRange,
     attackRange: definition.attackRange,
     attackStyle: definition.attackStyle,
+    behavior: definition.behavior ?? "patrol",
     respawnMs: definition.respawnMs,
     homePosition: position.clone(),
     patrol,
@@ -2310,6 +2339,31 @@ function DistrictGeometry({ residents }: { residents: NeighborhoodResident[] }) 
   );
 }
 
+function OutlandsHumanVariantRig({
+  enemyId,
+  position,
+  rotationRef,
+  dead
+}: {
+  enemyId: string;
+  position: THREE.Vector3;
+  rotationRef: RefObject<number>;
+  dead: boolean;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (!groupRef.current) return;
+    groupRef.current.position.copy(position);
+    groupRef.current.rotation.y = rotationRef.current;
+    groupRef.current.visible = !dead;
+  });
+  return (
+    <group ref={groupRef} position={position} rotation={[0, rotationRef.current, 0]}>
+      <OutlandsEnemyVariantAttachments enemyId={enemyId} kind="human" />
+    </group>
+  );
+}
+
 function NeighborhoodWorld({
   user,
   home,
@@ -2329,6 +2383,10 @@ function NeighborhoodWorld({
   expeditionActive = false,
   expeditionWeapon,
   expeditionSkills,
+  expeditionGear,
+  expeditionTacticalCounts = {},
+  expeditionSupportRobotUntil,
+  expeditionScannerUntil,
   lootedContainerIds = [],
   lootedEnemyIds = [],
   defeatedEnemyIds = [],
@@ -2346,6 +2404,8 @@ function NeighborhoodWorld({
   onLootContainer,
   onLootEnemy,
   onUseBandage,
+  onUseTactical,
+  onOpenExpeditionPanel,
   onExpeditionShot,
   onExtract,
   onPlayerDefeated,
@@ -2472,6 +2532,8 @@ function NeighborhoodWorld({
   const [playerRagdollImpact, setPlayerRagdollImpact] = useState<RagdollImpact>();
   const [impactEffects, setImpactEffects] = useState<SurfaceImpactEffect[]>([]);
   const [impactMarks, setImpactMarks] = useState<SurfaceImpactMark[]>([]);
+  const [selectedGrenade, setSelectedGrenade] = useState<ExpeditionGrenadeId>("grenade-frag");
+  const selectedGrenadeRef = useRef<ExpeditionGrenadeId>("grenade-frag");
   const impactMarkGeometriesRef = useRef(new Set<THREE.BufferGeometry>());
   const markLimits = useMemo(impactMarkLimits, []);
   const [, setNpcUiVersion] = useState(0);
@@ -2520,6 +2582,13 @@ function NeighborhoodWorld({
   const playerMaxHealthRef = useRef(100 + survivalSkillLevel * 10);
   const weaponSkillLevelRef = useRef(weaponSkillLevel);
   const bandageCountRef = useRef(bandageCount);
+  const tacticalCountsRef = useRef(expeditionTacticalCounts);
+  const tacticalBusyRef = useRef(false);
+  const supportRobotPosition = useRef(playerPosition.current.clone().add(new THREE.Vector3(-2, 0, 1.5)));
+  const supportRobotRotation = useRef(0);
+  const supportRobotMotion = useRef<RobotMotion>("idle");
+  const nextSupportShotAt = useRef(0);
+  const supportRobotUntilRef = useRef(expeditionSupportRobotUntil ?? 0);
 
   const ownOutfit = getCatalogItem(catalog, user.avatar.outfit);
   const ownCharacter = getCatalogItem(catalog, user.avatar.character);
@@ -2537,6 +2606,7 @@ function NeighborhoodWorld({
   const onLootContainerRef = useRef(onLootContainer);
   const onLootEnemyRef = useRef(onLootEnemy);
   const onUseBandageRef = useRef(onUseBandage);
+  const onUseTacticalRef = useRef(onUseTactical);
   const onReloadRef = useRef(onReload);
   const onWeaponChangeRef = useRef(onWeaponChange);
 
@@ -2546,6 +2616,9 @@ function NeighborhoodWorld({
   reloadStateRef.current = reloadState;
   expeditionActiveRef.current = expeditionActive;
   expeditionWeaponRef.current = expeditionWeapon;
+  tacticalCountsRef.current = expeditionTacticalCounts;
+  supportRobotUntilRef.current = expeditionSupportRobotUntil ?? 0;
+  onUseTacticalRef.current = onUseTactical;
   playerMaxHealthRef.current = 100 + survivalSkillLevel * 10;
   weaponSkillLevelRef.current = weaponSkillLevel;
   bandageCountRef.current = bandageCount;
@@ -3150,14 +3223,21 @@ function NeighborhoodWorld({
       id: shotId.current,
       start,
       end,
-      color: runtime.kind === "human" ? "#ffb15c" : "#ff345f",
+      color: runtime.behavior === "sentinel"
+        ? "#5fe8ff"
+        : runtime.behavior === "artillery"
+          ? "#ff6638"
+          : runtime.behavior === "skirmisher"
+            ? "#d8ff62"
+            : runtime.kind === "human" ? "#ffb15c" : "#ff345f",
       weapon: "laser",
       width: 0.022,
       tracerLength: 1.4,
       createdAt: now,
       duration: 420,
       tracerDuration: 105,
-      blastDuration: 240
+      blastDuration: runtime.behavior === "artillery" ? 520 : 240,
+      blastRadius: runtime.behavior === "artillery" ? 1.8 : undefined
     };
     setShotEffects((effects) => [
       ...effects.filter((effect) => now - effect.createdAt < effect.duration),
@@ -3262,7 +3342,13 @@ function NeighborhoodWorld({
   function damagePlayer(amount: number, source: NpcRuntime) {
     if (amount <= 0 || playerDownedRef.current || playerHealthRef.current <= 0) return;
     const now = performance.now();
-    let remainingDamage = Math.max(0, Math.round(amount));
+    const gearReduction = Object.values(expeditionGear ?? {}).reduce((total, gearId) => (
+      total + (gearId ? EXPEDITION_GEAR[gearId].damageReduction : 0)
+    ), 0);
+    const armorSkillBonus = (expeditionSkills?.armor ?? 0) * 0.04;
+    const effectiveReduction = THREE.MathUtils.clamp(gearReduction * (1 + armorSkillBonus), 0, 0.42);
+    const supportReduction = supportRobotUntilRef.current > Date.now() ? 0.28 : 0;
+    let remainingDamage = Math.max(0, Math.round(amount * (1 - effectiveReduction) * (1 - supportReduction)));
     if (playerShieldRef.current > 0) {
       const absorbed = Math.min(playerShieldRef.current, remainingDamage);
       playerShieldRef.current -= absorbed;
@@ -3745,6 +3831,98 @@ function NeighborhoodWorld({
     });
   }
 
+  function tacticalTargetPoint(itemId: ExpeditionTacticalId) {
+    if (itemId === "artifact-robot-beacon" || itemId === "artifact-scanner") {
+      return playerPosition.current.clone();
+    }
+    let target = cameraModeRef.current === "thirdPerson"
+      ? getThirdPersonAimPoint()
+      : playerPosition.current.clone().addScaledVector(frontVector(playerRotation.current), 12);
+    target = target.clone().setY(0);
+    const offset = target.clone().sub(playerPosition.current).setY(0);
+    const maximumRange = itemId === "artifact-nuke" ? 30 : 24;
+    if (offset.length() > maximumRange) target.copy(playerPosition.current).add(offset.setLength(maximumRange));
+    return target.setY(0);
+  }
+
+  async function deployTactical(itemId: ExpeditionTacticalId) {
+    if (!expeditionActiveRef.current || tacticalBusyRef.current || playerDownedRef.current) return false;
+    if ((tacticalCountsRef.current[itemId] ?? 0) <= 0) {
+      onToastRef.current("Такого предмета нет в рюкзаке");
+      return false;
+    }
+    const handler = onUseTacticalRef.current;
+    if (!handler) return false;
+    const target = tacticalTargetPoint(itemId);
+    const grenade = EXPEDITION_GRENADE_IDS.includes(itemId as ExpeditionGrenadeId)
+      ? EXPEDITION_GRENADES[itemId as ExpeditionGrenadeId]
+      : null;
+    const isNuke = itemId === "artifact-nuke";
+    const radius = isNuke ? 500 : grenade?.radius ?? 0;
+    const targets: ExpeditionTacticalTarget[] = outlandsActors.flatMap(({ runtime }) => {
+      if (!runtime.enemyId || runtime.dead) return [];
+      const distance = runtime.position.distanceTo(target);
+      if (distance > radius + 1.25) return [];
+      return [{
+        enemyId: runtime.enemyId as ExpeditionEnemyId,
+        distance,
+        position: { x: runtime.position.x, z: runtime.position.z }
+      }];
+    });
+
+    const visualColor = grenade?.color
+      ?? (itemId === "artifact-nuke" ? "#fff2a8" : itemId === "artifact-scanner" ? "#ae8cff" : "#55f2d2");
+    const visualRadius = isNuke ? 28 : grenade?.radius ?? (itemId === "artifact-scanner" ? 15 : 3.5);
+    const now = performance.now();
+    shotId.current += 1;
+    const tacticalShot: ShotEffect = {
+      id: shotId.current,
+      start: playerPosition.current.clone().setY(1.25),
+      end: target.clone().setY(0.18),
+      color: visualColor,
+      weapon: "rocket",
+      width: grenade ? 0.055 : 0.09,
+      tracerLength: grenade ? 0.45 : 2.2,
+      createdAt: now,
+      duration: isNuke ? 2_250 : 980,
+      tracerDuration: grenade ? 420 : 160,
+      blastDuration: isNuke ? 2_100 : 780,
+      blastRadius: visualRadius
+    };
+    setShotEffects((effects) => [
+      ...effects.filter((effect) => now - effect.createdAt < effect.duration),
+      tacticalShot
+    ].slice(-22));
+
+    if (grenade || isNuke) {
+      for (const { runtime } of outlandsActors) {
+        if (runtime.kind !== "human" || runtime.dead) continue;
+        const distance = runtime.position.distanceTo(target);
+        if (!isNuke && distance > visualRadius + 1.25) continue;
+        const direction = runtime.position.clone().sub(target).setY(0.35);
+        if (direction.lengthSq() < 0.001) direction.set(0.3, 0.65, 0.2);
+        const impulse = (isNuke ? 18 : 10) * Math.max(0.35, 1 - distance / Math.max(1, visualRadius * 1.25));
+        runtime.deathNonce += 1;
+        runtime.ragdollImpact = {
+          nonce: runtime.deathNonce,
+          kind: "explosion",
+          bodyPart: "chest",
+          boneName: "spine",
+          point: target.toArray(),
+          velocity: direction.normalize().multiplyScalar(impulse).toArray()
+        };
+      }
+    }
+
+    tacticalBusyRef.current = true;
+    try {
+      const used = await handler(itemId, { x: target.x, z: target.z }, targets);
+      return used !== false;
+    } finally {
+      tacticalBusyRef.current = false;
+    }
+  }
+
   shootAtRef.current = shootAt;
 
   useEffect(() => {
@@ -3850,6 +4028,31 @@ function NeighborhoodWorld({
         if (!event.repeat && !drivingRef.current && !activeInteriorRef.current) {
           onReloadRef.current(selectedWeaponRef.current);
         }
+        return;
+      }
+      const grenadeIndex = Number(key) - 6;
+      if (Number.isInteger(grenadeIndex) && grenadeIndex >= 0 && grenadeIndex < EXPEDITION_GRENADE_IDS.length) {
+        event.preventDefault();
+        if (event.repeat) return;
+        const grenadeId = EXPEDITION_GRENADE_IDS[grenadeIndex];
+        selectedGrenadeRef.current = grenadeId;
+        setSelectedGrenade(grenadeId);
+        onToastRef.current(`${EXPEDITION_GRENADES[grenadeId].name} выбрана · T — бросить`);
+        return;
+      }
+      if (key === "t") {
+        event.preventDefault();
+        if (!event.repeat) void deployTactical(selectedGrenadeRef.current);
+        return;
+      }
+      const artifactHotkey = ({
+        z: "artifact-nuke",
+        x: "artifact-robot-beacon",
+        c: "artifact-scanner"
+      } as const)[key as "z" | "x" | "c"];
+      if (artifactHotkey) {
+        event.preventDefault();
+        if (!event.repeat) void deployTactical(artifactHotkey);
         return;
       }
       keys.current.add(key);
@@ -4181,6 +4384,44 @@ function NeighborhoodWorld({
 
   useFrame((_, delta) => {
     const now = performance.now();
+    if (supportRobotUntilRef.current > Date.now() && expeditionActiveRef.current) {
+      const desired = playerPosition.current.clone()
+        .addScaledVector(frontVector(playerRotation.current + Math.PI / 2), 2.15)
+        .addScaledVector(frontVector(playerRotation.current), -1.25)
+        .setY(0);
+      const previous = supportRobotPosition.current.clone();
+      supportRobotPosition.current.lerp(desired, 1 - Math.exp(-Math.min(delta, 0.05) * 4.8));
+      supportRobotMotion.current = previous.distanceToSquared(supportRobotPosition.current) > 0.00004 ? "run" : "idle";
+      const targetRuntime = outlandsActors
+        .map(({ runtime }) => runtime)
+        .filter((runtime) => runtime.faction === "hostile" && !runtime.dead)
+        .sort((left, right) => left.position.distanceToSquared(supportRobotPosition.current) - right.position.distanceToSquared(supportRobotPosition.current))[0];
+      if (targetRuntime && targetRuntime.position.distanceToSquared(supportRobotPosition.current) < 34 ** 2) {
+        const towardTarget = targetRuntime.position.clone().sub(supportRobotPosition.current);
+        supportRobotRotation.current = Math.atan2(towardTarget.x, towardTarget.z);
+        if (now >= nextSupportShotAt.current) {
+          nextSupportShotAt.current = now + 880;
+          shotId.current += 1;
+          const supportShot: ShotEffect = {
+            id: shotId.current,
+            start: supportRobotPosition.current.clone().setY(1.05),
+            end: targetRuntime.position.clone().setY(targetRuntime.kind === "human" ? 1.05 : 0.9),
+            color: "#5fffe1",
+            weapon: "laser",
+            width: 0.026,
+            tracerLength: 1.55,
+            createdAt: now,
+            duration: 440,
+            tracerDuration: 110,
+            blastDuration: 250
+          };
+          setShotEffects((effects) => [...effects.filter((effect) => now - effect.createdAt < effect.duration), supportShot].slice(-22));
+          targetRuntime.aggroed = true;
+        }
+      } else {
+        supportRobotRotation.current = playerRotation.current;
+      }
+    }
     if (surrenderNonce !== lastSurrenderNonceRef.current) {
       lastSurrenderNonceRef.current = surrenderNonce;
       if (playerDownedRef.current) surrenderRequestedRef.current = true;
@@ -4283,7 +4524,14 @@ function NeighborhoodWorld({
       if (playerDistance > runtime.attackRange) {
         toPlayer.normalize();
         runtime.rotationRef.current = Math.atan2(toPlayer.x, toPlayer.z);
-        const requested = runtime.position.clone().addScaledVector(toPlayer, runtime.speed * Math.min(delta, WALK_DELTA_CAP));
+        const chaseScale = runtime.behavior === "sentinel"
+          ? 0.5
+          : runtime.behavior === "artillery"
+            ? 0.62
+            : runtime.behavior === "stalker"
+              ? 1.22
+              : 1;
+        const requested = runtime.position.clone().addScaledVector(toPlayer, runtime.speed * chaseScale * Math.min(delta, WALK_DELTA_CAP));
         runtime.position.copy(resolveOutlandsCollisions(runtime.position, requested, 0.55));
         runtime.motionRef.current = "run";
         runtime.robotMotionRef.current = "run";
@@ -4291,6 +4539,16 @@ function NeighborhoodWorld({
       }
 
       runtime.rotationRef.current = Math.atan2(toPlayer.x, toPlayer.z);
+      if ((runtime.behavior === "artillery" || runtime.behavior === "skirmisher") && playerDistance < runtime.attackRange * 0.58) {
+        const retreat = toPlayer.lengthSq() > 0.0001 ? toPlayer.normalize().multiplyScalar(-1) : new THREE.Vector3(1, 0, 0);
+        const requested = runtime.position.clone().addScaledVector(retreat, runtime.speed * 0.7 * Math.min(delta, WALK_DELTA_CAP));
+        runtime.position.copy(resolveOutlandsCollisions(runtime.position, requested, 0.55));
+      } else if (runtime.behavior === "skirmisher" && playerDistance > 0.001) {
+        const strafe = toPlayer.normalize();
+        strafe.set(-strafe.z, 0, strafe.x).multiplyScalar((Math.floor(now / 1_400) + runtime.seed) % 2 ? 1 : -1);
+        const requested = runtime.position.clone().addScaledVector(strafe, runtime.speed * 0.42 * Math.min(delta, WALK_DELTA_CAP));
+        runtime.position.copy(resolveOutlandsCollisions(runtime.position, requested, 0.55));
+      }
       if (now < runtime.attackUntil) {
         runtime.motionRef.current = "shoot";
         runtime.robotMotionRef.current = "attack";
@@ -4298,7 +4556,15 @@ function NeighborhoodWorld({
         runtime.motionRef.current = "armedIdle";
         runtime.robotMotionRef.current = "idle";
       }
-      const attackCooldown = 980 + runtime.seed % 420;
+      const attackCooldown = ({
+        sentinel: 560,
+        artillery: 2_150,
+        tank: 1_320,
+        stalker: 720,
+        skirmisher: 780,
+        brute: 1_180,
+        patrol: 980 + runtime.seed % 420
+      } satisfies Record<OutlandsEnemyBehavior, number>)[runtime.behavior];
       if (now - runtime.lastAttackAt < attackCooldown) continue;
       const group = worldGroupRef.current;
       const startWorld = group?.localToWorld(runtime.position.clone().setY(runtime.kind === "human" ? 1.2 : 0.9));
@@ -4316,6 +4582,15 @@ function NeighborhoodWorld({
           damagePlayer(runtime.damage, runtime);
         }, 90);
         enemyDamageTimersRef.current.add(timer);
+        if (runtime.behavior === "brute") {
+          const burstTimer = window.setTimeout(() => {
+            enemyDamageTimersRef.current.delete(burstTimer);
+            if (!expeditionActiveRef.current || playerDownedRef.current || runtime.dead) return;
+            spawnEnemyTracer(runtime, performance.now());
+            damagePlayer(Math.max(1, Math.round(runtime.damage * 0.72)), runtime);
+          }, 190);
+          enemyDamageTimersRef.current.add(burstTimer);
+        }
       } else {
         damagePlayer(runtime.damage, runtime);
       }
@@ -4896,7 +5171,9 @@ function NeighborhoodWorld({
                 <OutlandsRobot
                   kind={definition.kind}
                   username={runtime.username}
-                  displayName={definition.name}
+                  displayName={expeditionScannerUntil && expeditionScannerUntil > Date.now()
+                    ? `${definition.name} · СКАН`
+                    : definition.name}
                   position={runtime.position}
                   rotationRef={runtime.rotationRef}
                   motionRef={runtime.robotMotionRef}
@@ -4916,7 +5193,11 @@ function NeighborhoodWorld({
           return (
             <group key={definition.id}>
               <Player
-                username={runtime.dead ? `${definition.name} · повержен` : definition.name}
+                username={runtime.dead
+                  ? `${definition.name} · повержен`
+                  : expeditionScannerUntil && expeditionScannerUntil > Date.now()
+                    ? `${definition.name} · СКАН`
+                    : definition.name}
                 color={outfit?.color ?? "#9b4a3c"}
                 position={runtime.position}
                 character={character}
@@ -4935,8 +5216,49 @@ function NeighborhoodWorld({
                 ragdollControllerRef={runtime.ragdollControllerRef}
                 onCombatHit={handleHit}
               />
+              <OutlandsHumanVariantRig
+                enemyId={definition.id}
+                position={runtime.position}
+                rotationRef={runtime.rotationRef}
+                dead={runtime.dead}
+              />
               {corpsePrompt}
             </group>
+          );
+        })}
+        {expeditionSupportRobotUntil && expeditionSupportRobotUntil > Date.now() ? (
+          <OutlandsRobot
+            kind="eyeDrone"
+            username="support:guardian"
+            displayName="Союзный Страж"
+            position={supportRobotPosition.current}
+            rotationRef={supportRobotRotation}
+            motionRef={supportRobotMotion}
+            health={100}
+            maxHealth={100}
+            dead={false}
+            faction="neutral"
+          />
+        ) : null}
+        {CITY_TRADERS.map((trader, index) => {
+          const traderVisual = outlandsHumanVisuals[index % Math.max(1, outlandsHumanVisuals.length)] ?? rangerVisual;
+          return (
+            <Player
+              key={trader.id}
+              username={`${trader.name} · ${trader.subtitle}`}
+              color={trader.color}
+              position={trader.position}
+              character={getCatalogItem(catalog, traderVisual.avatar.character)}
+              outfit={getCatalogItem(catalog, traderVisual.avatar.outfit)}
+              motion="armedIdle"
+              weapon={trader.id === "gunsmith" ? "rifle" : undefined}
+              rotation={Math.PI}
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenExpeditionPanel?.(trader.id === "artifacts" ? "traders" : trader.id === "quartermaster" ? "gear" : "traders");
+                onToast(`${trader.name}: каталог открыт в панели вылазки`);
+              }}
+            />
           );
         })}
         <Player
@@ -4967,6 +5289,7 @@ function NeighborhoodWorld({
             pet={ownPet}
             character={ownCharacter}
             outfit={ownOutfit}
+            gear={expeditionActive ? expeditionGear : undefined}
             moving={moving}
             motion={playerMotion}
             motionRef={playerMotionRef}
@@ -5222,6 +5545,11 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
   const weaponConfig = WEAPONS[selectedWeapon];
   const activeReload = reloadState?.weapon === selectedWeapon ? reloadState : null;
   const playerMaxHealth = 100 + (props.expeditionSkills?.survival ?? 0) * 10;
+  const gearShieldCapacity = Object.values(props.expeditionGear ?? {}).reduce((total, gearId) => (
+    total + (gearId ? EXPEDITION_GEAR[gearId].bonusShield : 0)
+  ), 0);
+  const shieldCapacity = Math.round(((props.shieldCount ?? 0) * EXPEDITION_SHIELD_PER_MODULE + gearShieldCapacity)
+    * (1 + (props.expeditionSkills?.armor ?? 0) * 0.04));
   const fullRegionLabel = WORLD_REGION_LABELS[worldVitals.region];
   const downedSeconds = downedState ? Math.max(0, Math.ceil((downedState.bleedOutAt - downedClock) / 1000)) : 0;
   const downedFalling = Boolean(downedState && downedClock < downedState.fallingUntil);
@@ -5332,13 +5660,13 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
             <strong>{Math.max(0, Math.round(worldVitals.health))} / {playerMaxHealth}</strong>
           </div>
           <div className="outlands-health-track"><i style={{ width: `${Math.max(0, Math.min(100, worldVitals.health / playerMaxHealth * 100))}%` }} /></div>
-          {(props.shieldCount ?? 0) > 0 ? (
+          {shieldCapacity > 0 ? (
             <>
               <div className="outlands-health-row outlands-shield-row">
                 <span>Щит</span>
                 <strong>{Math.ceil(worldVitals.shield)}</strong>
               </div>
-              <div className="outlands-health-track outlands-shield-track"><i style={{ width: `${Math.max(0, Math.min(100, worldVitals.shield / Math.max(35, (props.shieldCount ?? 0) * 35) * 100))}%`, background: "linear-gradient(90deg, #22d3ee, #2dd4bf)" }} /></div>
+              <div className="outlands-health-track outlands-shield-track"><i style={{ width: `${Math.max(0, Math.min(100, worldVitals.shield / Math.max(1, shieldCapacity) * 100))}%`, background: "linear-gradient(90deg, #22d3ee, #2dd4bf)" }} /></div>
             </>
           ) : null}
         </div>
@@ -5383,6 +5711,24 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
               </button>
             ))}
           </div>
+          {props.expeditionActive ? (
+            <div className="tactical-hotbar" aria-label="Тактические предметы">
+              {EXPEDITION_GRENADE_IDS.map((itemId, index) => (
+                <div key={itemId} className={`tactical-slot ${itemId}`} title={`${EXPEDITION_GRENADES[itemId].name}: клавиша ${index + 6}, бросок T`}>
+                  <small>{index + 6}</small>
+                  <span>{EXPEDITION_GRENADES[itemId].name}</span>
+                  <b>×{props.expeditionTacticalCounts?.[itemId] ?? 0}</b>
+                </div>
+              ))}
+              {EXPEDITION_ARTIFACT_IDS.map((itemId, index) => (
+                <div key={itemId} className="tactical-slot artifact" title={EXPEDITION_ARTIFACTS[itemId].name}>
+                  <small>{["Z", "X", "C"][index]}</small>
+                  <span>{EXPEDITION_ARTIFACTS[itemId].effect === "nuke" ? "Солнце" : EXPEDITION_ARTIFACTS[itemId].effect === "support" ? "Страж" : "Сканер"}</span>
+                  <b>×{props.expeditionTacticalCounts?.[itemId] ?? 0}</b>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
       <div className={driving ? "street-controls driving" : cameraMode === "thirdPerson" ? "street-controls third-person" : "street-controls"}>
@@ -5414,7 +5760,11 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
           </>
         ) : null}
         {props.expeditionActive && !inside && !downedState ? (
-          <><span className="control-dot">·</span><span><b>H</b> — использовать бинт ({props.bandageCount ?? 0})</span></>
+          <>
+            <span className="control-dot">·</span><span><b>H</b> — бинт ({props.bandageCount ?? 0})</span>
+            <span className="control-dot">·</span><span><b>6–8</b> + <b>T</b> — граната</span>
+            <span className="control-dot">·</span><span><b>Z / X / C</b> — артефакты</span>
+          </>
         ) : null}
         <span className="control-dot">·</span>
         <span className="control-key">E</span>

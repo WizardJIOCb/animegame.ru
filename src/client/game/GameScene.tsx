@@ -17,6 +17,8 @@ import {
   type WeaponKind
 } from "./combat";
 import { SkeletonRagdoll } from "./ragdoll";
+import type { ExpeditionGearId, ExpeditionGearSlot } from "../../shared/expedition";
+import { EXPEDITION_GEAR } from "../../shared/expedition";
 
 type GameSceneProps = {
   user: PublicUser;
@@ -1578,6 +1580,81 @@ function OutfitOverlay({
   );
 }
 
+function ExpeditionGearOverlay({
+  gear,
+  character,
+  targetScene
+}: {
+  gear?: Record<ExpeditionGearSlot, ExpeditionGearId | null>;
+  character: CatalogItem;
+  targetScene: THREE.Object3D;
+}) {
+  if (!gear) return null;
+  const modelScale = character.modelScale ?? 1;
+  const helmet = gear.helmet ? EXPEDITION_GEAR[gear.helmet] : null;
+  const armor = gear.armor ? EXPEDITION_GEAR[gear.armor] : null;
+  const legs = gear.legs ? EXPEDITION_GEAR[gear.legs] : null;
+  return (
+    <group renderOrder={10}>
+      {helmet ? (
+        <BoneAttachment targetScene={targetScene} boneName="Head" modelScale={modelScale}>
+          <group position={[0, 1.72, 0]}>
+            <mesh castShadow position={[0, 0.015, 0.015]} scale={[1.08, 0.82, 1.03]}>
+              <sphereGeometry args={[0.225, 20, 13, 0, Math.PI * 2, 0, Math.PI * 0.63]} />
+              <meshStandardMaterial color={helmet.color} roughness={0.38} metalness={0.52} side={THREE.DoubleSide} />
+            </mesh>
+            <mesh castShadow position={[0, -0.02, -0.205]} rotation={[0.16, 0, 0]}>
+              <boxGeometry args={[0.32, 0.105, 0.035]} />
+              <meshStandardMaterial color="#65e6ff" emissive="#1386a8" emissiveIntensity={0.65} transparent opacity={0.82} roughness={0.18} />
+            </mesh>
+            <mesh castShadow position={[0.245, 0.015, 0]} rotation={[0, 0, -0.1]}>
+              <boxGeometry args={[0.065, 0.22, 0.22]} />
+              <meshStandardMaterial color="#1d2c34" roughness={0.42} metalness={0.45} />
+            </mesh>
+          </group>
+        </BoneAttachment>
+      ) : null}
+      {armor ? (
+        <BoneAttachment targetScene={targetScene} boneName="spine_03" modelScale={modelScale}>
+          <group position={[0, 1.08, -0.015]}>
+            <mesh castShadow position={[0, 0, -0.23]} scale={[1.05, 1, 0.7]}>
+              <boxGeometry args={[0.55, 0.48, 0.16]} />
+              <meshStandardMaterial color={armor.color} roughness={0.46} metalness={0.38} />
+            </mesh>
+            <mesh castShadow position={[0, 0, 0.2]} scale={[1, 1, 0.65]}>
+              <boxGeometry args={[0.5, 0.46, 0.14]} />
+              <meshStandardMaterial color="#17292d" roughness={0.52} metalness={0.3} />
+            </mesh>
+            {[-0.19, 0.19].map((x) => (
+              <mesh key={x} castShadow position={[x, 0.16, -0.32]}>
+                <boxGeometry args={[0.13, 0.18, 0.08]} />
+                <meshStandardMaterial color="#62757d" roughness={0.4} metalness={0.45} />
+              </mesh>
+            ))}
+          </group>
+        </BoneAttachment>
+      ) : null}
+      {legs ? ([
+        ["thigh_l", -0.17],
+        ["thigh_r", 0.17]
+      ] as const).map(([boneName, x]) => (
+        <BoneAttachment key={boneName} targetScene={targetScene} boneName={boneName} modelScale={modelScale}>
+          <group position={[x, 0.56, 0]}>
+            <mesh castShadow scale={[0.82, 1.55, 0.78]}>
+              <capsuleGeometry args={[0.14, 0.28, 6, 12]} />
+              <meshStandardMaterial color={legs.color} roughness={0.78} />
+            </mesh>
+            <mesh castShadow position={[x < 0 ? -0.14 : 0.14, 0.06, 0]}>
+              <boxGeometry args={[0.11, 0.24, 0.16]} />
+              <meshStandardMaterial color="#1b2d26" roughness={0.58} metalness={0.15} />
+            </mesh>
+          </group>
+        </BoneAttachment>
+      )) : null}
+    </group>
+  );
+}
+
 type CombatHitboxSpec = {
   bodyPart: BodyPart;
   boneName: string;
@@ -1958,6 +2035,7 @@ function CharacterModel({
   motion,
   motionRef,
   outfit,
+  gear,
   weapon,
   muzzleRef,
   weaponAimTargetRef,
@@ -1976,6 +2054,7 @@ function CharacterModel({
   motion: CharacterMotion;
   motionRef?: RefObject<CharacterMotion>;
   outfit?: CatalogItem;
+  gear?: Record<ExpeditionGearSlot, ExpeditionGearId | null>;
   weapon?: WeaponKind;
   muzzleRef?: RefObject<THREE.Object3D | null>;
   weaponAimTargetRef?: RefObject<THREE.Vector3 | null>;
@@ -2095,6 +2174,7 @@ function CharacterModel({
       ) : (
         <OutfitOverlay outfit={outfit} character={item} targetScene={scene} />
       )}
+      <ExpeditionGearOverlay gear={gear} character={item} targetScene={scene} />
     </>
   );
 }
@@ -2507,6 +2587,7 @@ export function Player({
   pet,
   character,
   outfit,
+  gear,
   moving = false,
   motion,
   motionRef,
@@ -2537,6 +2618,7 @@ export function Player({
   pet?: CatalogItem;
   character?: CatalogItem;
   outfit?: CatalogItem;
+  gear?: Record<ExpeditionGearSlot, ExpeditionGearId | null>;
   moving?: boolean;
   motion?: CharacterMotion;
   motionRef?: RefObject<CharacterMotion>;
@@ -2636,6 +2718,7 @@ export function Player({
                 motion={renderedMotion}
                 motionRef={motionRef}
                 outfit={outfit}
+                gear={gear}
                 weapon={weapon}
                 muzzleRef={muzzleRef}
                 weaponAimTargetRef={weaponAimTargetRef}
