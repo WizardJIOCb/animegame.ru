@@ -22,6 +22,8 @@ import {
   EXPEDITION_RECIPE_IDS,
   EXPEDITION_SKILLS,
   EXPEDITION_SKILL_IDS,
+  EXPEDITION_TRADER_BUY_PRICES,
+  EXPEDITION_TRADER_SELL_PRICES,
   EXPEDITION_WEAPONS,
   EXPEDITION_WEAPON_IDS,
   type ExpeditionItemId,
@@ -43,6 +45,10 @@ export type ExpeditionPanelProps = {
   invites: PartyInvite[];
   outgoingInvites: PartyInvite[];
   canExtract: boolean;
+  coins: number;
+  playerHealth: number;
+  playerMaxHealth: number;
+  playerDowned: boolean;
   onlinePlayers: Array<{ username: string }>;
   busy?: boolean;
   onStart: () => void;
@@ -51,6 +57,9 @@ export type ExpeditionPanelProps = {
   onSelectWeapon: (id: ExpeditionWeaponId) => void;
   onBuyWeapon: (id: ExpeditionWeaponId) => void;
   onBuyAmmo: () => void;
+  onTraderBuy: (itemId: ExpeditionItemId) => void;
+  onTraderSell: (itemId: ExpeditionItemId) => void;
+  onUseBandage: () => void;
   onCraft: (id: ExpeditionRecipeId) => void;
   onUpgradeSkill: (id: ExpeditionSkillId) => void;
   onInvite: (username: string) => void;
@@ -69,7 +78,19 @@ function formatPrice(value: number) {
   return value.toLocaleString("ru-RU");
 }
 
-function ItemStacks({ stacks, emptyText }: { stacks: ItemStack[]; emptyText: string }) {
+function stackValue(stack: ItemStack) {
+  return (EXPEDITION_TRADER_SELL_PRICES[stack.itemId] ?? 0) * stack.quantity;
+}
+
+function ItemStacks({
+  stacks,
+  emptyText,
+  showValue = false
+}: {
+  stacks: ItemStack[];
+  emptyText: string;
+  showValue?: boolean;
+}) {
   if (stacks.length === 0) {
     return <div className="expedition-empty">{emptyText}</div>;
   }
@@ -81,7 +102,14 @@ function ItemStacks({ stacks, emptyText }: { stacks: ItemStack[]; emptyText: str
         return (
           <div className={`expedition-stack expedition-rarity-${item.rarity}`} key={stack.itemId}>
             <span className="expedition-stack-marker" aria-hidden="true" />
-            <span className="expedition-stack-name">{item.name}</span>
+            <span className="expedition-stack-copy">
+              <span className="expedition-stack-name">{item.name}</span>
+              {showValue ? (
+                <small className="expedition-stack-value">
+                  Цена: {formatPrice(stackValue(stack))} мон.
+                </small>
+              ) : null}
+            </span>
             <b className="expedition-stack-quantity">×{stack.quantity}</b>
           </div>
         );
@@ -106,6 +134,10 @@ export function ExpeditionPanel({
   invites,
   outgoingInvites,
   canExtract,
+  coins,
+  playerHealth,
+  playerMaxHealth,
+  playerDowned,
   onlinePlayers,
   busy = false,
   onStart,
@@ -114,6 +146,9 @@ export function ExpeditionPanel({
   onSelectWeapon,
   onBuyWeapon,
   onBuyAmmo,
+  onTraderBuy,
+  onTraderSell,
+  onUseBandage,
   onCraft,
   onUpgradeSkill,
   onInvite,
@@ -148,6 +183,14 @@ export function ExpeditionPanel({
   const partyIsFull = (party?.members.length ?? 1) + outgoingInvites.length >= (party?.maxSize ?? 4);
   const currentMember = party?.members.find((member) => member.username.toLocaleLowerCase("ru-RU") === currentUsername.toLocaleLowerCase("ru-RU"));
   const canInvite = !party || currentMember?.isLeader === true;
+  const backpackQuantity = run?.backpack.reduce((total, stack) => total + stack.quantity, 0) ?? 0;
+  const backpackValue = run?.backpack.reduce((total, stack) => total + stackValue(stack), 0) ?? 0;
+  const bandageCount = run ? itemQuantity(run.backpack, "bandage") : 0;
+  const canUseBandage = Boolean(run && bandageCount > 0 && !playerDowned && playerHealth < playerMaxHealth);
+  const traderBuyEntries = Object.entries(EXPEDITION_TRADER_BUY_PRICES) as Array<[ExpeditionItemId, number]>;
+  const traderSellStacks = profile.stash.filter((stack) => (
+    stack.quantity > 0 && (EXPEDITION_TRADER_SELL_PRICES[stack.itemId] ?? 0) > 0
+  ));
 
   return (
     <div className="expedition-panel">
@@ -193,9 +236,13 @@ export function ExpeditionPanel({
             <button
               className="expedition-action expedition-action-primary"
               type="button"
-              disabled={busy || !canExtract}
+              disabled={busy || !canExtract || playerDowned}
               onClick={onExtract}
-              title={canExtract ? "Сохранить добычу и вернуться домой" : "Сначала вернитесь к Северному КПП"}
+              title={playerDowned
+                ? "Сначала завершите состояние тяжёлого ранения"
+                : canExtract
+                  ? "Сохранить добычу и вернуться домой"
+                  : "Сначала вернитесь к Северному КПП"}
             >
               <DoorOpen size={17} /> Эвакуироваться
             </button>
@@ -287,7 +334,8 @@ export function ExpeditionPanel({
                   <button
                     className="expedition-weapon-action expedition-weapon-buy"
                     type="button"
-                    disabled={busy || Boolean(run)}
+                    disabled={busy || Boolean(run) || coins < weapon.price}
+                    title={coins < weapon.price ? "Не хватает монет" : undefined}
                     onClick={() => onBuyWeapon(weaponId)}
                   >
                     <CircleDollarSign size={14} /> {formatPrice(weapon.price)}
@@ -303,10 +351,60 @@ export function ExpeditionPanel({
       <section className="expedition-card">
         <div className="expedition-card-title">
           <Backpack size={18} />
-          <span>Рюкзак в рейде</span>
-          <small>{run?.backpack.reduce((total, stack) => total + stack.quantity, 0) ?? 0} ед.</small>
+          <span>Инвентарь экспедиции</span>
+          <small>{backpackQuantity} ед.</small>
         </div>
-        <ItemStacks stacks={run?.backpack ?? []} emptyText={run ? "Рюкзак пока пуст" : "Начните экспедицию, чтобы собирать добычу"} />
+        {run ? (
+          <div className="expedition-inventory-summary">
+            <div className="expedition-inventory-stat">
+              <span>Предметов</span>
+              <b>{backpackQuantity}</b>
+            </div>
+            <div className="expedition-inventory-stat">
+              <span>Ценность</span>
+              <b>{formatPrice(backpackValue)} мон.</b>
+            </div>
+            <div className="expedition-inventory-stat expedition-inventory-coins">
+              <span>Найдено монет</span>
+              <b><CircleDollarSign size={14} /> {formatPrice(run.carriedCoins)}</b>
+            </div>
+          </div>
+        ) : null}
+        <ItemStacks
+          stacks={run?.backpack ?? []}
+          emptyText={run ? "Рюкзак пока пуст" : "Начните экспедицию, чтобы собирать добычу"}
+          showValue={Boolean(run)}
+        />
+        {run?.carriedWeaponIds.length ? (
+          <div className="expedition-carried-weapons">
+            <span className="expedition-subtitle">Найденное оружие</span>
+            <div className="expedition-carried-weapon-list">
+              {run.carriedWeaponIds.map((weaponId) => (
+                <div className="expedition-carried-weapon" key={weaponId}>
+                  <Crosshair size={14} aria-hidden="true" />
+                  <span>
+                    <b>{EXPEDITION_WEAPONS[weaponId].name}</b>
+                    <small>останется у вас после эвакуации</small>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {run ? (
+          <button
+            className="expedition-action expedition-action-primary expedition-action-wide expedition-bandage-action"
+            type="button"
+            disabled={busy || !canUseBandage}
+            onClick={onUseBandage}
+          >
+            {playerDowned
+              ? "Бинт недоступен после падения"
+              : playerHealth >= playerMaxHealth
+                ? "Здоровье полное"
+                : `Использовать бинт · ${bandageCount} шт.`}
+          </button>
+        ) : null}
       </section>
 
       <section className="expedition-card">
@@ -314,7 +412,7 @@ export function ExpeditionPanel({
           <PackageOpen size={18} />
           <span>Домашний тайник</span>
         </div>
-        <ItemStacks stacks={profile.stash} emptyText="В тайнике пока ничего нет" />
+        <ItemStacks stacks={profile.stash} emptyText="В тайнике пока ничего нет" showValue />
         <button
           className="expedition-action expedition-action-muted expedition-action-wide expedition-ammo-buy"
           type="button"
@@ -324,6 +422,74 @@ export function ExpeditionPanel({
           <CircleDollarSign size={16} /> Купить {EXPEDITION_AMMO_PACK.quantity} патронов · {formatPrice(EXPEDITION_AMMO_PACK.price)}
         </button>
       </section>
+
+      {!run ? (
+        <section className="expedition-card expedition-trader-card">
+          <div className="expedition-card-title">
+            <CircleDollarSign size={18} />
+            <span>Городской торговец</span>
+          </div>
+          <p className="expedition-card-description">
+            Купите материалы и снаряжение или продайте добычу из домашнего тайника.
+          </p>
+
+          <div className="expedition-trader-section">
+            <span className="expedition-subtitle">Купить</span>
+            <div className="expedition-trader-list">
+              {traderBuyEntries.map(([itemId, price]) => {
+                const item = EXPEDITION_ITEMS[itemId];
+                return (
+                  <div className={`expedition-trader-item expedition-rarity-${item.rarity}`} key={itemId}>
+                    <div className="expedition-trader-copy">
+                      <b>{item.name}</b>
+                      <span>{item.description}</span>
+                    </div>
+                    <button
+                      className="expedition-trader-action expedition-trader-buy"
+                      type="button"
+                      disabled={busy || coins < price}
+                      title={coins < price ? "Не хватает монет" : undefined}
+                      onClick={() => onTraderBuy(itemId)}
+                    >
+                      <CircleDollarSign size={14} /> {formatPrice(price)}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="expedition-trader-section expedition-trader-sell-section">
+            <span className="expedition-subtitle">Продать из тайника</span>
+            {traderSellStacks.length > 0 ? (
+              <div className="expedition-trader-list">
+                {traderSellStacks.map((stack) => {
+                  const item = EXPEDITION_ITEMS[stack.itemId];
+                  const price = EXPEDITION_TRADER_SELL_PRICES[stack.itemId] ?? 0;
+                  return (
+                    <div className={`expedition-trader-item expedition-rarity-${item.rarity}`} key={stack.itemId}>
+                      <div className="expedition-trader-copy">
+                        <b>{item.name} <small>×{stack.quantity}</small></b>
+                        <span>{formatPrice(price)} мон. за единицу</span>
+                      </div>
+                      <button
+                        className="expedition-trader-action expedition-trader-sell"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onTraderSell(stack.itemId)}
+                      >
+                        Продать 1 · {formatPrice(price)}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="expedition-empty">В тайнике пока нет предметов для продажи</div>
+            )}
+          </div>
+        </section>
+      ) : null}
 
       <section className="expedition-card">
         <div className="expedition-card-title">

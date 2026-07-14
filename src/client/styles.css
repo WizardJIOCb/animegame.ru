@@ -2127,7 +2127,7 @@ input:focus {
   z-index: 5;
   top: 14px;
   right: 14px;
-  width: min(270px, calc(100% - 28px));
+  width: min(330px, calc(100% - 28px));
   display: grid;
   gap: 7px;
   padding: 10px 12px;
@@ -2142,24 +2142,26 @@ input:focus {
 
 .outlands-vitals-heading,
 .outlands-health-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
 .outlands-vitals-heading span {
-  overflow: hidden;
-  font-size: 13px;
+  min-width: 0;
+  font-size: 12px;
   font-weight: 900;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .outlands-vitals-heading b {
   color: #86efac;
   font-size: 9px;
   letter-spacing: 0.08em;
+  white-space: nowrap;
 }
 
 .outlands-health-row {
@@ -2186,6 +2188,76 @@ input:focus {
   border-radius: inherit;
   background: linear-gradient(90deg, #ef4444, #f59e0b 45%, #22c55e 82%);
   transition: width 160ms ease-out;
+}
+
+.outlands-shield-row {
+  color: #a5f3fc;
+}
+
+.outlands-shield-track {
+  background: rgba(8, 47, 73, 0.72);
+}
+
+.world-interact-label.corpse-loot {
+  border-color: rgba(251, 191, 36, 0.7);
+  background: rgba(48, 30, 8, 0.94);
+  color: #fffbeb;
+}
+
+.world-interact-label.corpse-loot b {
+  background: #fbbf24;
+  color: #422006;
+}
+
+.player-hit-flash {
+  animation: player-hit-flash 220ms ease-out both;
+}
+
+.player-hit-flash.heal {
+  animation-duration: 360ms;
+}
+
+@keyframes player-hit-flash {
+  from { opacity: 0.95; }
+  to { opacity: 0; }
+}
+
+.player-downed-overlay {
+  background: radial-gradient(circle at 50% 65%, transparent 28%, rgba(68, 3, 15, 0.48) 100%);
+  animation: downed-overlay-in 260ms ease-out both;
+}
+
+.player-downed-overlay.crawling {
+  background: radial-gradient(circle at 50% 65%, transparent 22%, rgba(68, 3, 15, 0.58) 100%);
+}
+
+.player-downed-card {
+  animation: downed-card-in 260ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+.player-downed-timer {
+  color: #fecaca;
+  text-shadow: 0 0 22px rgba(239, 68, 68, 0.38);
+}
+
+.player-surrender-button:hover {
+  border-color: #fecaca !important;
+  background: rgba(153, 27, 27, 0.9) !important;
+}
+
+.player-surrender-button:focus-visible {
+  outline: 3px solid rgba(254, 202, 202, 0.55);
+  outline-offset: 2px;
+}
+
+@keyframes downed-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes downed-card-in {
+  from { opacity: 0; transform: translateY(-12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .expedition-panel {
@@ -2603,9 +2675,193 @@ input:focus {
   white-space: nowrap;
 }
 
+.expedition-stack-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.expedition-stack-value {
+  overflow: hidden;
+  color: #7b8780;
+  font-size: 8px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .expedition-stack-quantity {
   color: #1f3029;
   font-variant-numeric: tabular-nums;
+}
+
+.expedition-inventory-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.expedition-inventory-stat {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid #d9e1db;
+  border-radius: 8px;
+  background: #f4f7f4;
+}
+
+.expedition-inventory-stat span {
+  overflow: hidden;
+  color: #748078;
+  font-size: 8px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.expedition-inventory-stat b {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #22352d;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.expedition-inventory-coins {
+  border-color: #efd79d;
+  background: #fff9e9;
+}
+
+.expedition-inventory-coins b {
+  color: #8a5b0c;
+}
+
+.expedition-bandage-action {
+  margin-top: 2px;
+}
+
+.expedition-carried-weapons,
+.expedition-carried-weapon-list {
+  display: grid;
+  gap: 6px;
+}
+
+.expedition-carried-weapons {
+  padding: 9px;
+  border: 1px solid #d6c9ef;
+  border-radius: 9px;
+  background: linear-gradient(145deg, #faf7ff, #f4efff);
+}
+
+.expedition-carried-weapon {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6941a5;
+}
+
+.expedition-carried-weapon > span {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.expedition-carried-weapon b {
+  overflow: hidden;
+  color: #3f2868;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expedition-carried-weapon small {
+  color: #796994;
+  font-size: 8px;
+}
+
+.expedition-trader-card {
+  border-color: #c8d8cf;
+  background: linear-gradient(145deg, #ffffff, #f4f8f5);
+}
+
+.expedition-trader-section,
+.expedition-trader-list {
+  display: grid;
+  gap: 7px;
+}
+
+.expedition-trader-sell-section {
+  padding-top: 9px;
+  border-top: 1px solid #e0e5e1;
+}
+
+.expedition-trader-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid #dde3de;
+  border-radius: 9px;
+  background: #f8faf8;
+}
+
+.expedition-trader-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.expedition-trader-copy b {
+  color: #22352d;
+  font-size: 11px;
+}
+
+.expedition-trader-copy b small {
+  color: #718078;
+  font-size: 9px;
+}
+
+.expedition-trader-copy span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #6b7770;
+  font-size: 9px;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.expedition-trader-action {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid #c9d4cd;
+  border-radius: 7px;
+  font-size: 9px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.expedition-trader-buy {
+  border-color: #efd08e;
+  background: #fff8e7;
+  color: #84580e;
+}
+
+.expedition-trader-sell {
+  border-color: #9fcfbd;
+  background: #e9f7f1;
+  color: #17634e;
 }
 
 .expedition-recipe {
@@ -2786,5 +3042,29 @@ input:focus {
 
   .expedition-run-actions {
     grid-template-columns: 1fr;
+  }
+
+  .expedition-inventory-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .expedition-inventory-coins {
+    grid-column: 1 / -1;
+  }
+
+  .expedition-inventory-stat span,
+  .expedition-stack-value,
+  .expedition-carried-weapon small,
+  .expedition-trader-copy span {
+    font-size: 10px;
+  }
+
+  .expedition-trader-item {
+    grid-template-columns: 1fr;
+  }
+
+  .expedition-trader-action {
+    min-height: 42px;
+    font-size: 11px;
   }
 }

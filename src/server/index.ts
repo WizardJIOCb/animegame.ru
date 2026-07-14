@@ -6,6 +6,8 @@ import { Server, type Socket } from "socket.io";
 import {
   createDefaultExpeditionProfile,
   EXPEDITION_AMMO_PACK,
+  EXPEDITION_BANDAGE_HEAL,
+  EXPEDITION_DOWNED_BLEED_OUT_MS,
   EXPEDITION_CONTAINERS,
   EXPEDITION_CONTAINER_IDS,
   EXPEDITION_ENEMIES,
@@ -13,18 +15,25 @@ import {
   EXPEDITION_EXTRACT_REWARD,
   EXPEDITION_HIT_MULTIPLIERS,
   EXPEDITION_HIT_ZONES,
+  EXPEDITION_ITEM_IDS,
   EXPEDITION_QUEST_ID,
   EXPEDITION_RECIPES,
   EXPEDITION_RECIPE_IDS,
   EXPEDITION_SKILLS,
   EXPEDITION_SKILL_IDS,
   EXPEDITION_START_AMMO,
+  EXPEDITION_START_BANDAGES,
+  EXPEDITION_START_SHIELD_MODULES,
+  EXPEDITION_SHIELD_PER_MODULE,
+  EXPEDITION_TRADER_BUY_PRICES,
+  EXPEDITION_TRADER_SELL_PRICES,
   EXPEDITION_WEAPONS,
   EXPEDITION_WEAPON_IDS,
   type ExpeditionContainerId,
   type ExpeditionEnemyId,
   type ExpeditionHitInput,
   type ExpeditionHitZone,
+  type ExpeditionItemId,
   type ExpeditionRecipeId,
   type ExpeditionRunSnapshot,
   type ExpeditionSkillId,
@@ -108,6 +117,7 @@ const neighborhoodMovementStates = new Map<string, { lastAt: number; budget: num
 type ActiveExpeditionRun = ExpeditionRunSnapshot & {
   userId: string;
   containerLoot: Record<ExpeditionContainerId, ItemStack[]>;
+  enemyDeathPositions: Partial<Record<ExpeditionEnemyId, { x: number; z: number }>>;
   nextHitAt: number;
 };
 
@@ -124,6 +134,7 @@ type InternalParty = {
 };
 
 const activeExpeditionRuns = new Map<string, ActiveExpeditionRun>();
+const lastExpeditionPositionPersistAt = new Map<string, number>();
 const parties = new Map<string, InternalParty>();
 const partyIdByUserId = new Map<string, string>();
 const partyInvites = new Map<string, PartyInvite>();
@@ -378,6 +389,7 @@ function leaveNeighborhoodPresence(socket: Socket) {
     const sameUserStillPresent = [...neighborhoodPlayers.values()]
       .some((player) => player.username === previousPlayer.username);
     if (!sameUserStillPresent) {
+      updateActiveExpeditionPosition(String(socket.data.userId), previousPlayer.position, true);
       socket.to(NEIGHBORHOOD_ROOM).emit("player:left", {
         id: socket.id,
         username: previousPlayer.username
@@ -427,6 +439,7 @@ function leaveVoiceRoom(socket: Socket) {
 }
 
 const expeditionWeaponIds = new Set<string>(EXPEDITION_WEAPON_IDS);
+const expeditionItemIds = new Set<string>(EXPEDITION_ITEM_IDS);
 const expeditionRecipeIds = new Set<string>(EXPEDITION_RECIPE_IDS);
 const expeditionSkillIds = new Set<string>(EXPEDITION_SKILL_IDS);
 const expeditionContainerIds = new Set<string>(EXPEDITION_CONTAINER_IDS);
@@ -482,6 +495,55 @@ function deductItemStacks(stash: ItemStack[], ingredients: ItemStack[]) {
   return nextStash.filter((stack) => stack.quantity > 0);
 }
 
+function deterministicExpeditionRoll(runId: string, key: string) {
+  let hash = 2_166_136_261;
+  const input = `${runId}:${key}`;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return (hash >>> 0) / 4_294_967_296;
+}
+
+function containerCoinsForRun(runId: string, containerId: ExpeditionContainerId) {
+  const roll = deterministicExpeditionRoll(runId, `container-coins:${containerId}`);
+  return roll < 0.38 ? 0 : 45 + Math.floor(roll * 155);
+}
+
+function corpseLootForRun(runId: string, enemyId: ExpeditionEnemyId) {
+  const enemy = EXPEDITION_ENEMIES[enemyId];
+  const loot = cloneItemStacks(enemy.loot);
+  const extraRoll = deterministicExpeditionRoll(runId, `corpse-extra:${enemyId}`);
+  if (enemy.faction === "robot" && extraRoll > 0.46) {
+    mergeItemStacks(loot, [{ itemId: "electronics", quantity: extraRoll > 0.84 ? 2 : 1 }]);
+  } else if (enemy.faction === "raider" && extraRoll > 0.42) {
+    mergeItemStacks(loot, [{ itemId: "bandage", quantity: 1 }]);
+  }
+  if (deterministicExpeditionRoll(runId, `corpse-blueprint:${enemyId}`) > 0.91) {
+    mergeItemStacks(loot, [{ itemId: "rifle-blueprint", quantity: 1 }]);
+  }
+
+  const weaponCandidates: Partial<Record<ExpeditionEnemyId, { weaponId: ExpeditionWeaponId; chance: number }>> = {
+    "quad-warden": { weaponId: "laser", chance: 0.12 },
+    "quad-hunter": { weaponId: "rocket", chance: 0.1 },
+    "raider-vika": { weaponId: "rifle", chance: 0.28 },
+    "raider-boris": { weaponId: "sniper", chance: 0.16 }
+  };
+  const candidate = weaponCandidates[enemyId];
+  const weaponId = candidate
+    && deterministicExpeditionRoll(runId, `corpse-weapon:${enemyId}`) < candidate.chance
+    ? candidate.weaponId
+    : null;
+  const coinRoll = deterministicExpeditionRoll(runId, `corpse-coins:${enemyId}`);
+  const coins = 20 + Math.floor(coinRoll * (enemy.hostile ? 180 : 70));
+  return { loot, coins, weaponId };
+}
+
+function tradeQuantity(value: unknown) {
+  const quantity = Number(value);
+  return Number.isInteger(quantity) && quantity >= 1 && quantity <= 99 ? quantity : null;
+}
+
 function makeRunObjective(run: Pick<ActiveExpeditionRun, "backpack" | "killedEnemyIds">) {
   const powerCells = run.backpack
     .filter((stack) => stack.itemId === "power-cell")
@@ -513,36 +575,83 @@ function makeRunSnapshot(run: ActiveExpeditionRun): ExpeditionRunSnapshot {
     id: run.id,
     startedAt: run.startedAt,
     selectedWeapon: run.selectedWeapon,
+    playerPosition: { ...run.playerPosition },
     backpack: cloneItemStacks(run.backpack),
     lootedContainerIds: [...run.lootedContainerIds],
+    lootedEnemyIds: [...run.lootedEnemyIds],
     killedEnemyIds: [...run.killedEnemyIds],
+    carriedCoins: run.carriedCoins,
+    carriedWeaponIds: [...run.carriedWeaponIds],
+    playerHealth: run.playerHealth,
+    playerMaxHealth: run.playerMaxHealth,
+    playerShield: run.playerShield,
+    downedAt: run.downedAt,
+    bleedOutAt: run.bleedOutAt,
     enemyHealth: { ...run.enemyHealth },
     objective: makeRunObjective(run)
   };
 }
 
-function makeContainerLoot() {
+function makeContainerLoot(runId: string) {
   return Object.fromEntries(EXPEDITION_CONTAINER_IDS.map((containerId) => [
     containerId,
-    cloneItemStacks(EXPEDITION_CONTAINERS[containerId].loot)
+    (() => {
+      const loot = cloneItemStacks(EXPEDITION_CONTAINERS[containerId].loot);
+      const roll = deterministicExpeditionRoll(runId, `container-extra:${containerId}`);
+      if (roll > 0.72) {
+        mergeItemStacks(loot, [{ itemId: "bandage", quantity: 1 }]);
+      } else if (roll > 0.38) {
+        mergeItemStacks(loot, [{ itemId: "electronics", quantity: 1 }]);
+      } else {
+        mergeItemStacks(loot, [{ itemId: "fabric", quantity: 2 }]);
+      }
+      return loot.length > 0 ? loot : [{ itemId: "scrap", quantity: 1 }];
+    })()
   ])) as Record<ExpeditionContainerId, ItemStack[]>;
 }
 
 function createActiveExpeditionRun(user: User): ActiveExpeditionRun {
+  const id = crypto.randomUUID();
+  const playerPosition = sanitizeNeighborhoodPosition(
+    lastNeighborhoodPositions.get(user.id) ?? defaultNeighborhoodPosition()
+  );
   const ammoToPack = Math.min(
     EXPEDITION_START_AMMO[user.expedition.selectedWeapon],
     itemStackQuantity(user.expedition.stash, "ammo")
   );
-  const nextStash = deductItemStacks(user.expedition.stash, [{ itemId: "ammo", quantity: ammoToPack }]);
+  const bandagesToPack = Math.min(
+    EXPEDITION_START_BANDAGES,
+    itemStackQuantity(user.expedition.stash, "bandage")
+  );
+  const shieldModulesToPack = Math.min(
+    EXPEDITION_START_SHIELD_MODULES,
+    itemStackQuantity(user.expedition.stash, "shield-module")
+  );
+  const packedItems = ([
+    { itemId: "ammo", quantity: ammoToPack },
+    { itemId: "bandage", quantity: bandagesToPack },
+    { itemId: "shield-module", quantity: shieldModulesToPack }
+  ] satisfies ItemStack[]).filter((stack) => stack.quantity > 0);
+  const nextStash = deductItemStacks(user.expedition.stash, packedItems);
   if (nextStash) user.expedition.stash = nextStash;
+  const playerMaxHealth = 100 + user.expedition.skills.survival * 10;
   return {
-    id: crypto.randomUUID(),
+    id,
     userId: user.id,
     startedAt: Date.now(),
     selectedWeapon: user.expedition.selectedWeapon,
-    backpack: ammoToPack > 0 ? [{ itemId: "ammo", quantity: ammoToPack }] : [],
+    playerPosition,
+    backpack: cloneItemStacks(packedItems),
     lootedContainerIds: [],
+    lootedEnemyIds: [],
     killedEnemyIds: [],
+    carriedCoins: 0,
+    carriedWeaponIds: [],
+    playerHealth: playerMaxHealth,
+    playerMaxHealth,
+    playerShield: shieldModulesToPack * EXPEDITION_SHIELD_PER_MODULE,
+    downedAt: null,
+    bleedOutAt: null,
     enemyHealth: makeEnemyHealth(),
     objective: {
       powerCells: 0,
@@ -551,7 +660,8 @@ function createActiveExpeditionRun(user: User): ActiveExpeditionRun {
       requiredHostileKills: 2,
       complete: false
     },
-    containerLoot: makeContainerLoot(),
+    containerLoot: makeContainerLoot(id),
+    enemyDeathPositions: {},
     nextHitAt: 0
   };
 }
@@ -567,16 +677,68 @@ function activeRunForUser(user: User) {
   const killedEnemyIds = Array.isArray(storedRun.killedEnemyIds)
     ? [...new Set(storedRun.killedEnemyIds.filter((id): id is ExpeditionEnemyId => expeditionEnemyIds.has(String(id))))]
     : [];
+  const lootedEnemyIds = Array.isArray(storedRun.lootedEnemyIds)
+    ? [...new Set(storedRun.lootedEnemyIds.filter((id): id is ExpeditionEnemyId => (
+      expeditionEnemyIds.has(String(id)) && killedEnemyIds.includes(id as ExpeditionEnemyId)
+    )))]
+    : [...killedEnemyIds];
+  const restoredId = typeof storedRun.id === "string" && storedRun.id ? storedRun.id : crypto.randomUUID();
+  const enemyDeathPositions: ActiveExpeditionRun["enemyDeathPositions"] = {};
+  for (const enemyId of killedEnemyIds) {
+    const rawPosition = storedRun.enemyDeathPositions?.[enemyId];
+    const x = Number(rawPosition?.x);
+    const z = Number(rawPosition?.z);
+    if (Number.isFinite(x) && Number.isFinite(z)) {
+      enemyDeathPositions[enemyId] = { x, z };
+    }
+  }
+  const playerMaxHealth = 100 + user.expedition.skills.survival * 10;
+  const maximumShield = (Array.isArray(storedRun.backpack) ? storedRun.backpack : []).reduce((total, stack) => (
+    stack.itemId === "shield-module"
+      ? total + stack.quantity * EXPEDITION_SHIELD_PER_MODULE
+      : total
+  ), 0);
+  const storedPlayerHealth = Number(storedRun.playerHealth);
+  const playerHealth = Number.isFinite(storedPlayerHealth)
+    ? Math.max(0, Math.min(playerMaxHealth, Math.round(storedPlayerHealth)))
+    : playerMaxHealth;
+  const storedPlayerShield = Number(storedRun.playerShield);
+  const playerShield = Number.isFinite(storedPlayerShield)
+    ? Math.max(0, Math.min(maximumShield, Math.round(storedPlayerShield)))
+    : maximumShield;
+  const storedDownedAt = Number(storedRun.downedAt);
+  const downedAt = playerHealth <= 0 && Number.isFinite(storedDownedAt) && storedDownedAt > 0
+    ? Math.round(storedDownedAt)
+    : null;
+  const storedBleedOutAt = Number(storedRun.bleedOutAt);
+  const bleedOutAt = downedAt
+    ? Number.isFinite(storedBleedOutAt) && storedBleedOutAt >= downedAt
+      ? Math.round(storedBleedOutAt)
+      : downedAt + EXPEDITION_DOWNED_BLEED_OUT_MS
+    : null;
   const restored: ActiveExpeditionRun = {
-    id: typeof storedRun.id === "string" && storedRun.id ? storedRun.id : crypto.randomUUID(),
+    id: restoredId,
     startedAt: Number.isFinite(Number(storedRun.startedAt)) ? Number(storedRun.startedAt) : Date.now(),
     selectedWeapon: expeditionWeaponIds.has(String(storedRun.selectedWeapon))
       ? storedRun.selectedWeapon as ExpeditionWeaponId
       : user.expedition.selectedWeapon,
+    playerPosition: sanitizeNeighborhoodPosition(storedRun.playerPosition ?? defaultNeighborhoodPosition()),
     userId: user.id,
     backpack: Array.isArray(storedRun.backpack) ? cloneItemStacks(storedRun.backpack) : [],
     lootedContainerIds,
+    lootedEnemyIds,
     killedEnemyIds,
+    carriedCoins: Number.isFinite(Number(storedRun.carriedCoins))
+      ? Math.max(0, Math.min(999_999_999, Math.round(Number(storedRun.carriedCoins))))
+      : 0,
+    carriedWeaponIds: Array.isArray(storedRun.carriedWeaponIds)
+      ? [...new Set(storedRun.carriedWeaponIds.filter((id): id is ExpeditionWeaponId => expeditionWeaponIds.has(String(id))))]
+      : [],
+    playerHealth,
+    playerMaxHealth,
+    playerShield,
+    downedAt,
+    bleedOutAt,
     enemyHealth: makeEnemyHealth(storedRun.enemyHealth, killedEnemyIds),
     objective: {
       powerCells: 0,
@@ -585,7 +747,8 @@ function activeRunForUser(user: User) {
       requiredHostileKills: 2,
       complete: false
     },
-    containerLoot: makeContainerLoot(),
+    containerLoot: makeContainerLoot(restoredId),
+    enemyDeathPositions,
     nextHitAt: Number.isFinite(Number(storedRun.nextHitAt)) ? Math.max(0, Number(storedRun.nextHitAt)) : 0
   };
   activeExpeditionRuns.set(user.id, restored);
@@ -593,7 +756,63 @@ function activeRunForUser(user: User) {
 }
 
 function persistActiveRun(user: User, run: ActiveExpeditionRun) {
-  user.expeditionRun = { ...makeRunSnapshot(run), nextHitAt: run.nextHitAt };
+  user.expeditionRun = {
+    ...makeRunSnapshot(run),
+    nextHitAt: run.nextHitAt,
+    enemyDeathPositions: { ...run.enemyDeathPositions }
+  };
+}
+
+function updateActiveExpeditionPosition(
+  userId: string,
+  position: LivePlayer["position"],
+  forcePersist = false
+) {
+  const run = activeExpeditionRuns.get(userId);
+  if (!run) return;
+  run.playerPosition = sanitizeNeighborhoodPosition(position);
+
+  const now = Date.now();
+  const lastPersistedAt = lastExpeditionPositionPersistAt.get(userId) ?? 0;
+  if (!forcePersist && now - lastPersistedAt < 1_000) return;
+
+  const db = readDb();
+  const user = db.users.find((entry) => entry.id === userId);
+  if (!user || user.expeditionRun?.id !== run.id) {
+    lastExpeditionPositionPersistAt.delete(userId);
+    return;
+  }
+  persistActiveRun(user, run);
+  writeDb(db);
+  lastExpeditionPositionPersistAt.set(userId, now);
+}
+
+function discardActiveExpedition(db: DbShape, user: User, run: ActiveExpeditionRun) {
+  const lost = cloneItemStacks(run.backpack);
+  const lostCoins = run.carriedCoins;
+  const lostWeapons = [...run.carriedWeaponIds];
+  user.expedition.stats.abandonedRuns += 1;
+  delete user.expeditionRun;
+  writeDb(db);
+  activeExpeditionRuns.delete(user.id);
+  lastExpeditionPositionPersistAt.delete(user.id);
+  resetNeighborhoodPositionAfterExpedition(user.id);
+  return {
+    profile: user.expedition,
+    lost,
+    lostCoins,
+    lostWeapons
+  };
+}
+
+function resetNeighborhoodPositionAfterExpedition(userId: string) {
+  const position = { x: 0, y: 0, z: -72, rotation: Math.PI, vehicle: false };
+  lastNeighborhoodPositions.set(userId, position);
+  neighborhoodMovementStates.set(userId, {
+    lastAt: Date.now(),
+    budget: NEIGHBORHOOD_INITIAL_MOVE_BUDGET,
+    needsInitialCitySync: false
+  });
 }
 
 function liveNeighborhoodPosition(userId: string) {
@@ -913,6 +1132,99 @@ fastify.post("/api/expedition/buy-ammo", async (request, reply) => {
   }
 });
 
+fastify.get("/api/expedition/trader", async (request, reply) => {
+  try {
+    requireUser(request);
+    return {
+      buyPrices: EXPEDITION_TRADER_BUY_PRICES,
+      sellPrices: EXPEDITION_TRADER_SELL_PRICES
+    };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/expedition/trader/buy", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const body = (request.body ?? {}) as { itemId?: unknown; quantity?: unknown };
+    const itemId = String(body.itemId ?? "");
+    const quantity = tradeQuantity(body.quantity);
+    if (!expeditionItemIds.has(itemId) || !quantity) {
+      return reply.code(400).send({ error: "Укажите товар и количество от 1 до 99" });
+    }
+    const typedItemId = itemId as ExpeditionItemId;
+    const unitPrice = (EXPEDITION_TRADER_BUY_PRICES as Partial<Record<ExpeditionItemId, number>>)[typedItemId];
+    if (!unitPrice) {
+      return reply.code(400).send({ error: "Этот предмет продавец не продаёт" });
+    }
+
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    if (activeRunForUser(user)) {
+      return reply.code(409).send({ error: "Торговец доступен только в городе или дома" });
+    }
+    const spent = unitPrice * quantity;
+    if (user.coins < spent) {
+      return reply.code(400).send({ error: "Не хватает монет" });
+    }
+
+    const purchased: ItemStack = { itemId: typedItemId, quantity };
+    user.coins -= spent;
+    mergeItemStacks(user.expedition.stash, [purchased]);
+    writeDb(db);
+    return {
+      user: toPublicUser(user),
+      profile: user.expedition,
+      purchased,
+      spent
+    };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/expedition/trader/sell", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const body = (request.body ?? {}) as { itemId?: unknown; quantity?: unknown };
+    const itemId = String(body.itemId ?? "");
+    const quantity = tradeQuantity(body.quantity);
+    if (!expeditionItemIds.has(itemId) || !quantity) {
+      return reply.code(400).send({ error: "Укажите предмет и количество от 1 до 99" });
+    }
+    const typedItemId = itemId as ExpeditionItemId;
+    const unitPrice = EXPEDITION_TRADER_SELL_PRICES[typedItemId];
+    if (!unitPrice) {
+      return reply.code(400).send({ error: "Этот предмет продавец не принимает" });
+    }
+
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    if (activeRunForUser(user)) {
+      return reply.code(409).send({ error: "Торговец доступен только в городе или дома" });
+    }
+    const nextStash = deductItemStacks(user.expedition.stash, [{ itemId: typedItemId, quantity }]);
+    if (!nextStash) {
+      return reply.code(400).send({ error: "В тайнике нет такого количества предметов" });
+    }
+
+    const earned = unitPrice * quantity;
+    const sold: ItemStack = { itemId: typedItemId, quantity };
+    user.expedition.stash = nextStash;
+    user.coins = Math.min(999_999_999, user.coins + earned);
+    writeDb(db);
+    return {
+      user: toPublicUser(user),
+      profile: user.expedition,
+      sold,
+      earned
+    };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
 fastify.post("/api/expedition/craft", async (request, reply) => {
   try {
     const authenticatedUser = requireUser(request);
@@ -1068,6 +1380,8 @@ fastify.post("/api/expedition/loot", async (request, reply) => {
     const nextBackpack = cloneItemStacks(run.backpack);
     mergeItemStacks(nextBackpack, loot);
     run.backpack = nextBackpack;
+    const coins = containerCoinsForRun(run.id, typedContainerId);
+    run.carriedCoins = Math.min(999_999_999, run.carriedCoins + coins);
     run.lootedContainerIds.push(typedContainerId);
     persistActiveRun(user, run);
     user.expedition.stats.containersLooted += 1;
@@ -1075,7 +1389,165 @@ fastify.post("/api/expedition/loot", async (request, reply) => {
     return {
       run: makeRunSnapshot(run),
       container,
-      loot
+      loot,
+      coins
+    };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/expedition/loot-enemy", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const body = (request.body ?? {}) as { enemyId?: unknown };
+    const enemyId = String(body.enemyId ?? "");
+    if (!expeditionEnemyIds.has(enemyId)) {
+      return reply.code(400).send({ error: "Неизвестный противник" });
+    }
+
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    const run = activeRunForUser(user);
+    if (!run) {
+      return reply.code(409).send({ error: "Сначала начните экспедицию" });
+    }
+    const typedEnemyId = enemyId as ExpeditionEnemyId;
+    if (!run.killedEnemyIds.includes(typedEnemyId)) {
+      return reply.code(409).send({ error: "Сначала победите этого противника" });
+    }
+    if (run.lootedEnemyIds.includes(typedEnemyId)) {
+      return reply.code(409).send({ error: "Этот противник уже был обыскан" });
+    }
+
+    const enemy = EXPEDITION_ENEMIES[typedEnemyId];
+    const deathPosition = run.enemyDeathPositions[typedEnemyId]
+      ?? { x: enemy.position[0], z: enemy.position[1] };
+    if (!isNearExpeditionPoint(user.id, [deathPosition.x, deathPosition.z], 7.5)) {
+      return reply.code(403).send({ error: "Подойдите ближе к телу противника" });
+    }
+
+    const generated = corpseLootForRun(run.id, typedEnemyId);
+    const scavengingLevel = user.expedition.skills.scavenging;
+    const loot = generated.loot.map((stack) => ({
+      ...stack,
+      quantity: Math.max(1, Math.min(
+        999_999,
+        stack.quantity + Math.floor(stack.quantity * scavengingLevel * 0.1)
+      ))
+    }));
+    if (loot.length === 0) {
+      loot.push({ itemId: "scrap", quantity: 1 });
+    }
+
+    let carriedWeapon: ExpeditionWeaponId | null = null;
+    const converted: ItemStack[] = [];
+    if (generated.weaponId) {
+      if (
+        user.expedition.unlockedWeapons.includes(generated.weaponId)
+        || run.carriedWeaponIds.includes(generated.weaponId)
+      ) {
+        converted.push({ itemId: "weapon-parts", quantity: 4 });
+        mergeItemStacks(loot, converted);
+      } else {
+        run.carriedWeaponIds.push(generated.weaponId);
+        carriedWeapon = generated.weaponId;
+      }
+    }
+
+    mergeItemStacks(run.backpack, loot);
+    run.carriedCoins = Math.min(999_999_999, run.carriedCoins + generated.coins);
+    run.lootedEnemyIds.push(typedEnemyId);
+    persistActiveRun(user, run);
+    writeDb(db);
+    return {
+      profile: user.expedition,
+      run: makeRunSnapshot(run),
+      enemy,
+      loot,
+      coins: generated.coins,
+      weaponDrop: generated.weaponId,
+      carriedWeapon,
+      converted
+    };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/expedition/player-status", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const body = (request.body ?? {}) as { health?: unknown; shield?: unknown; downed?: unknown };
+    const reportedHealth = Number(body.health);
+    const reportedShield = Number(body.shield);
+    if (!Number.isFinite(reportedHealth) || !Number.isFinite(reportedShield)) {
+      return reply.code(400).send({ error: "Некорректное состояние персонажа" });
+    }
+
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    const run = activeRunForUser(user);
+    if (!run) {
+      return reply.code(409).send({ error: "Сначала начните экспедицию" });
+    }
+
+    // The client may report damage immediately for responsive combat, but it
+    // can never use this route to raise health or restore a depleted shield.
+    run.playerHealth = Math.min(
+      run.playerHealth,
+      Math.max(0, Math.min(run.playerMaxHealth, Math.round(reportedHealth)))
+    );
+    run.playerShield = Math.min(
+      run.playerShield,
+      Math.max(0, Math.round(reportedShield))
+    );
+    if (body.downed === true || run.playerHealth <= 0) {
+      run.playerHealth = 0;
+      if (!run.downedAt) {
+        run.downedAt = Date.now();
+        run.bleedOutAt = run.downedAt + EXPEDITION_DOWNED_BLEED_OUT_MS;
+      }
+    }
+
+    persistActiveRun(user, run);
+    writeDb(db);
+    return { run: makeRunSnapshot(run) };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/expedition/use-bandage", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    const run = activeRunForUser(user);
+    if (!run) {
+      return reply.code(409).send({ error: "Бинты можно использовать только в активной экспедиции" });
+    }
+    if (run.downedAt || run.playerHealth <= 0) {
+      return reply.code(409).send({ error: "После тяжёлого ранения бинт уже не поможет" });
+    }
+    if (run.playerHealth >= run.playerMaxHealth) {
+      return reply.code(409).send({ error: "Здоровье уже полное" });
+    }
+    const used: ItemStack = { itemId: "bandage", quantity: 1 };
+    const nextBackpack = deductItemStacks(run.backpack, [used]);
+    if (!nextBackpack) {
+      return reply.code(409).send({ error: "В рюкзаке нет бинтов" });
+    }
+
+    run.backpack = nextBackpack;
+    const heal = Math.min(EXPEDITION_BANDAGE_HEAL, run.playerMaxHealth - run.playerHealth);
+    run.playerHealth += heal;
+    persistActiveRun(user, run);
+    writeDb(db);
+    return {
+      run: makeRunSnapshot(run),
+      used,
+      heal
     };
   } catch {
     return reply.code(401).send({ error: "Нужно войти" });
@@ -1095,7 +1567,12 @@ fastify.post("/api/expedition/hit", async (request, reply) => {
       if (!candidate || typeof candidate !== "object") {
         return reply.code(400).send({ error: "Некорректные данные попадания" });
       }
-      const raw = candidate as { enemyId?: unknown; zone?: unknown; damageScale?: unknown };
+      const raw = candidate as {
+        enemyId?: unknown;
+        zone?: unknown;
+        damageScale?: unknown;
+        position?: { x?: unknown; z?: unknown };
+      };
       const enemyId = String(raw.enemyId ?? "");
       const zone = String(raw.zone ?? "");
       if (!expeditionEnemyIds.has(enemyId) || !expeditionHitZones.has(zone)) {
@@ -1104,10 +1581,15 @@ fastify.post("/api/expedition/hit", async (request, reply) => {
       const typedEnemyId = enemyId as ExpeditionEnemyId;
       if (hitByEnemy.has(typedEnemyId)) continue;
       const numericScale = Number(raw.damageScale);
+      const positionX = Number(raw.position?.x);
+      const positionZ = Number(raw.position?.z);
       hitByEnemy.set(typedEnemyId, {
         enemyId: typedEnemyId,
         zone: zone as ExpeditionHitZone,
-        damageScale: Number.isFinite(numericScale) ? numericScale : 1
+        damageScale: Number.isFinite(numericScale) ? numericScale : 1,
+        position: Number.isFinite(positionX) && Number.isFinite(positionZ)
+          ? { x: positionX, z: positionZ }
+          : undefined
       });
     }
 
@@ -1127,10 +1609,21 @@ fastify.post("/api/expedition/hit", async (request, reply) => {
       return reply.code(400).send({ error: "Это оружие поражает только одну цель за выстрел" });
     }
     const patrolTolerance = 35;
+    const livePosition = liveNeighborhoodPosition(user.id);
     for (const hit of requestedHits) {
       const enemy = EXPEDITION_ENEMIES[hit.enemyId];
       if (!isNearExpeditionPoint(user.id, enemy.position, weapon.range + patrolTolerance)) {
         return reply.code(403).send({ error: `${enemy.name}: цель слишком далеко от вашей позиции` });
+      }
+      if (hit.position) {
+        const fromHomeSquared = (hit.position.x - enemy.position[0]) ** 2
+          + (hit.position.z - enemy.position[1]) ** 2;
+        const fromPlayerSquared = livePosition
+          ? (hit.position.x - livePosition.x) ** 2 + (hit.position.z - livePosition.z) ** 2
+          : Number.POSITIVE_INFINITY;
+        if (fromHomeSquared > 45 ** 2 || fromPlayerSquared > (weapon.range + 3) ** 2) {
+          return reply.code(403).send({ error: `${enemy.name}: некорректная позиция попадания` });
+        }
       }
     }
 
@@ -1158,11 +1651,12 @@ fastify.post("/api/expedition/hit", async (request, reply) => {
       const damage = Math.max(1, Math.round(baseDamage * damageMultiplier));
       const remainingHealth = Math.max(0, (run.enemyHealth[hit.enemyId] ?? enemy.maxHealth) - damage);
       const killed = remainingHealth <= 0;
-      const loot = killed ? cloneItemStacks(enemy.loot) : [];
       run.enemyHealth[hit.enemyId] = remainingHealth;
       if (killed) {
-        mergeItemStacks(run.backpack, loot);
         run.killedEnemyIds.push(hit.enemyId);
+        run.enemyDeathPositions[hit.enemyId] = hit.position
+          ? { x: hit.position.x, z: hit.position.z }
+          : { x: enemy.position[0], z: enemy.position[1] };
         user.expedition.stats.enemiesKilled += 1;
         if (enemy.hostile) {
           user.expedition.stats.hostileEnemiesKilled += 1;
@@ -1174,7 +1668,8 @@ fastify.post("/api/expedition/hit", async (request, reply) => {
         damage,
         remainingHealth,
         killed,
-        loot
+        loot: [] as ItemStack[],
+        corpseLootAvailable: killed
       };
     });
     run.nextHitAt = now + Math.max(40, weapon.fireIntervalMs - 20);
@@ -1207,6 +1702,9 @@ fastify.post("/api/expedition/extract", async (request, reply) => {
     if (!run) {
       return reply.code(409).send({ error: "Активная экспедиция не найдена" });
     }
+    if (run.downedAt || run.playerHealth <= 0) {
+      return reply.code(409).send({ error: "Нельзя эвакуироваться в тяжёлом состоянии" });
+    }
     if (!isAtExpeditionCheckpoint(user.id)) {
       return reply.code(403).send({ error: "Доберитесь до точки эвакуации" });
     }
@@ -1214,31 +1712,42 @@ fastify.post("/api/expedition/extract", async (request, reply) => {
     const objective = makeRunObjective(run);
     const extracted = cloneItemStacks(run.backpack);
     mergeItemStacks(user.expedition.stash, extracted);
+    const extractedWeapons = run.carriedWeaponIds.filter((weaponId) => (
+      !user.expedition.unlockedWeapons.includes(weaponId)
+    ));
+    user.expedition.unlockedWeapons.push(...extractedWeapons);
     user.expedition.stats.successfulExtracts += 1;
 
-    let coins = 0;
+    const carriedCoins = run.carriedCoins;
+    let objectiveCoins = 0;
     let xp = 0;
     let levelsGained = 0;
     if (objective.complete) {
-      coins = EXPEDITION_EXTRACT_REWARD.coins;
+      objectiveCoins = EXPEDITION_EXTRACT_REWARD.coins;
       xp = EXPEDITION_EXTRACT_REWARD.xp;
-      user.coins = Math.min(999_999_999, user.coins + coins);
       levelsGained = grantXp(user.progress, xp);
       if (!user.expedition.completedQuestIds.includes(EXPEDITION_QUEST_ID)) {
         user.expedition.completedQuestIds.push(EXPEDITION_QUEST_ID);
         user.expedition.skillPoints += 1;
       }
     }
+    const coins = carriedCoins + objectiveCoins;
+    user.coins = Math.min(999_999_999, user.coins + coins);
 
     delete user.expeditionRun;
     writeDb(db);
     activeExpeditionRuns.delete(user.id);
+    lastExpeditionPositionPersistAt.delete(user.id);
+    resetNeighborhoodPositionAfterExpedition(user.id);
     return {
       user: toPublicUser(user),
       profile: user.expedition,
       extracted,
+      extractedWeapons,
       reward: {
         coins,
+        carriedCoins,
+        objectiveCoins,
         xp,
         levelsGained,
         objectiveCompleted: objective.complete
@@ -1259,11 +1768,37 @@ fastify.post("/api/expedition/abandon", async (request, reply) => {
       return reply.code(409).send({ error: "Активная экспедиция не найдена" });
     }
 
-    user.expedition.stats.abandonedRuns += 1;
-    delete user.expeditionRun;
-    writeDb(db);
-    activeExpeditionRuns.delete(user.id);
-    return { profile: user.expedition, lost: cloneItemStacks(run.backpack) };
+    return discardActiveExpedition(db, user, run);
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/expedition/surrender", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    const run = activeRunForUser(user);
+    if (!run) {
+      return reply.code(409).send({ error: "Активная экспедиция не найдена" });
+    }
+    return discardActiveExpedition(db, user, run);
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
+fastify.post("/api/expedition/defeat", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    const run = activeRunForUser(user);
+    if (!run) {
+      return reply.code(409).send({ error: "Активная экспедиция не найдена" });
+    }
+    return discardActiveExpedition(db, user, run);
   } catch {
     return reply.code(401).send({ error: "Нужно войти" });
   }
@@ -2013,9 +2548,17 @@ io.on("connection", (socket) => {
     socket.join(NEIGHBORHOOD_ROOM);
     socket.data.inNeighborhood = true;
     const neighborhoodUserId = String(socket.data.userId);
-    const hasStoredNeighborhoodPosition = lastNeighborhoodPositions.has(neighborhoodUserId);
+    let activeRun = activeExpeditionRuns.get(neighborhoodUserId);
+    if (!activeRun) {
+      const db = readDb();
+      const storedUser = db.users.find((entry) => entry.id === neighborhoodUserId);
+      if (storedUser) activeRun = activeRunForUser(storedUser);
+    }
+    const expeditionPosition = activeRun?.playerPosition;
+    const storedNeighborhoodPosition = lastNeighborhoodPositions.get(neighborhoodUserId) ?? expeditionPosition;
+    const hasStoredNeighborhoodPosition = Boolean(storedNeighborhoodPosition);
     const initialPosition = {
-      ...(lastNeighborhoodPositions.get(neighborhoodUserId) ?? defaultNeighborhoodPosition())
+      ...(storedNeighborhoodPosition ?? defaultNeighborhoodPosition())
     };
     const currentPlayer: LivePlayer = {
       id: socket.id,
@@ -2095,6 +2638,7 @@ io.on("connection", (socket) => {
       movementState.budget = movementBudget;
     }
     lastNeighborhoodPositions.set(neighborhoodUserId, { ...requestedPosition });
+    updateActiveExpeditionPosition(neighborhoodUserId, requestedPosition);
     const player: LivePlayer = {
       id: socket.id,
       username: socket.data.username,

@@ -12,6 +12,7 @@ export function isAtExtractionCheckpoint(x: number, z: number) {
 export type WorldRegion = "city" | "checkpoint" | "forest" | "depot" | "quarry" | "ruins";
 export type OutlandsEnemyKind = "eyeDrone" | "quadShell" | "human";
 export type OutlandsFaction = "neutral" | "hostile";
+export type OutlandsAttackStyle = "melee" | "ranged";
 
 export type OutlandsEnemyDefinition = {
   id: string;
@@ -22,6 +23,7 @@ export type OutlandsEnemyDefinition = {
   damage: number;
   aggroRange: number;
   attackRange: number;
+  attackStyle: OutlandsAttackStyle;
   speed: number;
   respawnMs: number;
   position: readonly [number, number, number];
@@ -46,6 +48,7 @@ export const OUTLAND_ENEMIES: readonly OutlandsEnemyDefinition[] = [
     damage: 0,
     aggroRange: 0,
     attackRange: 0,
+    attackStyle: "melee",
     speed: 1.8,
     respawnMs: 28_000,
     position: [24, 0, -128],
@@ -60,6 +63,7 @@ export const OUTLAND_ENEMIES: readonly OutlandsEnemyDefinition[] = [
     damage: 16,
     aggroRange: 30,
     attackRange: 3.2,
+    attackStyle: "melee",
     speed: 3.15,
     respawnMs: 40_000,
     position: [-43, 0, -198],
@@ -73,7 +77,8 @@ export const OUTLAND_ENEMIES: readonly OutlandsEnemyDefinition[] = [
     maxHealth: 145,
     damage: 19,
     aggroRange: 34,
-    attackRange: 3.1,
+    attackRange: 17,
+    attackStyle: "ranged",
     speed: 3.75,
     respawnMs: 36_000,
     position: [72, 0, -230],
@@ -88,6 +93,7 @@ export const OUTLAND_ENEMIES: readonly OutlandsEnemyDefinition[] = [
     damage: 12,
     aggroRange: 27,
     attackRange: 13,
+    attackStyle: "ranged",
     speed: 2.55,
     respawnMs: 42_000,
     position: [-72, 0, -266],
@@ -102,6 +108,7 @@ export const OUTLAND_ENEMIES: readonly OutlandsEnemyDefinition[] = [
     damage: 14,
     aggroRange: 29,
     attackRange: 14,
+    attackStyle: "ranged",
     speed: 2.4,
     respawnMs: 42_000,
     position: [-17, 0, -177],
