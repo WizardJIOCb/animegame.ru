@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { WeaponKind } from "./combat";
@@ -14,6 +14,17 @@ export type SurfaceImpactEffect = {
   weapon: WeaponKind;
   createdAt: number;
   duration: number;
+};
+
+export type SurfaceImpactMark = {
+  id: number;
+  point: THREE.Vector3;
+  normal: THREE.Vector3;
+  surface: ImpactSurface;
+  weapon: WeaponKind;
+  anchor?: THREE.Object3D;
+  anchorPoint?: THREE.Vector3;
+  anchorNormal?: THREE.Vector3;
 };
 
 type MuzzleFlashEffectProps = {
@@ -73,7 +84,19 @@ type SparkParticle = {
 
 const UP = new THREE.Vector3(0, 1, 0);
 const FALLBACK_FORWARD = new THREE.Vector3(0, 0, 1);
+const MARK_FORWARD = new THREE.Vector3(0, 0, 1);
 const GRAVITY = 9.81;
+const IMPACT_MARK_CAPACITY = 144;
+
+const IMPACT_MARK_TINTS: Record<ImpactSurface, string> = {
+  dirt: "#aa8159",
+  asphalt: "#8a9098",
+  concrete: "#b8afa4",
+  wood: "#bd8050",
+  metal: "#c1c9ce",
+  glass: "#d9f8ff",
+  generic: "#aaa39a"
+};
 
 const MUZZLE_PRESETS: Record<WeaponKind, MuzzlePreset> = {
   pistol: {
@@ -272,6 +295,261 @@ function outwardVelocity(
 function configureDynamicMesh(mesh: THREE.InstancedMesh | null) {
   if (!mesh) return;
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+}
+
+function markRandom(seed: number) {
+  const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function traceIrregularDisc(
+  context: CanvasRenderingContext2D,
+  center: number,
+  radius: number,
+  points: number,
+  wobble: number,
+  seed: number
+) {
+  context.beginPath();
+  for (let index = 0; index < points; index += 1) {
+    const angle = (index / points) * Math.PI * 2;
+    const distance = radius * (1 - wobble * 0.5 + markRandom(seed + index * 7) * wobble);
+    const x = center + Math.cos(angle) * distance;
+    const y = center + Math.sin(angle) * distance;
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  }
+  context.closePath();
+}
+
+function createImpactMarkTexture(kind: "bullet" | "rocket") {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  if (!context) return new THREE.CanvasTexture(canvas);
+
+  context.clearRect(0, 0, 128, 128);
+  if (kind === "bullet") {
+    const crater = context.createRadialGradient(61, 61, 3, 64, 64, 48);
+    crater.addColorStop(0, "rgba(2, 2, 3, 1)");
+    crater.addColorStop(0.18, "rgba(8, 7, 7, 1)");
+    crater.addColorStop(0.34, "rgba(54, 49, 47, 0.98)");
+    crater.addColorStop(0.52, "rgba(172, 163, 154, 0.76)");
+    crater.addColorStop(0.7, "rgba(48, 43, 41, 0.48)");
+    crater.addColorStop(1, "rgba(10, 9, 9, 0)");
+    traceIrregularDisc(context, 64, 48, 28, 0.22, 17);
+    context.fillStyle = crater;
+    context.fill();
+
+    context.lineCap = "round";
+    for (let index = 0; index < 9; index += 1) {
+      const angle = (index / 9) * Math.PI * 2 + markRandom(index + 91) * 0.34;
+      const start = 28 + markRandom(index + 121) * 7;
+      const bend = (markRandom(index + 151) - 0.5) * 0.22;
+      const end = 46 + markRandom(index + 181) * 13;
+      context.beginPath();
+      context.moveTo(64 + Math.cos(angle) * start, 64 + Math.sin(angle) * start);
+      context.lineTo(64 + Math.cos(angle + bend) * end, 64 + Math.sin(angle + bend) * end);
+      context.strokeStyle = `rgba(32, 29, 28, ${0.32 + markRandom(index + 211) * 0.34})`;
+      context.lineWidth = 1.1 + markRandom(index + 241) * 1.3;
+      context.stroke();
+    }
+
+    traceIrregularDisc(context, 63, 13, 15, 0.3, 307);
+    context.fillStyle = "rgba(0, 0, 1, 0.96)";
+    context.fill();
+  } else {
+    const scorch = context.createRadialGradient(59, 58, 5, 64, 64, 61);
+    scorch.addColorStop(0, "rgba(5, 4, 4, 0.98)");
+    scorch.addColorStop(0.28, "rgba(13, 10, 9, 0.96)");
+    scorch.addColorStop(0.52, "rgba(48, 32, 23, 0.86)");
+    scorch.addColorStop(0.75, "rgba(102, 62, 34, 0.5)");
+    scorch.addColorStop(1, "rgba(28, 20, 17, 0)");
+    traceIrregularDisc(context, 64, 61, 36, 0.2, 401);
+    context.fillStyle = scorch;
+    context.fill();
+
+    for (let index = 0; index < 38; index += 1) {
+      const angle = markRandom(index + 451) * Math.PI * 2;
+      const distance = 12 + Math.sqrt(markRandom(index + 487)) * 46;
+      const radius = 0.8 + markRandom(index + 521) * 2.4;
+      context.beginPath();
+      context.arc(64 + Math.cos(angle) * distance, 64 + Math.sin(angle) * distance, radius, 0, Math.PI * 2);
+      context.fillStyle = index % 7 === 0
+        ? `rgba(177, 74, 25, ${0.24 + markRandom(index + 557) * 0.24})`
+        : `rgba(4, 3, 3, ${0.28 + markRandom(index + 593) * 0.42})`;
+      context.fill();
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function impactMarkSize(mark: SurfaceImpactMark) {
+  const baseSize: Record<WeaponKind, number> = {
+    pistol: 0.075,
+    rifle: 0.068,
+    rocket: 0.92,
+    laser: 0.09,
+    sniper: 0.13
+  };
+  const surfaceScale = mark.surface === "dirt" || mark.surface === "asphalt"
+    ? 1.18
+    : mark.surface === "glass"
+      ? 1.22
+      : mark.surface === "metal" && mark.weapon === "rocket"
+        ? 0.72
+        : 1;
+  return baseSize[mark.weapon] * surfaceScale * (0.86 + markRandom(mark.id * 19 + 7) * 0.3);
+}
+
+export function SurfaceImpactMarks({ marks }: { marks: SurfaceImpactMark[] }) {
+  const bulletRef = useRef<THREE.InstancedMesh>(null);
+  const rocketRef = useRef<THREE.InstancedMesh>(null);
+  const bulletTexture = useMemo(() => createImpactMarkTexture("bullet"), []);
+  const rocketTexture = useMemo(() => createImpactMarkTexture("rocket"), []);
+  const textureEffectGeneration = useRef(0);
+  const bulletMarks = useMemo(() => marks.filter((mark) => mark.weapon !== "rocket"), [marks]);
+  const rocketMarks = useMemo(() => marks.filter((mark) => mark.weapon === "rocket"), [marks]);
+  const scratch = useMemo(() => ({
+    matrix: new THREE.Matrix4(),
+    normal: new THREE.Vector3(),
+    position: new THREE.Vector3(),
+    quaternion: new THREE.Quaternion(),
+    roll: new THREE.Quaternion(),
+    scale: new THREE.Vector3(),
+    color: new THREE.Color(),
+    anchorPoint: new THREE.Vector3(),
+    anchorNormalEnd: new THREE.Vector3()
+  }), []);
+  const hasDynamicMarks = useMemo(() => marks.some((mark) => mark.anchor), [marks]);
+
+  useEffect(() => {
+    const generation = ++textureEffectGeneration.current;
+    return () => {
+      queueMicrotask(() => {
+        if (textureEffectGeneration.current !== generation) return;
+        bulletTexture.dispose();
+        rocketTexture.dispose();
+      });
+    };
+  }, [bulletTexture, rocketTexture]);
+
+  const updateMeshes = useCallback((updateColors: boolean) => {
+    const updateMesh = (mesh: THREE.InstancedMesh | null, entries: SurfaceImpactMark[]) => {
+      if (!mesh) return;
+      if (updateColors) configureDynamicMesh(mesh);
+      mesh.count = Math.min(entries.length, IMPACT_MARK_CAPACITY);
+      const startIndex = Math.max(0, entries.length - IMPACT_MARK_CAPACITY);
+      for (let entryIndex = startIndex; entryIndex < entries.length; entryIndex += 1) {
+        const mark = entries[entryIndex];
+        const index = entryIndex - startIndex;
+        if (mark.anchor && (!mark.anchor.parent || !mark.anchorPoint || !mark.anchorNormal || !mesh.parent)) {
+          scratch.matrix.makeScale(0, 0, 0);
+          mesh.setMatrixAt(index, scratch.matrix);
+          if (updateColors) mesh.setColorAt(index, scratch.color.set(IMPACT_MARK_TINTS[mark.surface]));
+          continue;
+        }
+        scratch.position.copy(mark.point);
+        scratch.normal.copy(mark.normal);
+        if (mark.anchor?.parent && mark.anchorPoint && mark.anchorNormal && mesh.parent) {
+          mark.anchor.updateWorldMatrix(true, false);
+          mesh.parent.updateWorldMatrix(true, false);
+          scratch.anchorPoint.copy(mark.anchorPoint);
+          scratch.anchorNormalEnd.copy(mark.anchorPoint).add(mark.anchorNormal);
+          mark.anchor.localToWorld(scratch.anchorPoint);
+          mark.anchor.localToWorld(scratch.anchorNormalEnd);
+          mesh.parent.worldToLocal(scratch.anchorPoint);
+          mesh.parent.worldToLocal(scratch.anchorNormalEnd);
+          scratch.position.copy(scratch.anchorPoint);
+          scratch.normal.copy(scratch.anchorNormalEnd).sub(scratch.anchorPoint);
+        }
+        if (scratch.normal.lengthSq() < 0.000001) scratch.normal.copy(UP);
+        else scratch.normal.normalize();
+        const offset = mark.weapon === "rocket" ? 0.014 : 0.007;
+        scratch.position.addScaledVector(scratch.normal, offset + (mark.id % 3) * 0.0007);
+        scratch.quaternion.setFromUnitVectors(MARK_FORWARD, scratch.normal);
+        scratch.roll.setFromAxisAngle(MARK_FORWARD, markRandom(mark.id * 37 + 11) * Math.PI * 2);
+        scratch.quaternion.multiply(scratch.roll);
+        const size = impactMarkSize(mark);
+        scratch.scale.set(
+          size * (0.9 + markRandom(mark.id * 43 + 17) * 0.18),
+          size * (0.9 + markRandom(mark.id * 47 + 23) * 0.18),
+          1
+        );
+        scratch.matrix.compose(scratch.position, scratch.quaternion, scratch.scale);
+        mesh.setMatrixAt(index, scratch.matrix);
+        if (updateColors) mesh.setColorAt(index, scratch.color.set(IMPACT_MARK_TINTS[mark.surface]));
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (updateColors && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    };
+
+    updateMesh(bulletRef.current, bulletMarks);
+    updateMesh(rocketRef.current, rocketMarks);
+  }, [bulletMarks, rocketMarks, scratch]);
+
+  useLayoutEffect(() => {
+    updateMeshes(true);
+  }, [updateMeshes]);
+
+  useFrame(() => {
+    if (hasDynamicMarks) updateMeshes(false);
+  });
+
+  return (
+    <>
+      <instancedMesh
+        ref={bulletRef}
+        args={[undefined, undefined, IMPACT_MARK_CAPACITY]}
+        count={0}
+        frustumCulled={false}
+        renderOrder={2}
+        raycast={() => null}
+      >
+        <planeGeometry args={[2, 2]} />
+        <meshBasicMaterial
+          map={bulletTexture}
+          vertexColors
+          transparent
+          alphaTest={0.035}
+          depthWrite={false}
+          polygonOffset
+          polygonOffsetFactor={-3}
+          polygonOffsetUnits={-4}
+          toneMapped={false}
+        />
+      </instancedMesh>
+      <instancedMesh
+        ref={rocketRef}
+        args={[undefined, undefined, IMPACT_MARK_CAPACITY]}
+        count={0}
+        frustumCulled={false}
+        renderOrder={2}
+        raycast={() => null}
+      >
+        <planeGeometry args={[2, 2]} />
+        <meshBasicMaterial
+          map={rocketTexture}
+          vertexColors
+          transparent
+          alphaTest={0.025}
+          depthWrite={false}
+          polygonOffset
+          polygonOffsetFactor={-3}
+          polygonOffsetUnits={-4}
+          toneMapped={false}
+        />
+      </instancedMesh>
+    </>
+  );
 }
 
 export function MuzzleFlashEffect({

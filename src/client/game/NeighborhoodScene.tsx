@@ -6,8 +6,10 @@ import type { CatalogItem, HomeState, NeighborhoodResident, PublicUser, RemotePl
 import {
   MuzzleFlashEffect,
   SurfaceImpactEffectView,
+  SurfaceImpactMarks,
   type ImpactSurface,
-  type SurfaceImpactEffect
+  type SurfaceImpactEffect,
+  type SurfaceImpactMark
 } from "./CombatEffects";
 import { HomePlacedObject, Player } from "./GameScene";
 import {
@@ -186,6 +188,13 @@ const AIM_CENTER = new THREE.Vector2(0, 0);
 const BLOOD_EFFECT_DURATION = 7200;
 const SURFACE_IMPACT_DURATION = 1350;
 
+function impactMarkLimits() {
+  if (typeof navigator === "undefined" || typeof window === "undefined") return { bullet: 112, rocket: 16 };
+  const coarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+  const lowConcurrency = typeof navigator.hardwareConcurrency === "number" && navigator.hardwareConcurrency <= 4;
+  return coarsePointer || lowConcurrency ? { bullet: 48, rocket: 8 } : { bullet: 112, rocket: 16 };
+}
+
 function objectActorUsername(object: THREE.Object3D | null) {
   let cursor = object;
   while (cursor) {
@@ -209,6 +218,15 @@ function explicitImpactSurface(object: THREE.Object3D | null) {
       || surface === "metal" || surface === "glass" || surface === "generic") {
       return surface as ImpactSurface;
     }
+    cursor = cursor.parent;
+  }
+  return undefined;
+}
+
+function dynamicImpactAnchor(object: THREE.Object3D | null) {
+  let cursor = object;
+  while (cursor) {
+    if (cursor.userData.impactDynamic) return cursor;
     cursor = cursor.parent;
   }
   return undefined;
@@ -1879,7 +1897,11 @@ function CarFallback({ color }: { color: string }) {
 
 function Car({ transform, color, active = false }: { transform: CarTransform; color: string; active?: boolean }) {
   return (
-    <group position={transform.position} rotation={[0, transform.rotation, 0]} userData={{ impactSurface: "metal" }}>
+    <group
+      position={transform.position}
+      rotation={[0, transform.rotation, 0]}
+      userData={{ impactSurface: "metal", impactDynamic: true }}
+    >
       <Suspense fallback={<CarFallback color={color} />}>
         <TownCar color={color} active={active} />
       </Suspense>
@@ -2103,6 +2125,8 @@ function NeighborhoodWorld({
   const [shotEffects, setShotEffects] = useState<ShotEffect[]>([]);
   const [bloodEffects, setBloodEffects] = useState<BloodEffect[]>([]);
   const [impactEffects, setImpactEffects] = useState<SurfaceImpactEffect[]>([]);
+  const [impactMarks, setImpactMarks] = useState<SurfaceImpactMark[]>([]);
+  const markLimits = useMemo(impactMarkLimits, []);
   const [, setNpcUiVersion] = useState(0);
   const [driving, setDriving] = useState(false);
   const [introView, setIntroView] = useState(!initialPosition);
@@ -2483,13 +2507,14 @@ function NeighborhoodWorld({
     const point = group.worldToLocal(impactWorld.clone());
     const normal = group.worldToLocal(impactWorld.clone().add(normalWorld)).sub(point).normalize();
     const incoming = group.worldToLocal(impactWorld.clone().add(incomingWorld)).sub(point).normalize();
+    const surface = resolveImpactSurface(object);
     impactId.current += 1;
     const effect: SurfaceImpactEffect = {
       id: impactId.current,
       point,
       normal,
       incoming,
-      surface: resolveImpactSurface(object),
+      surface,
       weapon,
       createdAt: now,
       duration: weapon === "rocket" ? 1500 : SURFACE_IMPACT_DURATION
@@ -2498,6 +2523,28 @@ function NeighborhoodWorld({
       ...effects.filter((current) => now < current.createdAt + current.duration),
       effect
     ].slice(-14));
+    const mark: SurfaceImpactMark = {
+      id: impactId.current,
+      point: point.clone(),
+      normal: normal.clone(),
+      surface,
+      weapon
+    };
+    const anchor = dynamicImpactAnchor(object);
+    if (anchor) {
+      anchor.updateWorldMatrix(true, false);
+      mark.anchor = anchor;
+      mark.anchorPoint = anchor.worldToLocal(impactWorld.clone());
+      mark.anchorNormal = anchor.worldToLocal(impactWorld.clone().add(normalWorld))
+        .sub(mark.anchorPoint)
+        .normalize();
+    }
+    setImpactMarks((marks) => {
+      const next = [...marks, mark];
+      const bulletMarks = next.filter((current) => current.weapon !== "rocket").slice(-markLimits.bullet);
+      const rocketMarks = next.filter((current) => current.weapon === "rocket").slice(-markLimits.rocket);
+      return [...bulletMarks, ...rocketMarks].sort((left, right) => left.id - right.id);
+    });
   }
 
   function applyWeaponRecoil(config: (typeof WEAPONS)[WeaponKind]) {
@@ -3488,6 +3535,7 @@ function NeighborhoodWorld({
             rotationRef={playerRotation}
           />
         ) : null}
+        <SurfaceImpactMarks marks={impactMarks} />
         {shotEffects.map((effect) => <ShotEffectView key={effect.id} effect={effect} />)}
         {impactEffects.map((effect) => <SurfaceImpactEffectView key={effect.id} effect={effect} />)}
         {bloodEffects.map((effect) => <BloodHitEffect key={effect.id} effect={effect} />)}
