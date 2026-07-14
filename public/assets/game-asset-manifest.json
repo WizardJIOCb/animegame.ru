@@ -1,0 +1,5710 @@
+{
+  "version": 1,
+  "revision": "sha256-b3b8c5c44b3c8900c2ee751da68b1509de77a0a745193a338644ce18eb241f51",
+  "missingFileCount": 2,
+  "roots": {
+    "/assets/animations/quaternius-universal/UAL1_Standard.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/animations/quaternius-universal/UAL1_Standard.glb",
+          "bytes": 7618436
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/Superhero_Female_FullBody.gltf": {
+      "complete": false,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/Superhero_Female_FullBody.gltf",
+          "bytes": 31656
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/Superhero_Female_FullBody.bin",
+          "bytes": 990808
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Eye_Brown.png",
+          "bytes": 35958
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Eye_Normal_png.png",
+          "bytes": null
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Hair_2_BaseColor.png",
+          "bytes": 1729467
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Hair_2_Normal.png",
+          "bytes": 4710013
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Superhero_Female_Dark_BaseColor.png",
+          "bytes": 1319410
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Superhero_Female_Normal.png",
+          "bytes": 3940537
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Superhero_Female_Roughness.png",
+          "bytes": 3277022
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/Superhero_Male_FullBody.gltf": {
+      "complete": false,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/Superhero_Male_FullBody.gltf",
+          "bytes": 30989
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/Superhero_Male_FullBody.bin",
+          "bytes": 720076
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Eye_Brown.png",
+          "bytes": 35958
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Eye_Normal_png.png",
+          "bytes": null
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Hair_1_BaseColor.png",
+          "bytes": 1570376
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Hair_1_Normal_png.png",
+          "bytes": null
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Superhero_Male_Dark.png",
+          "bytes": 1384380
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Superhero_Male_Normal.png",
+          "bytes": 4252937
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Base Characters/Godot - UE/T_Superhero_Male_Roughness.png",
+          "bytes": 3152049
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Eyebrows_Female.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Eyebrows_Female.gltf",
+          "bytes": 2855
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Eyebrows_Female.bin",
+          "bytes": 67248
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_2_BaseColor.png",
+          "bytes": 1729467
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_2_Normal.png",
+          "bytes": 4710013
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Eyebrows_Regular.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Eyebrows_Regular.gltf",
+          "bytes": 2018
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Eyebrows_Regular.bin",
+          "bytes": 26576
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_1_BaseColor.png",
+          "bytes": 1570376
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_1_Normal.png",
+          "bytes": 4326126
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Beard.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Beard.gltf",
+          "bytes": 2005
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Beard.bin",
+          "bytes": 25276
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_1_BaseColor.png",
+          "bytes": 1570376
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_1_Normal.png",
+          "bytes": 4326126
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Buns.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Buns.gltf",
+          "bytes": 2243
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Buns.bin",
+          "bytes": 131768
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_2_BaseColor.png",
+          "bytes": 1729467
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_2_Normal.png",
+          "bytes": 4710013
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Buzzed.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Buzzed.gltf",
+          "bytes": 2006
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Buzzed.bin",
+          "bytes": 19892
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_1_BaseColor.png",
+          "bytes": 1570376
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_1_Normal.png",
+          "bytes": 4326126
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_BuzzedFemale.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_BuzzedFemale.gltf",
+          "bytes": 2191
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_BuzzedFemale.bin",
+          "bytes": 19892
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_1_BaseColor.png",
+          "bytes": 1570376
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_1_Normal.png",
+          "bytes": 4326126
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Long.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Long.gltf",
+          "bytes": 2056
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_Long.bin",
+          "bytes": 115996
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_2_BaseColor.png",
+          "bytes": 1729467
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_2_Normal.png",
+          "bytes": 4710013
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_SimpleParted.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_SimpleParted.gltf",
+          "bytes": 2010
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/Hair_SimpleParted.bin",
+          "bytes": 32032
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_1_BaseColor.png",
+          "bytes": 1570376
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Origin at 0/glTF (Godot)/T_Hair_1_Normal.png",
+          "bytes": 4326126
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Eyebrows_Female.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Eyebrows_Female.gltf",
+          "bytes": 25053
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Eyebrows_Female.bin",
+          "bytes": 100592
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_2_BaseColor.png",
+          "bytes": 1729467
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_2_Normal.png",
+          "bytes": 4710013
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Eyebrows_Regular.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Eyebrows_Regular.gltf",
+          "bytes": 23117
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Eyebrows_Regular.bin",
+          "bytes": 43656
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_1_BaseColor.png",
+          "bytes": 1570376
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_1_Normal.png",
+          "bytes": 4326126
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Beard.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Beard.gltf",
+          "bytes": 23104
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Beard.bin",
+          "bytes": 41356
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_1_BaseColor.png",
+          "bytes": 1570376
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_1_Normal.png",
+          "bytes": 4326126
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Buns.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Buns.gltf",
+          "bytes": 23807
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Buns.bin",
+          "bytes": 205916
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_2_BaseColor.png",
+          "bytes": 1729467
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_2_Normal.png",
+          "bytes": 4710013
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Buzzed.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Buzzed.gltf",
+          "bytes": 23108
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Buzzed.bin",
+          "bytes": 33372
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_1_BaseColor.png",
+          "bytes": 1570376
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_1_Normal.png",
+          "bytes": 4326126
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_BuzzedFemale.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_BuzzedFemale.gltf",
+          "bytes": 23779
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_BuzzedFemale.bin",
+          "bytes": 33372
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_1_BaseColor.png",
+          "bytes": 1570376
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_1_Normal.png",
+          "bytes": 4326126
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Long.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Long.gltf",
+          "bytes": 23813
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_Long.bin",
+          "bytes": 181756
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_2_BaseColor.png",
+          "bytes": 1729467
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_2_Normal.png",
+          "bytes": 4710013
+        }
+      ]
+    },
+    "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_SimpleParted.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_SimpleParted.gltf",
+          "bytes": 23114
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/Hair_SimpleParted.bin",
+          "bytes": 51332
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_1_BaseColor.png",
+          "bytes": 1570376
+        },
+        {
+          "url": "/assets/models/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/T_Hair_1_Normal.png",
+          "bytes": 4326126
+        }
+      ]
+    },
+    "/assets/models/clothing/hoodie-pink.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/clothing/hoodie-pink.glb",
+          "bytes": 1490280
+        }
+      ]
+    },
+    "/assets/models/custom/town-car.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/custom/town-car.glb",
+          "bytes": 247384
+        }
+      ]
+    },
+    "/assets/models/custom/wooden-cabin.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/custom/wooden-cabin.glb",
+          "bytes": 577360
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/armchair.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/armchair.gltf",
+          "bytes": 3019
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/armchair.bin",
+          "bytes": 17312
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/armchair_pillows.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/armchair_pillows.gltf",
+          "bytes": 3036
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/armchair_pillows.bin",
+          "bytes": 20420
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/bed_double_A.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/bed_double_A.gltf",
+          "bytes": 3011
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/bed_double_A.bin",
+          "bytes": 24648
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/bed_double_B.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/bed_double_B.gltf",
+          "bytes": 3011
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/bed_double_B.bin",
+          "bytes": 27856
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/bed_single_A.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/bed_single_A.gltf",
+          "bytes": 3009
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/bed_single_A.bin",
+          "bytes": 22044
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/bed_single_B.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/bed_single_B.gltf",
+          "bytes": 3009
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/bed_single_B.bin",
+          "bytes": 25348
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/book_set.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/book_set.gltf",
+          "bytes": 3051
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/book_set.bin",
+          "bytes": 11576
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/book_single.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/book_single.gltf",
+          "bytes": 3056
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/book_single.bin",
+          "bytes": 3992
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/cabinet_medium.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/cabinet_medium.gltf",
+          "bytes": 3000
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/cabinet_medium.bin",
+          "bytes": 23304
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/cabinet_medium_decorated.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/cabinet_medium_decorated.gltf",
+          "bytes": 3060
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/cabinet_medium_decorated.bin",
+          "bytes": 49020
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/cabinet_small.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/cabinet_small.gltf",
+          "bytes": 3001
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/cabinet_small.bin",
+          "bytes": 19468
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/cabinet_small_decorated.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/cabinet_small_decorated.gltf",
+          "bytes": 3068
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/cabinet_small_decorated.bin",
+          "bytes": 27552
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/cactus_medium_A.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/cactus_medium_A.gltf",
+          "bytes": 3072
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/cactus_medium_A.bin",
+          "bytes": 17536
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/cactus_medium_B.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/cactus_medium_B.gltf",
+          "bytes": 3072
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/cactus_medium_B.bin",
+          "bytes": 17536
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/cactus_small_A.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/cactus_small_A.gltf",
+          "bytes": 3071
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/cactus_small_A.bin",
+          "bytes": 9320
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/cactus_small_B.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/cactus_small_B.gltf",
+          "bytes": 3071
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/cactus_small_B.bin",
+          "bytes": 9320
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/chair_A.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/chair_A.gltf",
+          "bytes": 3022
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/chair_A.bin",
+          "bytes": 16504
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/chair_A_wood.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/chair_A_wood.gltf",
+          "bytes": 3032
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/chair_A_wood.bin",
+          "bytes": 16504
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/chair_B.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/chair_B.gltf",
+          "bytes": 3049
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/chair_B.bin",
+          "bytes": 18240
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/chair_B_wood.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/chair_B_wood.gltf",
+          "bytes": 3059
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/chair_B_wood.bin",
+          "bytes": 18240
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/chair_C.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/chair_C.gltf",
+          "bytes": 3036
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/chair_C.bin",
+          "bytes": 12608
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/chair_stool.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/chair_stool.gltf",
+          "bytes": 3042
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/chair_stool.bin",
+          "bytes": 10832
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/chair_stool_wood.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/chair_stool_wood.gltf",
+          "bytes": 3052
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/chair_stool_wood.bin",
+          "bytes": 10832
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/couch.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/couch.gltf",
+          "bytes": 3014
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/couch.bin",
+          "bytes": 21416
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/couch_pillows.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/couch_pillows.gltf",
+          "bytes": 3030
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/couch_pillows.bin",
+          "bytes": 27632
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/lamp_standing.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/lamp_standing.gltf",
+          "bytes": 3034
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/lamp_standing.bin",
+          "bytes": 11648
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/lamp_table.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/lamp_table.gltf",
+          "bytes": 3029
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/lamp_table.bin",
+          "bytes": 12816
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/pictureframe_large_A.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_large_A.gltf",
+          "bytes": 3071
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_large_A.bin",
+          "bytes": 3176
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/pictureframe_large_B.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_large_B.gltf",
+          "bytes": 3054
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_large_B.bin",
+          "bytes": 3176
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/pictureframe_medium.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_medium.gltf",
+          "bytes": 3069
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_medium.bin",
+          "bytes": 3176
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/pictureframe_small_A.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_small_A.gltf",
+          "bytes": 3073
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_small_A.bin",
+          "bytes": 3176
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/pictureframe_small_B.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_small_B.gltf",
+          "bytes": 3073
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_small_B.bin",
+          "bytes": 3176
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/pictureframe_small_C.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_small_C.gltf",
+          "bytes": 3071
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_small_C.bin",
+          "bytes": 3176
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/pictureframe_standing_A.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_standing_A.gltf",
+          "bytes": 3050
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_standing_A.bin",
+          "bytes": 4092
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/pictureframe_standing_B.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_standing_B.gltf",
+          "bytes": 3081
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/pictureframe_standing_B.bin",
+          "bytes": 4188
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/pillow_A.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/pillow_A.gltf",
+          "bytes": 3029
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/pillow_A.bin",
+          "bytes": 2724
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/pillow_B.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/pillow_B.gltf",
+          "bytes": 3029
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/pillow_B.bin",
+          "bytes": 2724
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/rug_oval_A.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/rug_oval_A.gltf",
+          "bytes": 2970
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/rug_oval_A.bin",
+          "bytes": 6560
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/rug_oval_B.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/rug_oval_B.gltf",
+          "bytes": 2970
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/rug_oval_B.bin",
+          "bytes": 6560
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/rug_rectangle_A.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/rug_rectangle_A.gltf",
+          "bytes": 2971
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/rug_rectangle_A.bin",
+          "bytes": 1800
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/rug_rectangle_B.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/rug_rectangle_B.gltf",
+          "bytes": 2971
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/rug_rectangle_B.bin",
+          "bytes": 1800
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/rug_rectangle_stripes_A.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/rug_rectangle_stripes_A.gltf",
+          "bytes": 2988
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/rug_rectangle_stripes_A.bin",
+          "bytes": 2712
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/rug_rectangle_stripes_B.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/rug_rectangle_stripes_B.gltf",
+          "bytes": 2988
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/rug_rectangle_stripes_B.bin",
+          "bytes": 2712
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/shelf_A_big.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/shelf_A_big.gltf",
+          "bytes": 3025
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/shelf_A_big.bin",
+          "bytes": 10104
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/shelf_A_small.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/shelf_A_small.gltf",
+          "bytes": 3033
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/shelf_A_small.bin",
+          "bytes": 10104
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/shelf_B_large.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/shelf_B_large.gltf",
+          "bytes": 3047
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/shelf_B_large.bin",
+          "bytes": 10104
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/shelf_B_large_decorated.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/shelf_B_large_decorated.gltf",
+          "bytes": 3069
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/shelf_B_large_decorated.bin",
+          "bytes": 25772
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/shelf_B_small.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/shelf_B_small.gltf",
+          "bytes": 3049
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/shelf_B_small.bin",
+          "bytes": 10104
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/shelf_B_small_decorated.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/shelf_B_small_decorated.gltf",
+          "bytes": 3071
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/shelf_B_small_decorated.bin",
+          "bytes": 23416
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/table_low.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/table_low.gltf",
+          "bytes": 2990
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/table_low.bin",
+          "bytes": 12408
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/table_medium.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/table_medium.gltf",
+          "bytes": 2973
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/table_medium.bin",
+          "bytes": 9328
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/table_medium_long.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/table_medium_long.gltf",
+          "bytes": 2987
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/table_medium_long.bin",
+          "bytes": 9328
+        }
+      ]
+    },
+    "/assets/models/kaykit-furniture/table_small.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kaykit-furniture/table_small.gltf",
+          "bytes": 2979
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/furniturebits_texture.png",
+          "bytes": 15605
+        },
+        {
+          "url": "/assets/models/kaykit-furniture/table_small.bin",
+          "bytes": 9328
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bathroomCabinet.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bathroomCabinet.glb",
+          "bytes": 7216
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bathroomCabinetDrawer.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bathroomCabinetDrawer.glb",
+          "bytes": 34744
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bathroomMirror.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bathroomMirror.glb",
+          "bytes": 6792
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bathroomSink.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bathroomSink.glb",
+          "bytes": 22536
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bathroomSinkSquare.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bathroomSinkSquare.glb",
+          "bytes": 15108
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bathtub.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bathtub.glb",
+          "bytes": 35500
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bear.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bear.glb",
+          "bytes": 11884
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bedBunk.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bedBunk.glb",
+          "bytes": 40784
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bedDouble.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bedDouble.glb",
+          "bytes": 23368
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bedSingle.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bedSingle.glb",
+          "bytes": 18636
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bench.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bench.glb",
+          "bytes": 10756
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/benchCushion.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/benchCushion.glb",
+          "bytes": 12500
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/benchCushionLow.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/benchCushionLow.glb",
+          "bytes": 10268
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bookcaseClosed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bookcaseClosed.glb",
+          "bytes": 23132
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bookcaseClosedDoors.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bookcaseClosedDoors.glb",
+          "bytes": 22644
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bookcaseClosedWide.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bookcaseClosedWide.glb",
+          "bytes": 23140
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bookcaseOpen.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bookcaseOpen.glb",
+          "bytes": 18020
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/bookcaseOpenLow.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/bookcaseOpenLow.glb",
+          "bytes": 11520
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/books.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/books.glb",
+          "bytes": 6864
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/cabinetBed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/cabinetBed.glb",
+          "bytes": 7496
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/cabinetBedDrawer.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/cabinetBedDrawer.glb",
+          "bytes": 16088
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/cabinetBedDrawerTable.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/cabinetBedDrawerTable.glb",
+          "bytes": 12200
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/cabinetTelevision.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/cabinetTelevision.glb",
+          "bytes": 10524
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/cabinetTelevisionDoors.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/cabinetTelevisionDoors.glb",
+          "bytes": 16876
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/cardboardBoxClosed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/cardboardBoxClosed.glb",
+          "bytes": 5400
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/cardboardBoxOpen.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/cardboardBoxOpen.glb",
+          "bytes": 5404
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/ceilingFan.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/ceilingFan.glb",
+          "bytes": 15284
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/chair.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/chair.glb",
+          "bytes": 10756
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/chairCushion.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/chairCushion.glb",
+          "bytes": 12588
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/chairDesk.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/chairDesk.glb",
+          "bytes": 39016
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/chairModernCushion.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/chairModernCushion.glb",
+          "bytes": 7376
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/chairModernFrameCushion.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/chairModernFrameCushion.glb",
+          "bytes": 18592
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/chairRounded.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/chairRounded.glb",
+          "bytes": 17156
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/coatRack.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/coatRack.glb",
+          "bytes": 9948
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/coatRackStanding.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/coatRackStanding.glb",
+          "bytes": 13288
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/computerKeyboard.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/computerKeyboard.glb",
+          "bytes": 3476
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/computerMouse.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/computerMouse.glb",
+          "bytes": 5868
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/computerScreen.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/computerScreen.glb",
+          "bytes": 6404
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/desk.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/desk.glb",
+          "bytes": 15048
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/deskCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/deskCorner.glb",
+          "bytes": 17984
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/doorway.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/doorway.glb",
+          "bytes": 14532
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/doorwayFront.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/doorwayFront.glb",
+          "bytes": 13016
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/doorwayOpen.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/doorwayOpen.glb",
+          "bytes": 3256
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/dryer.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/dryer.glb",
+          "bytes": 17760
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/floorCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/floorCorner.glb",
+          "bytes": 2524
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/floorCornerRound.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/floorCornerRound.glb",
+          "bytes": 5168
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/floorFull.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/floorFull.glb",
+          "bytes": 2260
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/floorHalf.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/floorHalf.glb",
+          "bytes": 2264
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/hoodLarge.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/hoodLarge.glb",
+          "bytes": 4652
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/hoodModern.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/hoodModern.glb",
+          "bytes": 3968
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenBar.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenBar.glb",
+          "bytes": 6004
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenBarEnd.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenBarEnd.glb",
+          "bytes": 11084
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenBlender.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenBlender.glb",
+          "bytes": 18728
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenCabinet.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenCabinet.glb",
+          "bytes": 10444
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenCabinetCornerInner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenCabinetCornerInner.glb",
+          "bytes": 5184
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenCabinetCornerRound.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenCabinetCornerRound.glb",
+          "bytes": 13656
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenCabinetDrawer.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenCabinetDrawer.glb",
+          "bytes": 15384
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenCabinetUpper.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenCabinetUpper.glb",
+          "bytes": 8168
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenCabinetUpperCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenCabinetUpperCorner.glb",
+          "bytes": 13712
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenCabinetUpperDouble.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenCabinetUpperDouble.glb",
+          "bytes": 18184
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenCabinetUpperLow.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenCabinetUpperLow.glb",
+          "bytes": 7216
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenCoffeeMachine.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenCoffeeMachine.glb",
+          "bytes": 13332
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenFridge.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenFridge.glb",
+          "bytes": 20116
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenFridgeBuiltIn.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenFridgeBuiltIn.glb",
+          "bytes": 22616
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenFridgeLarge.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenFridgeLarge.glb",
+          "bytes": 30632
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenFridgeSmall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenFridgeSmall.glb",
+          "bytes": 12988
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenMicrowave.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenMicrowave.glb",
+          "bytes": 11248
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenSink.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenSink.glb",
+          "bytes": 23480
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenStove.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenStove.glb",
+          "bytes": 54324
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/kitchenStoveElectric.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/kitchenStoveElectric.glb",
+          "bytes": 18604
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/lampRoundFloor.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/lampRoundFloor.glb",
+          "bytes": 6600
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/lampRoundTable.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/lampRoundTable.glb",
+          "bytes": 6604
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/lampSquareCeiling.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/lampSquareCeiling.glb",
+          "bytes": 5628
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/lampSquareFloor.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/lampSquareFloor.glb",
+          "bytes": 5624
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/lampSquareTable.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/lampSquareTable.glb",
+          "bytes": 5624
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/lampWall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/lampWall.glb",
+          "bytes": 4828
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/laptop.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/laptop.glb",
+          "bytes": 5540
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/loungeChair.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/loungeChair.glb",
+          "bytes": 9648
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/loungeChairRelax.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/loungeChairRelax.glb",
+          "bytes": 13904
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/loungeDesignChair.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/loungeDesignChair.glb",
+          "bytes": 9136
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/loungeDesignSofa.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/loungeDesignSofa.glb",
+          "bytes": 9128
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/loungeDesignSofaCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/loungeDesignSofaCorner.glb",
+          "bytes": 13744
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/loungeSofa.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/loungeSofa.glb",
+          "bytes": 9644
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/loungeSofaCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/loungeSofaCorner.glb",
+          "bytes": 13412
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/loungeSofaLong.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/loungeSofaLong.glb",
+          "bytes": 13112
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/loungeSofaOttoman.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/loungeSofaOttoman.glb",
+          "bytes": 6960
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/paneling.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/paneling.glb",
+          "bytes": 3960
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/pillow.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/pillow.glb",
+          "bytes": 5044
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/pillowBlue.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/pillowBlue.glb",
+          "bytes": 5056
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/pillowBlueLong.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/pillowBlueLong.glb",
+          "bytes": 5088
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/pillowLong.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/pillowLong.glb",
+          "bytes": 5072
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/plantSmall1.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/plantSmall1.glb",
+          "bytes": 8224
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/plantSmall2.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/plantSmall2.glb",
+          "bytes": 12996
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/plantSmall3.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/plantSmall3.glb",
+          "bytes": 8424
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/pottedPlant.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/pottedPlant.glb",
+          "bytes": 7576
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/radio.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/radio.glb",
+          "bytes": 25020
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/rugDoormat.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/rugDoormat.glb",
+          "bytes": 13812
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/rugRectangle.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/rugRectangle.glb",
+          "bytes": 3188
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/rugRound.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/rugRound.glb",
+          "bytes": 10164
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/rugRounded.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/rugRounded.glb",
+          "bytes": 10876
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/rugSquare.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/rugSquare.glb",
+          "bytes": 3180
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/shower.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/shower.glb",
+          "bytes": 52020
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/showerRound.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/showerRound.glb",
+          "bytes": 72048
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/sideTable.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/sideTable.glb",
+          "bytes": 8800
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/sideTableDrawers.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/sideTableDrawers.glb",
+          "bytes": 19072
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/speaker.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/speaker.glb",
+          "bytes": 15744
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/speakerSmall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/speakerSmall.glb",
+          "bytes": 15244
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/stairs.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/stairs.glb",
+          "bytes": 21616
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/stairsCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/stairsCorner.glb",
+          "bytes": 21576
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/stairsOpen.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/stairsOpen.glb",
+          "bytes": 39924
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/stairsOpenSingle.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/stairsOpenSingle.glb",
+          "bytes": 24600
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/stoolBar.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/stoolBar.glb",
+          "bytes": 11816
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/stoolBarSquare.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/stoolBarSquare.glb",
+          "bytes": 9784
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/table.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/table.glb",
+          "bytes": 8196
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/tableCloth.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/tableCloth.glb",
+          "bytes": 9920
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/tableCoffee.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/tableCoffee.glb",
+          "bytes": 8256
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/tableCoffeeGlass.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/tableCoffeeGlass.glb",
+          "bytes": 9428
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/tableCoffeeGlassSquare.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/tableCoffeeGlassSquare.glb",
+          "bytes": 9448
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/tableCoffeeSquare.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/tableCoffeeSquare.glb",
+          "bytes": 8276
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/tableCross.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/tableCross.glb",
+          "bytes": 12140
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/tableCrossCloth.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/tableCrossCloth.glb",
+          "bytes": 13852
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/tableGlass.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/tableGlass.glb",
+          "bytes": 9848
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/tableRound.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/tableRound.glb",
+          "bytes": 6444
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/televisionAntenna.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/televisionAntenna.glb",
+          "bytes": 4500
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/televisionModern.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/televisionModern.glb",
+          "bytes": 6368
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/televisionVintage.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/televisionVintage.glb",
+          "bytes": 19392
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/toaster.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/toaster.glb",
+          "bytes": 14924
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/toilet.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/toilet.glb",
+          "bytes": 18112
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/toiletSquare.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/toiletSquare.glb",
+          "bytes": 17548
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/trashcan.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/trashcan.glb",
+          "bytes": 6452
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/wall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/wall.glb",
+          "bytes": 3340
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/wallCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/wallCorner.glb",
+          "bytes": 4460
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/wallCornerRond.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/wallCornerRond.glb",
+          "bytes": 10448
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/wallDoorway.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/wallDoorway.glb",
+          "bytes": 6444
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/wallDoorwayWide.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/wallDoorwayWide.glb",
+          "bytes": 6468
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/wallHalf.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/wallHalf.glb",
+          "bytes": 3348
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/wallWindow.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/wallWindow.glb",
+          "bytes": 10744
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/wallWindowSlide.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/wallWindowSlide.glb",
+          "bytes": 14564
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/washer.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/washer.glb",
+          "bytes": 48104
+        }
+      ]
+    },
+    "/assets/models/kenney-furniture/washerDryerStacked.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-furniture/washerDryerStacked.glb",
+          "bytes": 64060
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bed.glb",
+          "bytes": 19108
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bed_floor.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bed_floor.glb",
+          "bytes": 10688
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_center_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_center_stone.glb",
+          "bytes": 5076
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_center_stoneRound.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_center_stoneRound.glb",
+          "bytes": 5080
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_center_wood.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_center_wood.glb",
+          "bytes": 5480
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_center_woodRound.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_center_woodRound.glb",
+          "bytes": 6280
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_side_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_side_stone.glb",
+          "bytes": 11408
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_side_stoneRound.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_side_stoneRound.glb",
+          "bytes": 13540
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_side_wood.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_side_wood.glb",
+          "bytes": 10604
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_side_woodRound.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_side_woodRound.glb",
+          "bytes": 13460
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_stone.glb",
+          "bytes": 17708
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_stoneNarrow.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_stoneNarrow.glb",
+          "bytes": 17724
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_stoneRound.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_stoneRound.glb",
+          "bytes": 22552
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_stoneRoundNarrow.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_stoneRoundNarrow.glb",
+          "bytes": 22564
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_wood.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_wood.glb",
+          "bytes": 15692
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_woodNarrow.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_woodNarrow.glb",
+          "bytes": 15708
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_woodRound.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_woodRound.glb",
+          "bytes": 21192
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/bridge_woodRoundNarrow.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/bridge_woodRoundNarrow.glb",
+          "bytes": 21204
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cactus_short.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cactus_short.glb",
+          "bytes": 8844
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cactus_tall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cactus_tall.glb",
+          "bytes": 9668
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/campfire_bricks.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/campfire_bricks.glb",
+          "bytes": 10220
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/campfire_logs.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/campfire_logs.glb",
+          "bytes": 9284
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/campfire_planks.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/campfire_planks.glb",
+          "bytes": 8148
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/campfire_stones.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/campfire_stones.glb",
+          "bytes": 17344
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/canoe.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/canoe.glb",
+          "bytes": 15780
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/canoe_paddle.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/canoe_paddle.glb",
+          "bytes": 3952
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockCave_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockCave_rock.glb",
+          "bytes": 5432
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockCave_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockCave_stone.glb",
+          "bytes": 5436
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockDiagonal_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockDiagonal_rock.glb",
+          "bytes": 2564
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockDiagonal_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockDiagonal_stone.glb",
+          "bytes": 2568
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockHalf_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockHalf_rock.glb",
+          "bytes": 2788
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockHalf_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockHalf_stone.glb",
+          "bytes": 2792
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockQuarter_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockQuarter_rock.glb",
+          "bytes": 2796
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockQuarter_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockQuarter_stone.glb",
+          "bytes": 2800
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockSlopeHalfWalls_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockSlopeHalfWalls_rock.glb",
+          "bytes": 8880
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockSlopeHalfWalls_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockSlopeHalfWalls_stone.glb",
+          "bytes": 8884
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockSlopeWalls_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockSlopeWalls_rock.glb",
+          "bytes": 8900
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockSlopeWalls_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockSlopeWalls_stone.glb",
+          "bytes": 8904
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockSlope_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockSlope_rock.glb",
+          "bytes": 6720
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_blockSlope_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_blockSlope_stone.glb",
+          "bytes": 6724
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_block_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_block_rock.glb",
+          "bytes": 2776
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_block_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_block_stone.glb",
+          "bytes": 2780
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_cave_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_cave_rock.glb",
+          "bytes": 5480
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_cave_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_cave_stone.glb",
+          "bytes": 5484
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_cornerInnerLarge_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_cornerInnerLarge_rock.glb",
+          "bytes": 4296
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_cornerInnerLarge_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_cornerInnerLarge_stone.glb",
+          "bytes": 4300
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_cornerInnerTop_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_cornerInnerTop_rock.glb",
+          "bytes": 7608
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_cornerInnerTop_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_cornerInnerTop_stone.glb",
+          "bytes": 7612
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_cornerInner_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_cornerInner_rock.glb",
+          "bytes": 5008
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_cornerInner_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_cornerInner_stone.glb",
+          "bytes": 8568
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_cornerLarge_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_cornerLarge_rock.glb",
+          "bytes": 2376
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_cornerLarge_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_cornerLarge_stone.glb",
+          "bytes": 3296
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_cornerTop_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_cornerTop_rock.glb",
+          "bytes": 3108
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_cornerTop_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_cornerTop_stone.glb",
+          "bytes": 3112
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_corner_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_corner_rock.glb",
+          "bytes": 2360
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_corner_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_corner_stone.glb",
+          "bytes": 2364
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_diagonal_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_diagonal_rock.glb",
+          "bytes": 4296
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_diagonal_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_diagonal_stone.glb",
+          "bytes": 4236
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_halfCornerInner_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_halfCornerInner_rock.glb",
+          "bytes": 8016
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_halfCornerInner_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_halfCornerInner_stone.glb",
+          "bytes": 8020
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_halfCorner_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_halfCorner_rock.glb",
+          "bytes": 3128
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_halfCorner_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_halfCorner_stone.glb",
+          "bytes": 3132
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_half_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_half_rock.glb",
+          "bytes": 5316
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_half_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_half_stone.glb",
+          "bytes": 5320
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_large_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_large_rock.glb",
+          "bytes": 3560
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_large_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_large_stone.glb",
+          "bytes": 3564
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_rock.glb",
+          "bytes": 3556
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_stepsCornerInner_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_stepsCornerInner_rock.glb",
+          "bytes": 15632
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_stepsCornerInner_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_stepsCornerInner_stone.glb",
+          "bytes": 15636
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_stepsCorner_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_stepsCorner_rock.glb",
+          "bytes": 17544
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_stepsCorner_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_stepsCorner_stone.glb",
+          "bytes": 17548
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_steps_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_steps_rock.glb",
+          "bytes": 15952
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_steps_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_steps_stone.glb",
+          "bytes": 15956
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_stone.glb",
+          "bytes": 3560
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_topDiagonal_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_topDiagonal_rock.glb",
+          "bytes": 6220
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_topDiagonal_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_topDiagonal_stone.glb",
+          "bytes": 10540
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_top_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_top_rock.glb",
+          "bytes": 5312
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_top_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_top_stone.glb",
+          "bytes": 5316
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_waterfallTop_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_waterfallTop_rock.glb",
+          "bytes": 7076
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_waterfallTop_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_waterfallTop_stone.glb",
+          "bytes": 7508
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_waterfall_rock.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_waterfall_rock.glb",
+          "bytes": 4488
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/cliff_waterfall_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/cliff_waterfall_stone.glb",
+          "bytes": 6100
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crop_carrot.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crop_carrot.glb",
+          "bytes": 12664
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crop_melon.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crop_melon.glb",
+          "bytes": 13328
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crop_pumpkin.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crop_pumpkin.glb",
+          "bytes": 10840
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crop_turnip.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crop_turnip.glb",
+          "bytes": 14308
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_bambooStageA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_bambooStageA.glb",
+          "bytes": 22092
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_bambooStageB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_bambooStageB.glb",
+          "bytes": 40144
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_cornStageA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_cornStageA.glb",
+          "bytes": 9076
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_cornStageB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_cornStageB.glb",
+          "bytes": 9780
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_cornStageC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_cornStageC.glb",
+          "bytes": 11960
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_cornStageD.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_cornStageD.glb",
+          "bytes": 29316
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_dirtDoubleRow.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_dirtDoubleRow.glb",
+          "bytes": 7560
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_dirtDoubleRowCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_dirtDoubleRowCorner.glb",
+          "bytes": 5396
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_dirtDoubleRowEnd.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_dirtDoubleRowEnd.glb",
+          "bytes": 6248
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_dirtRow.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_dirtRow.glb",
+          "bytes": 4712
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_dirtRowCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_dirtRowCorner.glb",
+          "bytes": 3248
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_dirtRowEnd.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_dirtRowEnd.glb",
+          "bytes": 4064
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_dirtSingle.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_dirtSingle.glb",
+          "bytes": 4196
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_leafsStageA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_leafsStageA.glb",
+          "bytes": 7144
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_leafsStageB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_leafsStageB.glb",
+          "bytes": 7768
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_wheatStageA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_wheatStageA.glb",
+          "bytes": 56228
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/crops_wheatStageB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/crops_wheatStageB.glb",
+          "bytes": 30040
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/fence_bend.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/fence_bend.glb",
+          "bytes": 16276
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/fence_bendCenter.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/fence_bendCenter.glb",
+          "bytes": 20016
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/fence_corner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/fence_corner.glb",
+          "bytes": 8644
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/fence_gate.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/fence_gate.glb",
+          "bytes": 27652
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/fence_planks.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/fence_planks.glb",
+          "bytes": 7720
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/fence_planksDouble.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/fence_planksDouble.glb",
+          "bytes": 11160
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/fence_simple.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/fence_simple.glb",
+          "bytes": 5712
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/fence_simpleCenter.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/fence_simpleCenter.glb",
+          "bytes": 8660
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/fence_simpleDiagonal.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/fence_simpleDiagonal.glb",
+          "bytes": 6688
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/fence_simpleDiagonalCenter.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/fence_simpleDiagonalCenter.glb",
+          "bytes": 11064
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/fence_simpleHigh.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/fence_simpleHigh.glb",
+          "bytes": 4300
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/fence_simpleLow.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/fence_simpleLow.glb",
+          "bytes": 4312
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/flower_purpleA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/flower_purpleA.glb",
+          "bytes": 7112
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/flower_purpleB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/flower_purpleB.glb",
+          "bytes": 8084
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/flower_purpleC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/flower_purpleC.glb",
+          "bytes": 7600
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/flower_redA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/flower_redA.glb",
+          "bytes": 7104
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/flower_redB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/flower_redB.glb",
+          "bytes": 8080
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/flower_redC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/flower_redC.glb",
+          "bytes": 7600
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/flower_yellowA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/flower_yellowA.glb",
+          "bytes": 7120
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/flower_yellowB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/flower_yellowB.glb",
+          "bytes": 11256
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/flower_yellowC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/flower_yellowC.glb",
+          "bytes": 7616
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/grass.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/grass.glb",
+          "bytes": 11496
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/grass_large.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/grass_large.glb",
+          "bytes": 18504
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/grass_leafs.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/grass_leafs.glb",
+          "bytes": 4608
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/grass_leafsLarge.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/grass_leafsLarge.glb",
+          "bytes": 13988
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_grass.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_grass.glb",
+          "bytes": 1576
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathBend.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathBend.glb",
+          "bytes": 4132
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathBendBank.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathBendBank.glb",
+          "bytes": 4308
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathCorner.glb",
+          "bytes": 3532
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathCornerSmall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathCornerSmall.glb",
+          "bytes": 3632
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathCross.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathCross.glb",
+          "bytes": 6404
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathEnd.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathEnd.glb",
+          "bytes": 5044
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathEndClosed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathEndClosed.glb",
+          "bytes": 5824
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathOpen.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathOpen.glb",
+          "bytes": 1856
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathRocks.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathRocks.glb",
+          "bytes": 8036
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathSide.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathSide.glb",
+          "bytes": 4124
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathSideOpen.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathSideOpen.glb",
+          "bytes": 4524
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathSplit.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathSplit.glb",
+          "bytes": 6012
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathStraight.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathStraight.glb",
+          "bytes": 5620
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_pathTile.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_pathTile.glb",
+          "bytes": 6624
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverBend.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverBend.glb",
+          "bytes": 5684
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverBendBank.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverBendBank.glb",
+          "bytes": 5692
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverCorner.glb",
+          "bytes": 4844
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverCornerSmall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverCornerSmall.glb",
+          "bytes": 4236
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverCross.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverCross.glb",
+          "bytes": 7560
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverEnd.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverEnd.glb",
+          "bytes": 5464
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverEndClosed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverEndClosed.glb",
+          "bytes": 6920
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverOpen.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverOpen.glb",
+          "bytes": 1852
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverRocks.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverRocks.glb",
+          "bytes": 8884
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverSide.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverSide.glb",
+          "bytes": 4544
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverSideOpen.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverSideOpen.glb",
+          "bytes": 5312
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverSplit.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverSplit.glb",
+          "bytes": 6804
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverStraight.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverStraight.glb",
+          "bytes": 6044
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/ground_riverTile.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/ground_riverTile.glb",
+          "bytes": 9120
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/hanging_moss.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/hanging_moss.glb",
+          "bytes": 4776
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/lily_large.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/lily_large.glb",
+          "bytes": 8044
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/lily_small.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/lily_small.glb",
+          "bytes": 5664
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/log.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/log.glb",
+          "bytes": 14288
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/log_large.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/log_large.glb",
+          "bytes": 7924
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/log_stack.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/log_stack.glb",
+          "bytes": 10896
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/log_stackLarge.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/log_stackLarge.glb",
+          "bytes": 17604
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/mushroom_red.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/mushroom_red.glb",
+          "bytes": 6364
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/mushroom_redGroup.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/mushroom_redGroup.glb",
+          "bytes": 14960
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/mushroom_redTall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/mushroom_redTall.glb",
+          "bytes": 6504
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/mushroom_tan.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/mushroom_tan.glb",
+          "bytes": 5804
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/mushroom_tanGroup.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/mushroom_tanGroup.glb",
+          "bytes": 14956
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/mushroom_tanTall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/mushroom_tanTall.glb",
+          "bytes": 6500
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/path_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/path_stone.glb",
+          "bytes": 12392
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/path_stoneCircle.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/path_stoneCircle.glb",
+          "bytes": 13100
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/path_stoneCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/path_stoneCorner.glb",
+          "bytes": 10772
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/path_stoneEnd.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/path_stoneEnd.glb",
+          "bytes": 8996
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/path_wood.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/path_wood.glb",
+          "bytes": 6448
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/path_woodCorner.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/path_woodCorner.glb",
+          "bytes": 6444
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/path_woodEnd.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/path_woodEnd.glb",
+          "bytes": 5164
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/plant_bush.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/plant_bush.glb",
+          "bytes": 4396
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/plant_bushDetailed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/plant_bushDetailed.glb",
+          "bytes": 10172
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/plant_bushLarge.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/plant_bushLarge.glb",
+          "bytes": 6436
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/plant_bushLargeTriangle.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/plant_bushLargeTriangle.glb",
+          "bytes": 4564
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/plant_bushSmall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/plant_bushSmall.glb",
+          "bytes": 3212
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/plant_bushTriangle.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/plant_bushTriangle.glb",
+          "bytes": 3956
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/plant_flatShort.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/plant_flatShort.glb",
+          "bytes": 3936
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/plant_flatTall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/plant_flatTall.glb",
+          "bytes": 3480
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/platform_beach.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/platform_beach.glb",
+          "bytes": 13204
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/platform_grass.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/platform_grass.glb",
+          "bytes": 12568
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/platform_stone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/platform_stone.glb",
+          "bytes": 13632
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/pot_large.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/pot_large.glb",
+          "bytes": 6168
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/pot_small.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/pot_small.glb",
+          "bytes": 7004
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_largeA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_largeA.glb",
+          "bytes": 7552
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_largeB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_largeB.glb",
+          "bytes": 8560
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_largeC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_largeC.glb",
+          "bytes": 7004
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_largeD.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_largeD.glb",
+          "bytes": 7992
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_largeE.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_largeE.glb",
+          "bytes": 6464
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_largeF.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_largeF.glb",
+          "bytes": 7516
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallA.glb",
+          "bytes": 3044
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallB.glb",
+          "bytes": 3528
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallC.glb",
+          "bytes": 3044
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallD.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallD.glb",
+          "bytes": 4012
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallE.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallE.glb",
+          "bytes": 5932
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallF.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallF.glb",
+          "bytes": 5700
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallFlatA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallFlatA.glb",
+          "bytes": 3300
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallFlatB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallFlatB.glb",
+          "bytes": 3056
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallFlatC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallFlatC.glb",
+          "bytes": 4508
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallG.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallG.glb",
+          "bytes": 4204
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallH.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallH.glb",
+          "bytes": 6200
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallI.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallI.glb",
+          "bytes": 5120
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallTopA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallTopA.glb",
+          "bytes": 5220
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_smallTopB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_smallTopB.glb",
+          "bytes": 6660
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_tallA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_tallA.glb",
+          "bytes": 12072
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_tallB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_tallB.glb",
+          "bytes": 14060
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_tallC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_tallC.glb",
+          "bytes": 5184
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_tallD.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_tallD.glb",
+          "bytes": 5132
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_tallE.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_tallE.glb",
+          "bytes": 5192
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_tallF.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_tallF.glb",
+          "bytes": 5608
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_tallG.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_tallG.glb",
+          "bytes": 6772
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_tallH.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_tallH.glb",
+          "bytes": 7792
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_tallI.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_tallI.glb",
+          "bytes": 5584
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/rock_tallJ.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/rock_tallJ.glb",
+          "bytes": 5424
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/sign.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/sign.glb",
+          "bytes": 5040
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/statue_block.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/statue_block.glb",
+          "bytes": 11252
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/statue_column.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/statue_column.glb",
+          "bytes": 10472
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/statue_columnDamaged.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/statue_columnDamaged.glb",
+          "bytes": 8824
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/statue_head.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/statue_head.glb",
+          "bytes": 14704
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/statue_obelisk.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/statue_obelisk.glb",
+          "bytes": 4416
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/statue_ring.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/statue_ring.glb",
+          "bytes": 6568
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_largeA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_largeA.glb",
+          "bytes": 7124
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_largeB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_largeB.glb",
+          "bytes": 8132
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_largeC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_largeC.glb",
+          "bytes": 6580
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_largeD.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_largeD.glb",
+          "bytes": 7564
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_largeE.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_largeE.glb",
+          "bytes": 6036
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_largeF.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_largeF.glb",
+          "bytes": 7092
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallA.glb",
+          "bytes": 2620
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallB.glb",
+          "bytes": 3100
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallC.glb",
+          "bytes": 2620
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallD.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallD.glb",
+          "bytes": 3584
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallE.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallE.glb",
+          "bytes": 5504
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallF.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallF.glb",
+          "bytes": 5272
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallFlatA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallFlatA.glb",
+          "bytes": 2872
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallFlatB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallFlatB.glb",
+          "bytes": 2632
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallFlatC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallFlatC.glb",
+          "bytes": 4080
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallG.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallG.glb",
+          "bytes": 3776
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallH.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallH.glb",
+          "bytes": 5772
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallI.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallI.glb",
+          "bytes": 4692
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallTopA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallTopA.glb",
+          "bytes": 4792
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_smallTopB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_smallTopB.glb",
+          "bytes": 6232
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_tallA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_tallA.glb",
+          "bytes": 11644
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_tallB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_tallB.glb",
+          "bytes": 13596
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_tallC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_tallC.glb",
+          "bytes": 4788
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_tallD.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_tallD.glb",
+          "bytes": 4704
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_tallE.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_tallE.glb",
+          "bytes": 4764
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_tallF.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_tallF.glb",
+          "bytes": 5180
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_tallG.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_tallG.glb",
+          "bytes": 6344
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_tallH.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_tallH.glb",
+          "bytes": 7364
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_tallI.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_tallI.glb",
+          "bytes": 5160
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stone_tallJ.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stone_tallJ.glb",
+          "bytes": 4808
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stump_old.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stump_old.glb",
+          "bytes": 9564
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stump_oldTall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stump_oldTall.glb",
+          "bytes": 9564
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stump_round.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stump_round.glb",
+          "bytes": 5644
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stump_roundDetailed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stump_roundDetailed.glb",
+          "bytes": 8188
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stump_square.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stump_square.glb",
+          "bytes": 4584
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stump_squareDetailed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stump_squareDetailed.glb",
+          "bytes": 7544
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/stump_squareDetailedWide.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/stump_squareDetailedWide.glb",
+          "bytes": 7536
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tent_detailedClosed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tent_detailedClosed.glb",
+          "bytes": 15460
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tent_detailedOpen.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tent_detailedOpen.glb",
+          "bytes": 15324
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tent_smallClosed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tent_smallClosed.glb",
+          "bytes": 13200
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tent_smallOpen.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tent_smallOpen.glb",
+          "bytes": 13604
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_blocks.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_blocks.glb",
+          "bytes": 10128
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_blocks_dark.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_blocks_dark.glb",
+          "bytes": 10132
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_blocks_fall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_blocks_fall.glb",
+          "bytes": 18368
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_cone.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_cone.glb",
+          "bytes": 10924
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_cone_dark.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_cone_dark.glb",
+          "bytes": 19940
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_cone_fall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_cone_fall.glb",
+          "bytes": 10916
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_default.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_default.glb",
+          "bytes": 9428
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_default_dark.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_default_dark.glb",
+          "bytes": 9436
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_default_fall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_default_fall.glb",
+          "bytes": 16940
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_detailed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_detailed.glb",
+          "bytes": 31412
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_detailed_dark.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_detailed_dark.glb",
+          "bytes": 31416
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_detailed_fall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_detailed_fall.glb",
+          "bytes": 31404
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_fat.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_fat.glb",
+          "bytes": 5576
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_fat_darkh.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_fat_darkh.glb",
+          "bytes": 5584
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_fat_fall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_fat_fall.glb",
+          "bytes": 5572
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_oak.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_oak.glb",
+          "bytes": 14644
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_oak_dark.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_oak_dark.glb",
+          "bytes": 14648
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_oak_fall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_oak_fall.glb",
+          "bytes": 14640
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_palm.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_palm.glb",
+          "bytes": 13616
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_palmBend.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_palmBend.glb",
+          "bytes": 14820
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_palmDetailedShort.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_palmDetailedShort.glb",
+          "bytes": 28212
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_palmDetailedTall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_palmDetailedTall.glb",
+          "bytes": 28204
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_palmShort.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_palmShort.glb",
+          "bytes": 15596
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_palmTall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_palmTall.glb",
+          "bytes": 15592
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineDefaultA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineDefaultA.glb",
+          "bytes": 17220
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineDefaultB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineDefaultB.glb",
+          "bytes": 18180
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineGroundA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineGroundA.glb",
+          "bytes": 6704
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineGroundB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineGroundB.glb",
+          "bytes": 6704
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineRoundA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineRoundA.glb",
+          "bytes": 14488
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineRoundB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineRoundB.glb",
+          "bytes": 18464
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineRoundC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineRoundC.glb",
+          "bytes": 15332
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineRoundD.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineRoundD.glb",
+          "bytes": 13748
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineRoundE.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineRoundE.glb",
+          "bytes": 15308
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineRoundF.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineRoundF.glb",
+          "bytes": 16264
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineSmallA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineSmallA.glb",
+          "bytes": 12820
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineSmallB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineSmallB.glb",
+          "bytes": 7816
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineSmallC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineSmallC.glb",
+          "bytes": 5376
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineSmallD.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineSmallD.glb",
+          "bytes": 5368
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineTallA.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineTallA.glb",
+          "bytes": 7200
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineTallA_detailed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineTallA_detailed.glb",
+          "bytes": 10708
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineTallB.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineTallB.glb",
+          "bytes": 7204
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineTallB_detailed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineTallB_detailed.glb",
+          "bytes": 12632
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineTallC.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineTallC.glb",
+          "bytes": 8080
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineTallC_detailed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineTallC_detailed.glb",
+          "bytes": 11588
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineTallD.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineTallD.glb",
+          "bytes": 8080
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_pineTallD_detailed.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_pineTallD_detailed.glb",
+          "bytes": 12548
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_plateau.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_plateau.glb",
+          "bytes": 16304
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_plateau_dark.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_plateau_dark.glb",
+          "bytes": 16308
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_plateau_fall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_plateau_fall.glb",
+          "bytes": 16296
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_simple.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_simple.glb",
+          "bytes": 6500
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_simple_dark.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_simple_dark.glb",
+          "bytes": 6508
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_simple_fall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_simple_fall.glb",
+          "bytes": 6496
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_small.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_small.glb",
+          "bytes": 6500
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_small_dark.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_small_dark.glb",
+          "bytes": 11092
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_small_fall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_small_fall.glb",
+          "bytes": 6492
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_tall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_tall.glb",
+          "bytes": 7000
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_tall_dark.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_tall_dark.glb",
+          "bytes": 7008
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_tall_fall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_tall_fall.glb",
+          "bytes": 12088
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_thin.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_thin.glb",
+          "bytes": 17200
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_thin_dark.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_thin_dark.glb",
+          "bytes": 32488
+        }
+      ]
+    },
+    "/assets/models/kenney-nature/tree_thin_fall.glb": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/kenney-nature/tree_thin_fall.glb",
+          "bytes": 17192
+        }
+      ]
+    },
+    "/assets/models/quaternius-characters/Superhero_Female_FullBody.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/quaternius-characters/Superhero_Female_FullBody.gltf",
+          "bytes": 31652
+        },
+        {
+          "url": "/assets/models/quaternius-characters/Superhero_Female_FullBody.bin",
+          "bytes": 990808
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Eye_Brown.png",
+          "bytes": 35958
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Eye_Normal.png",
+          "bytes": 15099
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Hair_2_BaseColor.png",
+          "bytes": 1729467
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Hair_2_Normal.png",
+          "bytes": 4710013
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Superhero_Female_Dark_BaseColor.png",
+          "bytes": 1319410
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Superhero_Female_Normal.png",
+          "bytes": 3940537
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Superhero_Female_Roughness.png",
+          "bytes": 3277022
+        }
+      ]
+    },
+    "/assets/models/quaternius-characters/Superhero_Male_FullBody.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/quaternius-characters/Superhero_Male_FullBody.gltf",
+          "bytes": 30981
+        },
+        {
+          "url": "/assets/models/quaternius-characters/Superhero_Male_FullBody.bin",
+          "bytes": 720076
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Eye_Brown.png",
+          "bytes": 35958
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Eye_Normal.png",
+          "bytes": 15099
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Hair_1_BaseColor.png",
+          "bytes": 1570376
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Hair_1_Normal.png",
+          "bytes": 4326126
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Superhero_Male_Dark.png",
+          "bytes": 1384380
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Superhero_Male_Normal.png",
+          "bytes": 4252937
+        },
+        {
+          "url": "/assets/models/quaternius-characters/T_Superhero_Male_Roughness.png",
+          "bytes": 3152049
+        }
+      ]
+    },
+    "/assets/models/quaternius-weapons/laser.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/quaternius-weapons/laser.gltf",
+          "bytes": 34361
+        }
+      ]
+    },
+    "/assets/models/quaternius-weapons/pistol.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/quaternius-weapons/pistol.gltf",
+          "bytes": 59877
+        }
+      ]
+    },
+    "/assets/models/quaternius-weapons/rifle.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/quaternius-weapons/rifle.gltf",
+          "bytes": 81480
+        }
+      ]
+    },
+    "/assets/models/quaternius-weapons/rocket-launcher.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/quaternius-weapons/rocket-launcher.gltf",
+          "bytes": 73120
+        }
+      ]
+    },
+    "/assets/models/quaternius-weapons/sniper.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/quaternius-weapons/sniper.gltf",
+          "bytes": 117007
+        }
+      ]
+    }
+  }
+}

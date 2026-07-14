@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { clone as cloneSkeleton, retargetClip } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { CatalogItem, HomeState, PublicUser, RemotePlayer } from "../types";
 import {
+  CHARACTER_ANIMATION_URL,
   isLocomotionMotion,
   WEAPON_MODELS,
   type BodyPart,
@@ -974,8 +975,6 @@ function makeOutfitDecalTexture(item: CatalogItem | undefined, kind: OutfitDecal
   texture.needsUpdate = true;
   return texture;
 }
-
-const CHARACTER_ANIMATION_URL = "/assets/animations/quaternius-universal/UAL1_Standard.glb";
 
 const MOTION_CLIPS: Record<CharacterMotion, string> = {
   idle: "Idle_Loop",

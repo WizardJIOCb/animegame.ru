@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { AdminPanel } from "./components/AdminPanel";
 import { AuthScreen } from "./components/AuthScreen";
+import { createGameAssetPlan, GameAssetGate } from "./components/GameAssetGate";
 import { NeighborhoodPanel } from "./components/NeighborhoodPanel";
 import { buy, claimNeighborhoodIncome, earn, getCatalog, getHome, getNeighborhood, getPlayers, getToken, login, me, movePlacedItem, place, register, rotatePlacedItem, scalePlacedItem, sellPlacedItem, setToken, updateHomeStyle, upgradeCareer, upgradeHouse } from "./api";
 import { trackGoal, trackItemGoal, trackPurchase } from "./analytics";
@@ -862,6 +863,10 @@ export default function App() {
   const selectedScale = selectedPlaced ? selectedPlaced.scale ?? 1 : 1;
   const ownNeighborhoodResident = neighborhood?.residents.find((resident) => resident.username === user?.username);
   const voiceLabel = voiceState === "connecting" ? "Connecting" : voiceState === "on" ? "Voice on" : "Voice";
+  const gameAssetPlan = useMemo(
+    () => createGameAssetPlan(catalog, home, neighborhood),
+    [catalog, home, neighborhood]
+  );
 
   if (!user || !home) {
     return <AuthScreen onSubmit={handleAuth} error={error} />;
@@ -877,7 +882,8 @@ export default function App() {
       : "Улица · рядом с моим домом";
 
   return (
-    <main className="app-shell">
+    <GameAssetGate plan={gameAssetPlan} onExit={logout}>
+      <main className="app-shell">
       <section className="topbar">
         <div className="brand"><Home size={20} /> AnimeGame</div>
         <div className="home-title">
@@ -1179,6 +1185,7 @@ export default function App() {
           )}
         </aside>
       </section>
-    </main>
+      </main>
+    </GameAssetGate>
   );
 }

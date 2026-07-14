@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "assets:manifest": "node scripts/generate-game-asset-manifest.mjs",
+    "predev": "npm run assets:manifest",
     "dev": "concurrently -n server,client -c cyan,magenta \"npm:dev:server\" \"npm:dev:client\"",
     "dev:client": "vite --host 0.0.0.0",
     "dev:server": "tsx watch src/server/index.ts",
+    "prebuild": "npm run assets:manifest",
     "build": "tsc --noEmit && vite build",
     "start": "tsx src/server/index.ts"
   },
