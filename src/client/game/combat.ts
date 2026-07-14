@@ -10,9 +10,10 @@ export type CharacterMotion =
   | "crouchWalk"
   | "aim"
   | "shoot"
+  | "reload"
   | "death";
 
-export type UpperBodyMotion = "aim" | "shoot";
+export type UpperBodyMotion = "aim" | "shoot" | "reload";
 
 export type WeaponRecoilState = {
   x: number;
@@ -49,6 +50,15 @@ export type RagdollImpact = {
   velocity: [number, number, number];
 };
 
+export type CharacterBloodMark = {
+  id: number;
+  boneName: string;
+  localPoint: [number, number, number];
+  localNormal: [number, number, number];
+  radius: number;
+  rotation: number;
+};
+
 export type WeaponConfig = {
   label: string;
   shortLabel: string;
@@ -57,10 +67,14 @@ export type WeaponConfig = {
   cooldownMs: number;
   color: string;
   tracerWidth: number;
+  tracerSpeed: number;
+  tracerLength: number;
   impactImpulse: number;
   recoilPitch: number;
   recoilYaw: number;
   recoilKick: number;
+  magazineSize: number;
+  reloadMs: number;
   blastRadius?: number;
   blastImpulse?: number;
 };
@@ -139,10 +153,14 @@ export const WEAPONS: Record<WeaponKind, WeaponConfig> = {
     cooldownMs: 330,
     color: "#ffd166",
     tracerWidth: 0.018,
+    tracerSpeed: 280,
+    tracerLength: 0.85,
     impactImpulse: 2.8,
     recoilPitch: 0.018,
     recoilYaw: 0.011,
-    recoilKick: 0.045
+    recoilKick: 0.045,
+    magazineSize: 12,
+    reloadMs: 1700
   },
   rifle: {
     label: "Автомат",
@@ -152,10 +170,14 @@ export const WEAPONS: Record<WeaponKind, WeaponConfig> = {
     cooldownMs: 125,
     color: "#ff9f43",
     tracerWidth: 0.022,
+    tracerSpeed: 360,
+    tracerLength: 1,
     impactImpulse: 2.35,
     recoilPitch: 0.011,
     recoilYaw: 0.012,
-    recoilKick: 0.036
+    recoilKick: 0.036,
+    magazineSize: 30,
+    reloadMs: 1700
   },
   rocket: {
     label: "Ракетница",
@@ -165,10 +187,14 @@ export const WEAPONS: Record<WeaponKind, WeaponConfig> = {
     cooldownMs: 1050,
     color: "#ff5d5d",
     tracerWidth: 0.075,
+    tracerSpeed: 500,
+    tracerLength: 1.9,
     impactImpulse: 5.4,
     recoilPitch: 0.028,
     recoilYaw: 0.018,
     recoilKick: 0.075,
+    magazineSize: 1,
+    reloadMs: 1700,
     blastRadius: 3.4,
     blastImpulse: 6.8
   },
@@ -180,10 +206,14 @@ export const WEAPONS: Record<WeaponKind, WeaponConfig> = {
     cooldownMs: 210,
     color: "#5ef2ff",
     tracerWidth: 0.036,
+    tracerSpeed: 520,
+    tracerLength: 2.8,
     impactImpulse: 3.6,
     recoilPitch: 0.009,
     recoilYaw: 0.008,
-    recoilKick: 0.025
+    recoilKick: 0.025,
+    magazineSize: 20,
+    reloadMs: 1700
   },
   sniper: {
     label: "Снайперская винтовка",
@@ -193,10 +223,14 @@ export const WEAPONS: Record<WeaponKind, WeaponConfig> = {
     cooldownMs: 900,
     color: "#d8b4fe",
     tracerWidth: 0.014,
+    tracerSpeed: 650,
+    tracerLength: 1.2,
     impactImpulse: 5.2,
     recoilPitch: 0.034,
     recoilYaw: 0.017,
-    recoilKick: 0.082
+    recoilKick: 0.082,
+    magazineSize: 5,
+    reloadMs: 1700
   }
 };
 

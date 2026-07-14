@@ -1,6 +1,6 @@
 import { Html, OrbitControls, Sparkles, useGLTF } from "@react-three/drei";
 import { Canvas, createPortal, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import * as THREE from "three";
 import { clone as cloneSkeleton, retargetClip } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { CatalogItem, HomeState, PublicUser, RemotePlayer } from "../types";
@@ -9,6 +9,7 @@ import {
   isLocomotionMotion,
   WEAPON_MODELS,
   type BodyPart,
+  type CharacterBloodMark,
   type CharacterMotion,
   type RagdollImpact,
   type UpperBodyMotion,
@@ -988,6 +989,7 @@ const MOTION_CLIPS: Record<CharacterMotion, string> = {
   crouchWalk: "Crouch_Fwd_Loop",
   aim: "Pistol_Aim_Neutral",
   shoot: "Pistol_Shoot",
+  reload: "Pistol_Reload",
   death: "Death01"
 };
 
@@ -1003,10 +1005,11 @@ const MOTION_SPEED: Record<CharacterMotion, number> = {
   crouchWalk: 1.3,
   aim: 1,
   shoot: 1.75,
+  reload: 1,
   death: 1
 };
 
-const ONE_SHOT_MOTIONS = new Set<CharacterMotion>(["jumpStart", "jumpLand", "shoot", "death"]);
+const ONE_SHOT_MOTIONS = new Set<CharacterMotion>(["jumpStart", "jumpLand", "shoot", "reload", "death"]);
 const retargetedAnimationCache = new Map<string, Map<string, THREE.AnimationClip>>();
 const BONE_TRACK_PATTERN = /^\.bones\[([^\]]+)\]\./;
 
@@ -1115,7 +1118,7 @@ function updateCharacterAnimationLayer(
   next.clampWhenFinished = ONE_SHOT_MOTIONS.has(desiredMotion);
   next.setLoop(ONE_SHOT_MOTIONS.has(desiredMotion) ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
   next.reset();
-  if (phaseSource && desiredMotion !== "shoot") {
+  if (phaseSource && desiredMotion !== "shoot" && desiredMotion !== "reload") {
     const sourceDuration = phaseSource.getClip().duration;
     if (sourceDuration > 0 && clip.duration > 0) {
       const normalizedPhase = THREE.MathUtils.euclideanModulo(phaseSource.time, sourceDuration) / sourceDuration;
@@ -1130,6 +1133,8 @@ function updateCharacterAnimationLayer(
       ? 0.08
       : desiredMotion === "shoot"
         ? 0.05
+        : desiredMotion === "reload"
+          ? 0.08
         : desiredMotion === "jumpStart" || desiredMotion === "jumpLand"
           ? 0.22
           : 0.14;
@@ -1640,7 +1645,9 @@ function BoneCombatHitbox({
     combatHitbox: true,
     username,
     bodyPart: spec.bodyPart,
-    boneName: spec.boneName
+    boneName: spec.boneName,
+    combatBone: binding.bone,
+    combatRoot: targetScene
   };
 
   return createPortal(
@@ -1682,6 +1689,120 @@ function CharacterCombatHitboxes({
       onCombatHit={onCombatHit}
     />
   ));
+}
+
+function createCharacterBloodTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  if (!context) return new THREE.Texture();
+
+  context.translate(64, 64);
+  const gradient = context.createRadialGradient(-7, -8, 3, 0, 0, 54);
+  gradient.addColorStop(0, "rgba(255,255,255,1)");
+  gradient.addColorStop(0.28, "rgba(255,255,255,0.98)");
+  gradient.addColorStop(0.7, "rgba(255,255,255,0.72)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = gradient;
+  context.beginPath();
+  const points = 22;
+  for (let index = 0; index < points; index += 1) {
+    const angle = index / points * Math.PI * 2;
+    const wave = Math.sin(index * 5.31) * 0.13 + Math.sin(index * 9.17) * 0.08;
+    const radius = 42 * (0.82 + wave);
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius * 0.88;
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  }
+  context.closePath();
+  context.fill();
+  context.fillStyle = "rgba(255,255,255,0.78)";
+  [[-44, 17, 5], [37, -29, 4], [28, 39, 3.5], [-25, -42, 2.8]].forEach(([x, y, radius]) => {
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
+  });
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function CharacterBloodMarks({
+  targetScene,
+  marks
+}: {
+  targetScene: THREE.Object3D;
+  marks: CharacterBloodMark[];
+}) {
+  const resources = useMemo(() => {
+    const texture = createCharacterBloodTexture();
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      color: "#8f101b",
+      transparent: true,
+      opacity: 0.96,
+      alphaTest: 0.08,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
+      toneMapped: false
+    });
+    return { texture, geometry, material };
+  }, []);
+  const resourceGeneration = useRef(0);
+  const placements = useMemo(() => marks.flatMap((mark) => {
+    const bone = targetScene.getObjectByName(mark.boneName);
+    if (!(bone instanceof THREE.Bone)) return [];
+    const normal = new THREE.Vector3().fromArray(mark.localNormal);
+    if (normal.lengthSq() < 0.000001) normal.set(0, 0, 1);
+    else normal.normalize();
+    const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+    quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), mark.rotation));
+    return [{ mark, bone, quaternion }];
+  }), [marks, targetScene]);
+
+  useEffect(() => {
+    const generation = ++resourceGeneration.current;
+    return () => {
+      queueMicrotask(() => {
+        if (resourceGeneration.current !== generation) return;
+        resources.geometry.dispose();
+        resources.material.dispose();
+        resources.texture.dispose();
+      });
+    };
+  }, [resources]);
+
+  return (
+    <>
+      {placements.map(({ mark, bone, quaternion }) => (
+        <Fragment key={mark.id}>
+          {createPortal(
+            <mesh
+              dispose={null}
+              geometry={resources.geometry}
+              material={resources.material}
+              position={mark.localPoint}
+              quaternion={quaternion}
+              scale={[mark.radius * 2, mark.radius * 2, 1]}
+              renderOrder={6}
+              raycast={() => null}
+            />,
+            bone
+          )}
+        </Fragment>
+      ))}
+    </>
+  );
 }
 
 function WeaponAttachment({
@@ -1773,7 +1894,7 @@ function WeaponAttachment({
   useFrame((_, delta) => {
     const recoil = recoilRef?.current;
     const target = aimTargetRef?.current;
-    const aimingWeapon = Boolean(target && upperMotionRef?.current);
+    const aimingWeapon = Boolean(target && upperMotionRef?.current && upperMotionRef.current !== "reload");
     recoilPivot.position.y = THREE.MathUtils.lerp(
       recoilPivot.position.y,
       -(recoil?.kick ?? 0),
@@ -1840,6 +1961,7 @@ function CharacterModel({
   actionNonce,
   actionNonceRef,
   upperMotionRef,
+  bloodMarks,
   combatUsername,
   combatDead = false,
   onCombatHit,
@@ -1857,6 +1979,7 @@ function CharacterModel({
   actionNonce?: number;
   actionNonceRef?: RefObject<number>;
   upperMotionRef?: RefObject<UpperBodyMotion | null>;
+  bloodMarks?: CharacterBloodMark[];
   combatUsername?: string;
   combatDead?: boolean;
   onCombatHit?: (event: ThreeEvent<MouseEvent>) => void;
@@ -1932,6 +2055,9 @@ function CharacterModel({
   return (
     <>
       <primitive object={scene} scale={item.modelScale ?? 1} />
+      {bloodMarks && bloodMarks.length > 0 ? (
+        <CharacterBloodMarks targetScene={scene} marks={bloodMarks} />
+      ) : null}
       {combatUsername && onCombatHit ? (
         <CharacterCombatHitboxes
           targetScene={scene}
@@ -2387,6 +2513,7 @@ export function Player({
   actionNonce = 0,
   actionNonceRef,
   upperMotionRef,
+  bloodMarks,
   rotation = 0,
   rotationRef,
   teleportNonce = 0,
@@ -2416,6 +2543,7 @@ export function Player({
   actionNonce?: number;
   actionNonceRef?: RefObject<number>;
   upperMotionRef?: RefObject<UpperBodyMotion | null>;
+  bloodMarks?: CharacterBloodMark[];
   rotation?: number;
   rotationRef?: RefObject<number>;
   teleportNonce?: number;
@@ -2511,6 +2639,7 @@ export function Player({
                 actionNonce={actionNonce}
                 actionNonceRef={actionNonceRef}
                 upperMotionRef={upperMotionRef}
+                bloodMarks={bloodMarks}
                 combatUsername={combatUsername}
                 combatDead={combatDead}
                 onCombatHit={onCombatHit}
