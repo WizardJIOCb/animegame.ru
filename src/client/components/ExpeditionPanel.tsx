@@ -6,6 +6,7 @@ import {
   Check,
   ChevronRight,
   CircleDollarSign,
+  Crown,
   Cpu,
   Crosshair,
   DoorOpen,
@@ -20,22 +21,29 @@ import {
   Shield,
   ShieldAlert,
   ShoppingCart,
+  SlidersHorizontal,
   Sparkles,
+  Swords,
   Target,
+  Trophy,
   UserPlus,
   Users,
   Wrench,
+  Zap,
   X,
   type LucideIcon
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   EXPEDITION_AMMO_PACK,
   EXPEDITION_ARTIFACT_IDS,
   EXPEDITION_ARTIFACTS,
   EXPEDITION_GEAR,
   EXPEDITION_GEAR_IDS,
+  EXPEDITION_GEAR_MAX_UPGRADE,
   EXPEDITION_ITEMS,
+  EXPEDITION_QUEST_IDS,
+  EXPEDITION_QUESTS,
   EXPEDITION_RECIPES,
   EXPEDITION_RECIPE_IDS,
   EXPEDITION_SKILLS,
@@ -44,15 +52,22 @@ import {
   EXPEDITION_TRADER_SELL_PRICES,
   EXPEDITION_WEAPONS,
   EXPEDITION_WEAPON_IDS,
+  EXPEDITION_WEAPON_UPGRADE_PATHS,
+  EXPEDITION_WEAPON_UPGRADE_STATS,
+  expeditionGearUpgradeCost,
+  expeditionWeaponStats,
+  expeditionWeaponUpgradeCost,
   type ExpeditionArtifactId,
   type ExpeditionGearId,
   type ExpeditionGearSlot,
   type ExpeditionItemId,
   type ExpeditionProfile,
+  type ExpeditionQuestId,
   type ExpeditionRecipeId,
   type ExpeditionRunSnapshot,
   type ExpeditionSkillId,
   type ExpeditionWeaponId,
+  type ExpeditionWeaponUpgradeStat,
   type ItemStack,
   type PartyInvite,
   type PartySnapshot
@@ -108,8 +123,14 @@ export type ExpeditionPanelProps = {
   skillTreeNodes?: ProgressionSkillNode[];
   onEquipGear?: (slot: ExpeditionGearSlot, gearId: ExpeditionGearId | null) => void;
   onUpgradeTreeSkill?: (nodeId: string) => void;
+  onUpgradeWeapon?: (weaponId: ExpeditionWeaponId, stat: ExpeditionWeaponUpgradeStat) => void;
+  onUpgradeGear?: (gearId: ExpeditionGearId) => void;
+  onClaimQuest?: (questId: ExpeditionQuestId) => void;
   requestedTab?: ProgressionTabId;
+  requestedTabRevision?: number;
+  onClose?: () => void;
 };
+
 
 const EQUIPMENT_SLOTS: Array<{
   id: ExpeditionEquipmentSlotId;
@@ -147,6 +168,7 @@ function stackValue(stack: ItemStack) {
 }
 
 function ItemArt({ itemId }: { itemId: ExpeditionItemId }) {
+  const item = EXPEDITION_ITEMS[itemId];
   let Icon: LucideIcon = Package;
   if (["scrap", "alloy", "weapon-parts"].includes(itemId)) Icon = Wrench;
   if (itemId === "explosive-compound" || itemId.startsWith("grenade-")) Icon = Bomb;
@@ -162,6 +184,10 @@ function ItemArt({ itemId }: { itemId: ExpeditionItemId }) {
   if (itemId === "electronics") Icon = Cpu;
   if (itemId === "shield-module") Icon = Shield;
   if (itemId === "rifle-blueprint") Icon = FileText;
+  if (item.category === "gear") Icon = Shield;
+  if (item.category === "artifact") Icon = Radar;
+  if (itemId === "upgrade-core") Icon = SlidersHorizontal;
+  if (["colossus-core", "storm-crystal", "void-shard"].includes(itemId)) Icon = Sparkles;
 
   return (
     <span className={`progression-item-art progression-item-art-${itemId}`} aria-hidden="true">
@@ -258,7 +284,12 @@ export function ExpeditionPanel({
   skillTreeNodes,
   onEquipGear,
   onUpgradeTreeSkill,
-  requestedTab
+  onUpgradeWeapon,
+  onUpgradeGear,
+  onClaimQuest,
+  requestedTab,
+  requestedTabRevision,
+  onClose
 }: ExpeditionPanelProps) {
   const [activeTab, setActiveTab] = useState<ProgressionTabId>(requestedTab ?? "raid");
   const runId = run?.id;
@@ -269,7 +300,7 @@ export function ExpeditionPanel({
 
   useEffect(() => {
     if (requestedTab) setActiveTab(requestedTab);
-  }, [requestedTab]);
+  }, [requestedTab, requestedTabRevision]);
 
   const objective = run?.objective;
   const powerCells = objective?.powerCells ?? 0;
@@ -492,6 +523,61 @@ export function ExpeditionPanel({
     );
   }
 
+  function renderQuestsTab() {
+    return (
+      <div className="progression-tab-stack progression-quests-tab">
+        <section className="progression-section-heading">
+          <div><span>КОНТРАКТЫ // 02</span><h2>Задания и особые цели</h2><p>Принимайте задания у связных в городе, исследуйте дальние территории и возвращайтесь за уникальной наградой.</p></div>
+          <Trophy size={28} />
+        </section>
+
+        <div className="progression-quest-grid">
+          {EXPEDITION_QUEST_IDS.map((questId, index) => {
+            const quest = EXPEDITION_QUESTS[questId];
+            const state = profile.quests[questId];
+            const progress = Math.min(quest.target, Math.max(0, state.progress));
+            const complete = state.completed;
+            const claimed = state.claimed;
+            const locked = index > 0 && profile.stats.successfulExtracts < 1 && !complete;
+            const percent = Math.round(progress / quest.target * 100);
+            const rewardItems = quest.reward.items.map((stack) => `${EXPEDITION_ITEMS[stack.itemId].name} ×${stack.quantity}`).join(" · ");
+            const eyebrow = quest.kind === "boss" ? "ОСОБАЯ ЦЕЛЬ · БОСС" : quest.kind === "containers" ? "ПОИСКОВЫЙ КОНТРАКТ" : "ВВОДНЫЙ КОНТРАКТ";
+
+            return (
+              <article className={`progression-quest-card ${complete ? "is-complete" : ""} ${locked ? "is-locked" : ""}`} style={{ "--quest-accent": quest.accent } as CSSProperties} key={quest.id}>
+                <header>
+                  <span>{index === 0 ? <Target size={23} /> : <Crown size={23} />}</span>
+                  <div><small>{eyebrow} · {quest.giver}</small><h3>{quest.name}</h3></div>
+                  <em>{claimed ? "ПОЛУЧЕНО" : complete ? "ЗАВЕРШЕНО" : locked ? "ЗАКРЫТО" : "АКТИВНО"}</em>
+                </header>
+                <p>{quest.description}</p>
+                <div className="progression-quest-progress">
+                  <span><i style={{ width: `${percent}%` }} /></span>
+                  <b>{progress}/{quest.target}</b>
+                </div>
+                <footer>
+                  <div><small>НАГРАДА</small><b><CircleDollarSign size={13} /> {formatPrice(quest.reward.coins)} · {quest.reward.skillPoints} очк. навыков</b><span>{rewardItems}</span></div>
+                  {locked ? (
+                    <button type="button" disabled><ShieldAlert size={15} /> Нужна первая эвакуация</button>
+                  ) : (
+                    <button type="button" disabled={busy || Boolean(run) || !complete || claimed || !onClaimQuest} onClick={() => onClaimQuest?.(quest.id)}>
+                      {claimed ? <><Check size={15} /> Получено</> : complete ? <><Trophy size={15} /> Забрать</> : <>Выполнить контракт <ChevronRight size={15} /></>}
+                    </button>
+                  )}
+                </footer>
+              </article>
+            );
+          })}
+        </div>
+
+        <div className="progression-contract-note">
+          <Swords size={19} />
+          <div><b>Контракты отслеживаются автоматически</b><span>Личный прогресс обновляется сразу; группа помогает добраться до целей и эвакуации.</span></div>
+        </div>
+      </div>
+    );
+  }
+
   function renderInventoryTab() {
     return (
       <div className="progression-tab-stack">
@@ -667,6 +753,85 @@ export function ExpeditionPanel({
     );
   }
 
+  function renderUpgradesTab() {
+    const upgradeableGear = EXPEDITION_GEAR_IDS.filter((gearId) => (
+      ownedGearIds.includes(gearId) || Object.values(profile.equippedGear).includes(gearId)
+    ));
+
+    return (
+      <div className="progression-tab-stack progression-upgrades-tab">
+        <section className="progression-section-heading">
+          <div><span>МАСТЕРСКАЯ // 05</span><h2>Модификации</h2><p>Усиливайте любимое оружие и броню. Каждый следующий уровень требует больше редких компонентов.</p></div>
+          <SlidersHorizontal size={28} />
+        </section>
+
+        {run ? (
+          <div className="progression-lockdown"><ShieldAlert size={19} /><span><b>Верстак недоступен в рейде</b>Модификации можно устанавливать только на базе.</span></div>
+        ) : null}
+
+        <section className="expedition-card progression-upgrade-section">
+          <div className="expedition-card-title"><Crosshair size={18} /><span>Оружейная платформа</span><small>3 ВЕТКИ · 5 УРОВНЕЙ</small></div>
+          <div className="progression-upgrade-weapon-list">
+            {unlockedWeapons.map((weaponId) => {
+              const weapon = EXPEDITION_WEAPONS[weaponId];
+              const levels = profile.weaponUpgrades[weaponId];
+              const upgradedStats = expeditionWeaponStats(weaponId, levels);
+              return (
+                <article className="progression-upgrade-platform" key={weaponId}>
+                  <header>
+                    <span className="progression-weapon-art"><Crosshair size={25} /><i /></span>
+                    <div><small>{profile.selectedWeapon === weaponId ? "АКТИВНАЯ ПЛАТФОРМА" : "ОРУЖИЕ В ТАЙНИКЕ"}</small><h3>{weapon.name}</h3><em>Урон {upgradedStats.damage} · Дальность {Math.round(upgradedStats.range)} м · Темп {upgradedStats.fireIntervalMs} мс</em></div>
+                  </header>
+                  <div className="progression-upgrade-paths">
+                    {EXPEDITION_WEAPON_UPGRADE_STATS.map((stat) => {
+                      const path = EXPEDITION_WEAPON_UPGRADE_PATHS[stat];
+                      const level = levels[stat] ?? 0;
+                      const maxed = level >= path.maxLevel;
+                      const cost = expeditionWeaponUpgradeCost(stat, level);
+                      const hasMaterials = cost.ingredients.every((ingredient) => itemQuantity(profile.stash, ingredient.itemId) >= ingredient.quantity);
+                      const statIcon = stat === "damage" ? <Zap size={18} /> : stat === "range" ? <Target size={18} /> : <Gauge size={18} />;
+                      return (
+                        <div className={`progression-upgrade-path path-${stat} ${maxed ? "is-maxed" : ""}`} key={stat}>
+                          <span>{statIcon}</span>
+                          <div><b>{path.name}</b><small>{path.description}</small><i>{Array.from({ length: path.maxLevel }, (_, index) => <em className={index < level ? "is-filled" : ""} key={index} />)}</i></div>
+                          <div className="progression-upgrade-cost"><b>{maxed ? "MAX" : <><CircleDollarSign size={12} /> {formatPrice(cost.coins)}</>}</b>{!maxed ? <small>{cost.ingredients.map((ingredient) => `${EXPEDITION_ITEMS[ingredient.itemId].name} ${itemQuantity(profile.stash, ingredient.itemId)}/${ingredient.quantity}`).join(" · ")}</small> : null}</div>
+                          <button type="button" disabled={busy || Boolean(run) || maxed || coins < cost.coins || !hasMaterials || !onUpgradeWeapon} onClick={() => onUpgradeWeapon?.(weaponId, stat)}>{maxed ? <Check size={15} /> : <Wrench size={15} />}{maxed ? "Готово" : "Улучшить"}</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="expedition-card progression-upgrade-section">
+          <div className="expedition-card-title"><Shield size={18} /><span>Усиление экипировки</span><small>БРОНЯ И ЩИТ</small></div>
+          {upgradeableGear.length > 0 ? (
+            <div className="progression-gear-upgrades">
+              {upgradeableGear.map((gearId) => {
+                const gear = EXPEDITION_GEAR[gearId];
+                const level = profile.gearUpgrades[gearId];
+                const maxed = level >= EXPEDITION_GEAR_MAX_UPGRADE;
+                const cost = expeditionGearUpgradeCost(level);
+                const hasMaterials = cost.ingredients.every((ingredient) => itemQuantity(profile.stash, ingredient.itemId) >= ingredient.quantity);
+                return (
+                  <article className={maxed ? "is-maxed" : ""} key={gearId}>
+                    <ItemArt itemId={gearId} />
+                    <div><small>{gear.slot === "helmet" ? "ШЛЕМ" : gear.slot === "armor" ? "БРОНЯ" : "НОГИ"}</small><b>{gear.name}</b><span>{Math.round(gear.damageReduction * (1 + level * 0.03) * 100)}% защиты · +{Math.round(gear.bonusShield * (1 + level * 0.08))} щита</span><i>{Array.from({ length: EXPEDITION_GEAR_MAX_UPGRADE }, (_, index) => <em className={index < level ? "is-filled" : ""} key={index} />)}</i></div>
+                    <div className="progression-upgrade-cost"><b>{maxed ? "MAX" : <><CircleDollarSign size={12} /> {formatPrice(cost.coins)}</>}</b>{!maxed ? <small>{cost.ingredients.map((ingredient) => `${EXPEDITION_ITEMS[ingredient.itemId].name} ${itemQuantity(profile.stash, ingredient.itemId)}/${ingredient.quantity}`).join(" · ")}</small> : null}</div>
+                    <button type="button" disabled={busy || Boolean(run) || maxed || coins < cost.coins || !hasMaterials || !onUpgradeGear} onClick={() => onUpgradeGear?.(gearId)}>{maxed ? <Check size={15} /> : <Shield size={15} />}{maxed ? "Готово" : "Усилить"}</button>
+                  </article>
+                );
+              })}
+            </div>
+          ) : <div className="expedition-empty">Сначала получите предмет экипировки у торговца, из контракта или на верстаке.</div>}
+        </section>
+      </div>
+    );
+  }
+
   function renderTradersTab() {
     return (
       <div className="progression-tab-stack progression-traders-tab">
@@ -737,13 +902,17 @@ export function ExpeditionPanel({
 
   const tabContent = activeTab === "raid"
     ? renderRaidTab()
+    : activeTab === "quests"
+      ? renderQuestsTab()
     : activeTab === "inventory"
       ? renderInventoryTab()
-      : activeTab === "skills"
-        ? renderSkillsTab()
-        : activeTab === "equipment"
-          ? renderEquipmentTab()
-          : renderTradersTab();
+      : activeTab === "equipment"
+        ? renderEquipmentTab()
+        : activeTab === "upgrades"
+          ? renderUpgradesTab()
+          : activeTab === "skills"
+            ? renderSkillsTab()
+            : renderTradersTab();
 
   return (
     <ProgressionHub
@@ -753,6 +922,7 @@ export function ExpeditionPanel({
       runActive={Boolean(run)}
       busy={busy}
       onTabChange={setActiveTab}
+      onClose={onClose}
     >
       {tabContent}
     </ProgressionHub>

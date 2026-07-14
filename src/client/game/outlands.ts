@@ -1,6 +1,6 @@
-export const OUTLANDS_MIN_X = -170;
-export const OUTLANDS_MAX_X = 170;
-export const OUTLANDS_MIN_Z = -330;
+export const OUTLANDS_MIN_X = -420;
+export const OUTLANDS_MAX_X = 420;
+export const OUTLANDS_MIN_Z = -1400;
 export const OUTLANDS_ENTRY_Z = -88;
 export const EXTRACTION_POSITION = [0, 0, -91] as const;
 export const EXTRACTION_RADIUS = 7;
@@ -9,11 +9,36 @@ export function isAtExtractionCheckpoint(x: number, z: number) {
   return Math.abs(x) <= 14 && z >= -100 && z <= -82;
 }
 
-export type WorldRegion = "city" | "checkpoint" | "forest" | "depot" | "quarry" | "ruins";
+export type WorldRegion =
+  | "city"
+  | "checkpoint"
+  | "forest"
+  | "depot"
+  | "quarry"
+  | "ruins"
+  | "marsh"
+  | "relay"
+  | "fortress"
+  | "iceRidge"
+  | "reactor";
 export type OutlandsEnemyKind = "eyeDrone" | "quadShell" | "human";
 export type OutlandsFaction = "neutral" | "hostile";
 export type OutlandsAttackStyle = "melee" | "ranged";
-export type OutlandsEnemyBehavior = "patrol" | "sentinel" | "artillery" | "tank" | "stalker" | "skirmisher" | "brute";
+export type OutlandsEnemyBehavior =
+  | "patrol"
+  | "sentinel"
+  | "artillery"
+  | "tank"
+  | "stalker"
+  | "skirmisher"
+  | "brute"
+  | "support"
+  | "mine-layer"
+  | "medic"
+  | "mutant"
+  | "boss-colossus"
+  | "boss-seraph"
+  | "boss-warden";
 
 export type OutlandsEnemyVisualAttachment =
   | "none"
@@ -22,7 +47,14 @@ export type OutlandsEnemyVisualAttachment =
   | "bulwark-plates"
   | "stalker-spines"
   | "scout-rig"
-  | "heavy-rig";
+  | "heavy-rig"
+  | "skimmer-wings"
+  | "artificer-rack"
+  | "medic-pack"
+  | "mutant-frame"
+  | "colossus-frame"
+  | "seraph-wings"
+  | "void-crown";
 
 export type OutlandsEnemyVisualVariant = {
   kind: OutlandsEnemyKind;
@@ -121,6 +153,69 @@ export const OUTLAND_ENEMY_VISUAL_VARIANTS: Readonly<Record<string, OutlandsEnem
     emissive: "#a9321f",
     emissiveIntensity: 0.55,
     attachment: "heavy-rig"
+  },
+  "drone-skimmer": {
+    kind: "eyeDrone",
+    modelScale: 1.16,
+    tint: "#6d8f92",
+    accent: "#66ffe1",
+    emissive: "#12c7ae",
+    emissiveIntensity: 1.25,
+    attachment: "skimmer-wings"
+  },
+  "quad-artificer": {
+    kind: "quadShell",
+    modelScale: 1.24,
+    tint: "#7b6658",
+    accent: "#ffbb55",
+    emissive: "#e36a19",
+    emissiveIntensity: 1.05,
+    attachment: "artificer-rack"
+  },
+  "raider-medic": {
+    kind: "human",
+    modelScale: 1,
+    tint: "#d8e2dc",
+    accent: "#4fffc2",
+    emissive: "#18a97d",
+    emissiveIntensity: 0.82,
+    attachment: "medic-pack"
+  },
+  "mutant-brute": {
+    kind: "human",
+    modelScale: 1.42,
+    tint: "#776d52",
+    accent: "#d6ff5c",
+    emissive: "#6f9d1c",
+    emissiveIntensity: 0.9,
+    attachment: "mutant-frame"
+  },
+  "boss-iron-colossus": {
+    kind: "quadShell",
+    modelScale: 3.05,
+    tint: "#535d64",
+    accent: "#ffb13b",
+    emissive: "#ff5f1f",
+    emissiveIntensity: 1.55,
+    attachment: "colossus-frame"
+  },
+  "boss-storm-seraph": {
+    kind: "eyeDrone",
+    modelScale: 2.5,
+    tint: "#b9dbe7",
+    accent: "#9efcff",
+    emissive: "#4da8ff",
+    emissiveIntensity: 1.75,
+    attachment: "seraph-wings"
+  },
+  "boss-void-warden": {
+    kind: "human",
+    modelScale: 1.58,
+    tint: "#332d4c",
+    accent: "#dc83ff",
+    emissive: "#8a35df",
+    emissiveIntensity: 1.45,
+    attachment: "void-crown"
   }
 };
 
@@ -142,12 +237,21 @@ export type OutlandsEnemyDefinition = {
   behavior?: OutlandsEnemyBehavior;
   speed: number;
   respawnMs: number;
+  boss?: boolean;
   position: readonly [number, number, number];
   patrol: ReadonlyArray<readonly [number, number, number]>;
 };
 
 export type OutlandsContainerDefinition = {
-  id: "forest-cache" | "depot-alpha" | "quarry-cache" | "ruins-vault";
+  id:
+    | "forest-cache"
+    | "depot-alpha"
+    | "quarry-cache"
+    | "ruins-vault"
+    | "marsh-cache"
+    | "relay-armory"
+    | "fortress-vault"
+    | "reactor-core";
   name: string;
   danger: string;
   position: readonly [number, number, number];
@@ -325,6 +429,121 @@ export const OUTLAND_ENEMIES: readonly OutlandsEnemyDefinition[] = [
     respawnMs: 50_000,
     position: [8, 0, -260],
     patrol: [[8, 0, -260], [24, 0, -273], [12, 0, -295], [-8, 0, -280]]
+  },
+  {
+    id: "drone-skimmer",
+    name: "Болотный скиммер",
+    kind: "eyeDrone",
+    faction: "hostile",
+    maxHealth: 150,
+    damage: 17,
+    aggroRange: 54,
+    attackRange: 29,
+    attackStyle: "ranged",
+    behavior: "support",
+    speed: 4.4,
+    respawnMs: 46_000,
+    position: [178, 0, -474],
+    patrol: [[178, 0, -474], [224, 0, -506], [194, 0, -556], [142, 0, -523]]
+  },
+  {
+    id: "quad-artificer",
+    name: "Квад-минёр «Клепальщик»",
+    kind: "quadShell",
+    faction: "hostile",
+    maxHealth: 265,
+    damage: 28,
+    aggroRange: 48,
+    attackRange: 21,
+    attackStyle: "ranged",
+    behavior: "mine-layer",
+    speed: 2.45,
+    respawnMs: 58_000,
+    position: [-214, 0, -642],
+    patrol: [[-214, 0, -642], [-257, 0, -676], [-207, 0, -715], [-166, 0, -669]]
+  },
+  {
+    id: "raider-medic",
+    name: "Полевой медик «Мята»",
+    kind: "human",
+    faction: "hostile",
+    maxHealth: 175,
+    damage: 13,
+    aggroRange: 45,
+    attackRange: 24,
+    attackStyle: "ranged",
+    behavior: "medic",
+    speed: 3.15,
+    respawnMs: 52_000,
+    position: [92, 0, -802],
+    patrol: [[92, 0, -802], [132, 0, -833], [88, 0, -872], [51, 0, -836]]
+  },
+  {
+    id: "mutant-brute",
+    name: "Мутант «Костолом»",
+    kind: "human",
+    faction: "hostile",
+    maxHealth: 520,
+    damage: 46,
+    aggroRange: 39,
+    attackRange: 4.6,
+    attackStyle: "melee",
+    behavior: "mutant",
+    speed: 3.6,
+    respawnMs: 72_000,
+    position: [-244, 0, -1035],
+    patrol: [[-244, 0, -1035], [-292, 0, -1070], [-252, 0, -1124], [-196, 0, -1082]]
+  },
+  {
+    id: "boss-iron-colossus",
+    name: "БОСС · Железный Колосс",
+    kind: "quadShell",
+    faction: "hostile",
+    maxHealth: 2600,
+    damage: 65,
+    aggroRange: 72,
+    attackRange: 26,
+    attackStyle: "ranged",
+    behavior: "boss-colossus",
+    speed: 1.75,
+    respawnMs: 300_000,
+    boss: true,
+    position: [0, 0, -875],
+    patrol: [[0, 0, -875], [22, 0, -895], [0, 0, -919], [-22, 0, -895]]
+  },
+  {
+    id: "boss-storm-seraph",
+    name: "БОСС · Штормовой Серафим",
+    kind: "eyeDrone",
+    faction: "hostile",
+    maxHealth: 2100,
+    damage: 54,
+    aggroRange: 86,
+    attackRange: 40,
+    attackStyle: "ranged",
+    behavior: "boss-seraph",
+    speed: 4.1,
+    respawnMs: 300_000,
+    boss: true,
+    position: [238, 0, -1072],
+    patrol: [[238, 0, -1072], [280, 0, -1100], [238, 0, -1140], [196, 0, -1100]]
+  },
+  {
+    id: "boss-void-warden",
+    name: "БОСС · Страж Пустоты",
+    kind: "human",
+    faction: "hostile",
+    maxHealth: 2350,
+    damage: 61,
+    aggroRange: 78,
+    attackRange: 34,
+    attackStyle: "ranged",
+    behavior: "boss-warden",
+    speed: 2.8,
+    respawnMs: 300_000,
+    boss: true,
+    position: [0, 0, -1300],
+    patrol: [[0, 0, -1300], [28, 0, -1324], [0, 0, -1350], [-28, 0, -1324]]
   }
 ] as const;
 
@@ -356,6 +575,34 @@ export const OUTLAND_CONTAINERS: readonly OutlandsContainerDefinition[] = [
     danger: "ценная добыча",
     position: [-73, 0, -286],
     rotation: 0.15
+  },
+  {
+    id: "marsh-cache",
+    name: "Герметичный болотный тайник",
+    danger: "аномальная зона",
+    position: [196, 0, -548],
+    rotation: -0.62
+  },
+  {
+    id: "relay-armory",
+    name: "Оружейная релейной базы",
+    danger: "тяжёлая охрана",
+    position: [-221, 0, -681],
+    rotation: 1.42
+  },
+  {
+    id: "fortress-vault",
+    name: "Хранилище крепости",
+    danger: "логово босса",
+    position: [0, 0, -927],
+    rotation: Math.PI
+  },
+  {
+    id: "reactor-core",
+    name: "Ядро реактора",
+    danger: "экстремальная угроза",
+    position: [0, 0, -1347],
+    rotation: 0
   }
 ] as const;
 
@@ -375,9 +622,18 @@ export const OUTLAND_MODEL_URLS = [
   "/assets/models/kenney-nature/tree_pineTallA.glb",
   "/assets/models/kenney-nature/tree_pineTallB.glb",
   "/assets/models/kenney-nature/tree_pineSmallC.glb",
+  "/assets/models/kenney-nature/tree_pineRoundB.glb",
+  "/assets/models/kenney-nature/tree_pineDefaultA.glb",
+  "/assets/models/kenney-nature/tree_default_dark.glb",
+  "/assets/models/kenney-nature/plant_flatTall.glb",
+  "/assets/models/kenney-nature/plant_bushDetailed.glb",
+  "/assets/models/kenney-nature/hanging_moss.glb",
   "/assets/models/kenney-nature/rock_largeB.glb",
   "/assets/models/kenney-nature/rock_largeE.glb",
   "/assets/models/kenney-nature/rock_tallC.glb",
+  "/assets/models/kenney-nature/stone_largeC.glb",
+  "/assets/models/kenney-nature/cliff_blockCave_stone.glb",
+  "/assets/models/kenney-nature/bridge_wood.glb",
   "/assets/models/kenney-nature/tent_detailedOpen.glb",
   "/assets/models/kenney-nature/campfire_stones.glb",
   "/assets/models/kenney-nature/campfire_logs.glb",
@@ -388,8 +644,16 @@ export function worldRegionAt(x: number, z: number): WorldRegion {
   if (z > OUTLANDS_ENTRY_Z) return "city";
   if (z > -108) return "checkpoint";
   if (z > -174) return "forest";
-  if (x > 38 && z < -202) return "quarry";
-  if (x < -38 && z < -244) return "ruins";
+  if (z > -330) {
+    if (x > 38 && z < -202) return "quarry";
+    if (x < -38 && z < -244) return "ruins";
+    return "depot";
+  }
+  if (z <= -1160) return "reactor";
+  if (z <= -960) return "iceRidge";
+  if (z <= -760) return "fortress";
+  if (x < -35) return "relay";
+  if (x > 35) return "marsh";
   return "depot";
 }
 
@@ -399,5 +663,10 @@ export const WORLD_REGION_LABELS: Record<WorldRegion, string> = {
   forest: "Хвойный рубеж",
   depot: "Заброшенное депо",
   quarry: "Красный карьер",
-  ruins: "Старый город"
+  ruins: "Старый город",
+  marsh: "Топи Меридиана",
+  relay: "Релейная база «Эхо»",
+  fortress: "Стальная крепость",
+  iceRidge: "Ледяной хребет",
+  reactor: "Реактор Пустоты"
 };
