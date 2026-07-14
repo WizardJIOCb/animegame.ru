@@ -12,6 +12,7 @@ import {
   type ReactNode
 } from "react";
 import { CORE_GAME_MODEL_URLS } from "../game/combat";
+import { OUTLAND_MODEL_URLS } from "../game/outlands";
 import type { CatalogItem, HomeState, NeighborhoodState, PublicUser } from "../types";
 
 type ManifestFile = {
@@ -227,6 +228,11 @@ export function createGameAssetPlan(
   const catalogById = new Map(catalog.map((item) => [item.id, item]));
 
   for (const url of CORE_GAME_MODEL_URLS) {
+    addUrl(downloadRoots, url);
+    addUrl(warmupRoots, url);
+  }
+
+  for (const url of OUTLAND_MODEL_URLS) {
     addUrl(downloadRoots, url);
     addUrl(warmupRoots, url);
   }

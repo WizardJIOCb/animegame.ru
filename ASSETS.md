@@ -30,6 +30,12 @@
   - Runtime files used: `public/assets/models/quaternius-weapons/*.gltf`
   - The pack's `ShortCannon` asset is bundled as `laser.gltf` and presented as the laser weapon.
 
+- Quaternius Sci-Fi Essentials Kit (Standard)
+  - Source: https://quaternius.com/packs/scifiessentialskit.html
+  - License: Creative Commons CC0
+  - Runtime files used: selected animated enemies, loot chest and pickups in `public/assets/models/quaternius-scifi/`
+  - The Standard archive is the official free subset; the bundled copy includes its original `LICENSE.txt`.
+
 ## Planned Character Pipeline
 
 - Quaternius Universal Base Characters

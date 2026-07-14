@@ -23,6 +23,7 @@ export type SurfaceImpactMark = {
   weapon: WeaponKind;
   geometry: THREE.BufferGeometry;
   anchor?: THREE.Object3D;
+  instanced?: boolean;
 };
 
 type MuzzleFlashEffectProps = {
@@ -463,7 +464,9 @@ export function createSurfaceImpactMark({
   surface,
   weapon,
   coordinateRoot,
-  anchor
+  anchor,
+  sizeScale = 1,
+  instanced = false
 }: {
   id: number;
   target: THREE.Object3D;
@@ -473,6 +476,8 @@ export function createSurfaceImpactMark({
   weapon: WeaponKind;
   coordinateRoot: THREE.Object3D;
   anchor?: THREE.Object3D;
+  sizeScale?: number;
+  instanced?: boolean;
 }): SurfaceImpactMark | null {
   if (!(target instanceof THREE.Mesh) || !target.geometry?.getAttribute("position")) return null;
   target.updateWorldMatrix(true, false);
@@ -481,7 +486,7 @@ export function createSurfaceImpactMark({
 
   const normal = safeDirection(normalWorld, UP);
   const markInfo = { id, surface, weapon };
-  const radius = impactMarkSize(markInfo);
+  const radius = impactMarkSize(markInfo) * THREE.MathUtils.clamp(sizeScale, 0.2, 2);
   const orientation = new THREE.Quaternion().setFromUnitVectors(MARK_FORWARD, normal);
   orientation.multiply(
     new THREE.Quaternion().setFromAxisAngle(MARK_FORWARD, markRandom(id * 37 + 11) * Math.PI * 2)
@@ -504,7 +509,7 @@ export function createSurfaceImpactMark({
   const coordinateSpace = anchor ?? coordinateRoot;
   coordinateSpace.updateWorldMatrix(true, false);
   clipped.applyMatrix4(coordinateSpace.matrixWorld.clone().invert());
-  return { id, surface, weapon, geometry: clipped, anchor };
+  return { id, surface, weapon, geometry: clipped, anchor, instanced };
 }
 
 type ImpactMarkBatchEntry = {

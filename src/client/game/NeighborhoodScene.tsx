@@ -13,6 +13,7 @@ import {
   type SurfaceImpactMark
 } from "./CombatEffects";
 import { HomePlacedObject, Player } from "./GameScene";
+import { OutlandsEnvironment, OutlandsRobot, type RobotMotion } from "./OutlandsWorld";
 import {
   TOWN_CAR_MODEL_URL,
   WEAPONS,
@@ -25,7 +26,29 @@ import {
   type WeaponRecoilState,
   type WeaponKind
 } from "./combat";
+import {
+  EXTRACTION_POSITION,
+  EXTRACTION_RADIUS,
+  isAtExtractionCheckpoint,
+  OUTLAND_CONTAINERS,
+  OUTLAND_ENEMIES,
+  OUTLANDS_ENTRY_Z,
+  OUTLANDS_MAX_X,
+  OUTLANDS_MIN_X,
+  OUTLANDS_MIN_Z,
+  WORLD_REGION_LABELS,
+  worldRegionAt,
+  type OutlandsEnemyDefinition,
+  type OutlandsEnemyKind,
+  type WorldRegion
+} from "./outlands";
 import type { SkeletonRagdoll } from "./ragdoll";
+import type {
+  ExpeditionEnemyId,
+  ExpeditionHitInput,
+  ExpeditionHitZone,
+  ExpeditionSkillId
+} from "../../shared/expedition";
 
 type WorldPosition = { x: number; y: number; z: number; rotation?: number; vehicle?: boolean };
 
@@ -45,6 +68,20 @@ type NeighborhoodSceneProps = {
   onSelectPlaced: (instanceId: string) => void;
   onBuildMove: (x: number, z: number) => void;
   onToast: (message: string) => void;
+  expeditionActive?: boolean;
+  expeditionWeapon?: WeaponKind;
+  expeditionSkills?: Record<ExpeditionSkillId, number>;
+  lootedContainerIds?: string[];
+  defeatedEnemyIds?: string[];
+  enemyHealth?: Partial<Record<ExpeditionEnemyId, number>>;
+  expeditionSyncPending?: boolean;
+  expeditionAmmo?: number;
+  onWorldRegionChange?: (region: WorldRegion) => void;
+  onExtractionAvailabilityChange?: (available: boolean) => void;
+  onLootContainer?: (containerId: string) => void;
+  onExpeditionShot?: (hits: ExpeditionHitInput[]) => void;
+  onExtract?: () => void;
+  onPlayerDefeated?: () => void;
 };
 
 type CarTransform = {
@@ -89,8 +126,11 @@ type PendingInteriorInteraction = {
   approachPoint: THREE.Vector3;
 } | null;
 
-const WORLD_X = 42;
-const WORLD_Z = 76;
+const WORLD_MIN_X = OUTLANDS_MIN_X;
+const WORLD_MAX_X = OUTLANDS_MAX_X;
+const WORLD_MIN_Z = OUTLANDS_MIN_Z;
+const WORLD_MAX_Z = 90;
+const OUTLANDS_LOCK_Z = -99;
 const WALK_SPEED = 2.35;
 const RUN_SPEED = 5.15;
 const CROUCH_SPEED = 1.15;
@@ -132,6 +172,22 @@ type NpcRuntime = {
   bloodMarks: CharacterBloodMark[];
   ragdollImpact?: RagdollImpact;
   ragdollControllerRef: { current: SkeletonRagdoll | null };
+  kind: "resident" | OutlandsEnemyKind;
+  displayName: string;
+  maxHealth: number;
+  faction: "civilian" | "neutral" | "hostile";
+  enemyId?: string;
+  damage: number;
+  aggroRange: number;
+  attackRange: number;
+  respawnMs: number;
+  homePosition: THREE.Vector3;
+  patrol: THREE.Vector3[];
+  aggroed: boolean;
+  lastAttackAt: number;
+  attackUntil: number;
+  hitUntil: number;
+  robotMotionRef: { current: RobotMotion };
 };
 
 type PendingRagdollImpact = Omit<RagdollImpact, "nonce">;
@@ -196,6 +252,18 @@ const BODY_DAMAGE_MULTIPLIER: Record<BodyPart, number> = {
   rightCalf: 0.74,
   rightFoot: 0.64
 };
+
+function expeditionHitZone(bodyPart: BodyPart): ExpeditionHitZone {
+  if (bodyPart === "head" || bodyPart === "chest" || bodyPart === "abdomen" || bodyPart === "pelvis") {
+    return bodyPart;
+  }
+  if (bodyPart.endsWith("UpperArm")) return "upperArm";
+  if (bodyPart.endsWith("LowerArm")) return "lowerArm";
+  if (bodyPart.endsWith("Hand")) return "hand";
+  if (bodyPart.endsWith("Thigh")) return "thigh";
+  if (bodyPart.endsWith("Calf")) return "calf";
+  return "foot";
+}
 
 const DEFAULT_BODY_PART: BodyPart = "chest";
 const DEFAULT_BODY_BONE = "spine_03";
@@ -378,13 +446,15 @@ function residentCarTransform(resident: NeighborhoodResident): CarTransform {
 }
 
 function isRoad(x: number, z: number) {
-  return (Math.abs(x) <= 8.6 || Math.abs(z) <= 5.7) && Math.abs(x) <= WORLD_X && Math.abs(z) <= WORLD_Z;
+  return (Math.abs(x) <= 8.6 || (Math.abs(z) <= 5.7 && Math.abs(x) <= 42))
+    && x >= WORLD_MIN_X && x <= WORLD_MAX_X
+    && z >= WORLD_MIN_Z && z <= WORLD_MAX_Z;
 }
 
 function resolveWalkPosition(current: THREE.Vector3, requested: THREE.Vector3, residents: NeighborhoodResident[]) {
   const position = requested.clone();
-  position.x = THREE.MathUtils.clamp(position.x, -WORLD_X + 0.6, WORLD_X - 0.6);
-  position.z = THREE.MathUtils.clamp(position.z, -WORLD_Z + 0.6, WORLD_Z - 0.6);
+  position.x = THREE.MathUtils.clamp(position.x, WORLD_MIN_X + 0.6, WORLD_MAX_X - 0.6);
+  position.z = THREE.MathUtils.clamp(position.z, WORLD_MIN_Z + 0.6, WORLD_MAX_Z - 0.6);
 
   for (const resident of residents) {
     const currentLocal = worldToHouseLocal(current, resident);
@@ -429,6 +499,65 @@ function resolveWalkPosition(current: THREE.Vector3, requested: THREE.Vector3, r
     return houseLocalToWorld(nextLocal, resident).setY(0);
   }
 
+  return position;
+}
+
+const OUTLANDS_BOX_BLOCKERS = [
+  { x: -40, z: -225, halfX: 23, halfZ: 0.7 },
+  { x: -61.5, z: -210, halfX: 0.7, halfZ: 15.5 },
+  { x: -18.5, z: -210, halfX: 0.7, halfZ: 15.5 },
+  { x: -50, z: -215, halfX: 4.5, halfZ: 2.2 },
+  { x: -87, z: -280, halfX: 9.5, halfZ: 1.1 },
+  { x: -96, z: -275, halfX: 1.1, halfZ: 5.5 },
+  { x: -60, z: -279.5, halfX: 7.5, halfZ: 1.1 },
+  { x: -67, z: -274, halfX: 1.1, halfZ: 6 },
+  { x: -91, z: -308.5, halfX: 6, halfZ: 1.1 },
+  { x: -96.5, z: -301, halfX: 1.1, halfZ: 8 },
+  { x: -61, z: -310, halfX: 10, halfZ: 1.1 },
+  { x: -70.5, z: -306, halfX: 1.1, halfZ: 4.5 }
+] as const;
+
+const OUTLANDS_CIRCLE_BLOCKERS = [
+  { x: 118, z: -224, radius: 13 },
+  { x: 137, z: -250, radius: 17 },
+  { x: 124, z: -281, radius: 14 },
+  { x: 104, z: -308, radius: 12 },
+  { x: 151, z: -303, radius: 20 },
+  { x: 14, z: -141, radius: 2.2 },
+  ...OUTLAND_CONTAINERS.map((container) => ({ x: container.position[0], z: container.position[2], radius: 1.25 }))
+] as const;
+
+function resolveOutlandsCollisions(current: THREE.Vector3, requested: THREE.Vector3, clearance = 0.42) {
+  if (requested.z > -108 && current.z > -108) return requested;
+  const position = requested.clone();
+  for (const blocker of OUTLANDS_BOX_BLOCKERS) {
+    const halfX = blocker.halfX + clearance;
+    const halfZ = blocker.halfZ + clearance;
+    const inside = (point: THREE.Vector3) => Math.abs(point.x - blocker.x) < halfX && Math.abs(point.z - blocker.z) < halfZ;
+    if (!inside(position) || inside(current)) continue;
+    const slideX = new THREE.Vector3(position.x, position.y, current.z);
+    const slideZ = new THREE.Vector3(current.x, position.y, position.z);
+    if (!inside(slideX) && !inside(slideZ)) {
+      position.copy(Math.abs(position.x - current.x) >= Math.abs(position.z - current.z) ? slideX : slideZ);
+    } else if (!inside(slideX)) {
+      position.copy(slideX);
+    } else if (!inside(slideZ)) {
+      position.copy(slideZ);
+    } else {
+      position.copy(current);
+    }
+  }
+  for (const blocker of OUTLANDS_CIRCLE_BLOCKERS) {
+    const radius = blocker.radius + clearance;
+    const dx = position.x - blocker.x;
+    const dz = position.z - blocker.z;
+    const distanceSq = dx * dx + dz * dz;
+    const currentDistanceSq = (current.x - blocker.x) ** 2 + (current.z - blocker.z) ** 2;
+    if (distanceSq >= radius * radius || currentDistanceSq < radius * radius) continue;
+    const distance = Math.sqrt(Math.max(distanceSq, 0.000001));
+    position.x = blocker.x + dx / distance * radius;
+    position.z = blocker.z + dz / distance * radius;
+  }
   return position;
 }
 
@@ -1093,6 +1222,44 @@ function StreetCamera({
   );
 }
 
+function FollowingSun() {
+  const { camera, scene } = useThree();
+  const lightRef = useRef<THREE.DirectionalLight>(null);
+  const target = useMemo(() => new THREE.Object3D(), []);
+
+  useEffect(() => {
+    scene.add(target);
+    return () => {
+      scene.remove(target);
+    };
+  }, [scene, target]);
+
+  useFrame(() => {
+    const light = lightRef.current;
+    if (!light) return;
+    target.position.set(camera.position.x, 0, camera.position.z);
+    light.position.set(camera.position.x + 18, 28, camera.position.z + 16);
+    target.updateMatrixWorld();
+  }, -4);
+
+  return (
+    <directionalLight
+      ref={lightRef}
+      target={target}
+      castShadow
+      intensity={2.25}
+      shadow-mapSize={[2048, 2048]}
+      shadow-camera-left={-45}
+      shadow-camera-right={45}
+      shadow-camera-top={55}
+      shadow-camera-bottom={-55}
+      shadow-camera-near={0.5}
+      shadow-camera-far={95}
+      shadow-bias={-0.00012}
+    />
+  );
+}
+
 function Tree({ position, scale = 1, autumn = false }: { position: [number, number, number]; scale?: number; autumn?: boolean }) {
   return (
     <group position={position} scale={scale} userData={{ impactSurface: "wood" }}>
@@ -1664,7 +1831,73 @@ function createNpcRuntime(resident: NeighborhoodResident): NpcRuntime {
     respawnNonce: 0,
     deathNonce: 0,
     bloodMarks: [],
-    ragdollControllerRef: { current: null }
+    ragdollControllerRef: { current: null },
+    kind: "resident",
+    displayName: resident.username,
+    maxHealth: NPC_MAX_HEALTH,
+    faction: "civilian",
+    damage: 0,
+    aggroRange: 0,
+    attackRange: 0,
+    respawnMs: NPC_RESPAWN_MS,
+    homePosition: position.clone(),
+    patrol: NPC_PATROL_ROUTE,
+    aggroed: false,
+    lastAttackAt: 0,
+    attackUntil: 0,
+    hitUntil: 0,
+    robotMotionRef: { current: "idle" }
+  };
+}
+
+function nearestRouteIndex(position: THREE.Vector3, route: THREE.Vector3[]) {
+  let bestIndex = 0;
+  let bestDistance = Infinity;
+  route.forEach((point, index) => {
+    const distance = point.distanceToSquared(position);
+    if (distance >= bestDistance) return;
+    bestDistance = distance;
+    bestIndex = index;
+  });
+  return bestIndex;
+}
+
+function createOutlandsRuntime(definition: OutlandsEnemyDefinition): NpcRuntime {
+  const seed = stableNameSeed(definition.id);
+  const position = new THREE.Vector3().fromArray(definition.position);
+  const patrol = definition.patrol.map((point) => new THREE.Vector3().fromArray(point));
+  return {
+    username: `outlands:${definition.id}`,
+    position,
+    rotationRef: { current: Math.PI },
+    motionRef: { current: definition.kind === "human" ? "armedIdle" : "idle" },
+    health: definition.maxHealth,
+    dead: false,
+    respawnAt: 0,
+    targetIndex: (nearestRouteIndex(position, patrol) + 1) % patrol.length,
+    idleUntil: performance.now() + seed % 1600,
+    speed: definition.speed,
+    seed,
+    respawnNonce: 0,
+    deathNonce: 0,
+    bloodMarks: [],
+    ragdollControllerRef: { current: null },
+    kind: definition.kind,
+    displayName: definition.name,
+    maxHealth: definition.maxHealth,
+    faction: definition.faction,
+    enemyId: definition.id,
+    damage: definition.damage,
+    aggroRange: definition.aggroRange,
+    attackRange: definition.attackRange,
+    respawnMs: definition.respawnMs,
+    homePosition: position.clone(),
+    patrol,
+    aggroed: false,
+    lastAttackAt: 0,
+    attackUntil: 0,
+    hitUntil: 0,
+    robotMotionRef: { current: "idle" }
   };
 }
 
@@ -2063,6 +2296,19 @@ function NeighborhoodWorld({
   onSelectPlaced,
   onBuildMove,
   onToast,
+  expeditionActive = false,
+  expeditionWeapon,
+  expeditionSkills,
+  lootedContainerIds = [],
+  defeatedEnemyIds = [],
+  enemyHealth,
+  expeditionSyncPending = false,
+  onWorldRegionChange,
+  onExtractionAvailabilityChange,
+  onLootContainer,
+  onExpeditionShot,
+  onExtract,
+  onPlayerDefeated,
   onDrivingChange,
   selectedWeapon,
   onWeaponChange,
@@ -2075,7 +2321,8 @@ function NeighborhoodWorld({
   cameraMode,
   onCameraModeChange,
   onPointerLockChange,
-  recoilRef
+  recoilRef,
+  onVitalsChange
 }: NeighborhoodSceneProps & {
   onDrivingChange: (driving: boolean) => void;
   selectedWeapon: WeaponKind;
@@ -2090,6 +2337,7 @@ function NeighborhoodWorld({
   onCameraModeChange: (mode: CameraMode) => void;
   onPointerLockChange: (locked: boolean) => void;
   recoilRef: RefObject<WeaponRecoilState>;
+  onVitalsChange: (health: number, region: WorldRegion) => void;
 }) {
   const { camera, gl } = useThree();
   const worldResidents = useMemo(() => residents.map((resident) => resident.username === user.username ? {
@@ -2149,6 +2397,7 @@ function NeighborhoodWorld({
   const thirdPersonFireHeld = useRef(false);
   const lastPointerLockErrorAt = useRef(0);
   const lastWeaponWheelAt = useRef(0);
+  const lastOutlandsGateToastAt = useRef(0);
   const selectedWeaponRef = useRef(selectedWeapon);
   const reloadStateRef = useRef(reloadState);
   const shootAtRef = useRef<(target: THREE.Vector3) => void>(() => undefined);
@@ -2182,17 +2431,54 @@ function NeighborhoodWorld({
   const [introView, setIntroView] = useState(!initialPosition);
   const [activeInterior, setActiveInterior] = useState<NeighborhoodResident | null>(activeInteriorRef.current);
   const [shoulderSide, setShoulderSide] = useState<1 | -1>(1);
+  const playerHealthRef = useRef(100);
+  const currentRegionRef = useRef<WorldRegion>(worldRegionAt(playerPosition.current.x, playerPosition.current.z));
+  const nearbyContainerRef = useRef<string | undefined>(undefined);
+  const nearExtractionRef = useRef(false);
+  const extractionAvailableRef = useRef(false);
+  const [nearbyContainerId, setNearbyContainerId] = useState<string>();
+  const [nearExtraction, setNearExtraction] = useState(false);
+  const lootedContainerSet = useMemo(() => new Set(lootedContainerIds), [lootedContainerIds]);
+  const defeatedEnemySet = useMemo(() => new Set(defeatedEnemyIds), [defeatedEnemyIds]);
+  const expeditionActiveRef = useRef(expeditionActive);
+  const previousExpeditionActiveRef = useRef(false);
+  const expeditionWeaponRef = useRef<WeaponKind | undefined>(expeditionWeapon);
+  const survivalSkillLevel = expeditionSkills?.survival ?? 0;
+  const weaponSkillLevel = expeditionSkills?.weapons ?? 0;
+  const playerMaxHealthRef = useRef(100 + survivalSkillLevel * 10);
+  const weaponSkillLevelRef = useRef(weaponSkillLevel);
 
   const ownOutfit = getCatalogItem(catalog, user.avatar.outfit);
   const ownCharacter = getCatalogItem(catalog, user.avatar.character);
   const ownPet = getCatalogItem(catalog, user.avatar.pet);
+  const outlandsHumanVisuals = worldResidents.filter((resident) => resident.username !== user.username);
+  const rangerVisual = outlandsHumanVisuals[0] ?? ownResident;
+  const rangerPosition = useMemo(() => new THREE.Vector3(13.5, 0, -93), []);
   const onToastRef = useRef(onToast);
   const onMoveRef = useRef(onMove);
+  const buildModeRef = useRef(buildMode);
+  const lootedContainerSetRef = useRef(lootedContainerSet);
+  const onDrivingChangeRef = useRef(onDrivingChange);
+  const onExtractRef = useRef(onExtract);
+  const onLootContainerRef = useRef(onLootContainer);
+  const onReloadRef = useRef(onReload);
+  const onWeaponChangeRef = useRef(onWeaponChange);
 
   cameraModeRef.current = cameraMode;
   aimingRef.current = aiming;
   selectedWeaponRef.current = selectedWeapon;
   reloadStateRef.current = reloadState;
+  expeditionActiveRef.current = expeditionActive;
+  expeditionWeaponRef.current = expeditionWeapon;
+  playerMaxHealthRef.current = 100 + survivalSkillLevel * 10;
+  weaponSkillLevelRef.current = weaponSkillLevel;
+  buildModeRef.current = buildMode;
+  lootedContainerSetRef.current = lootedContainerSet;
+  onDrivingChangeRef.current = onDrivingChange;
+  onExtractRef.current = onExtract;
+  onLootContainerRef.current = onLootContainer;
+  onReloadRef.current = onReload;
+  onWeaponChangeRef.current = onWeaponChange;
 
   useEffect(() => {
     onToastRef.current = onToast;
@@ -2201,6 +2487,44 @@ function NeighborhoodWorld({
   useEffect(() => {
     onMoveRef.current = onMove;
   }, [onMove]);
+
+  useEffect(() => () => {
+    onExtractionAvailabilityChange?.(false);
+  }, [onExtractionAvailabilityChange]);
+
+  useEffect(() => {
+    const region = worldRegionAt(playerPosition.current.x, playerPosition.current.z);
+    currentRegionRef.current = region;
+    onWorldRegionChange?.(region);
+    onVitalsChange(playerHealthRef.current, region);
+  }, [onVitalsChange, onWorldRegionChange]);
+
+  useEffect(() => {
+    if (expeditionActive) return;
+    const playerOutside = playerPosition.current.z < OUTLANDS_LOCK_Z;
+    const carOutside = carPosition.current.z < OUTLANDS_LOCK_Z;
+    if (!playerOutside && !carOutside) return;
+    if (drivingRef.current) {
+      drivingRef.current = false;
+      setDriving(false);
+      onDrivingChange(false);
+    }
+    if (carOutside) {
+      carPosition.current.copy(ownCarStart.position);
+      carRotation.current = ownCarStart.rotation;
+      carSpeed.current = 0;
+      setRenderCarPosition(ownCarStart.position.clone());
+      setRenderCarRotation(ownCarStart.rotation);
+    }
+    if (playerOutside) {
+      playerPosition.current.set(0, 0, -72);
+      playerRotation.current = Math.PI;
+      currentRegionRef.current = "city";
+      onWorldRegionChange?.("city");
+      onVitalsChange(playerHealthRef.current, "city");
+      onMoveRef.current({ x: 0, y: 0, z: -72, rotation: Math.PI, vehicle: false });
+    }
+  }, [expeditionActive, onDrivingChange, onVitalsChange, onWorldRegionChange, ownCarStart]);
 
   useEffect(() => {
     onInsideChange(Boolean(activeInterior));
@@ -2227,6 +2551,115 @@ function NeighborhoodWorld({
     return { resident, runtime };
     });
   }, [remotePlayers, user.username, worldResidents]);
+
+  const outlandsActors = useMemo(() => OUTLAND_ENEMIES.map((definition) => {
+    const username = `outlands:${definition.id}`;
+    let runtime = npcRuntimeMap.current.get(username);
+    if (!runtime) {
+      runtime = createOutlandsRuntime(definition);
+      npcRuntimeMap.current.set(username, runtime);
+    }
+    return { definition, runtime };
+  }), []);
+
+  useEffect(() => {
+    if (previousExpeditionActiveRef.current === expeditionActive) return;
+    const wasActive = previousExpeditionActiveRef.current;
+    previousExpeditionActiveRef.current = expeditionActive;
+    playerHealthRef.current = playerMaxHealthRef.current;
+    for (const { runtime } of outlandsActors) {
+      const defeated = Boolean(expeditionActive && runtime.enemyId && defeatedEnemySet.has(runtime.enemyId));
+      const storedHealth = runtime.enemyId ? Number(enemyHealth?.[runtime.enemyId as ExpeditionEnemyId]) : Number.NaN;
+      const authoritativeHealth = Number.isFinite(storedHealth)
+        ? THREE.MathUtils.clamp(storedHealth, 0, runtime.maxHealth)
+        : runtime.maxHealth;
+      runtime.position.copy(runtime.homePosition);
+      runtime.health = defeated ? 0 : authoritativeHealth;
+      runtime.dead = defeated;
+      runtime.respawnAt = defeated ? Number.POSITIVE_INFINITY : 0;
+      runtime.bloodMarks = [];
+      runtime.ragdollImpact = undefined;
+      runtime.ragdollControllerRef.current = null;
+      runtime.respawnNonce += 1;
+      runtime.targetIndex = (nearestRouteIndex(runtime.position, runtime.patrol) + 1) % runtime.patrol.length;
+      runtime.idleUntil = performance.now() + 500;
+      runtime.lastAttackAt = 0;
+      runtime.attackUntil = 0;
+      runtime.hitUntil = 0;
+      runtime.aggroed = false;
+      runtime.motionRef.current = defeated ? "death" : runtime.kind === "human" ? "armedIdle" : "idle";
+      runtime.robotMotionRef.current = defeated ? "death" : "idle";
+    }
+    setNpcUiVersion((version) => version + 1);
+
+    if (wasActive && !expeditionActive) {
+      if (drivingRef.current) {
+        drivingRef.current = false;
+        setDriving(false);
+        onDrivingChange(false);
+      }
+      if (carPosition.current.z <= OUTLANDS_ENTRY_Z) {
+        carPosition.current.copy(ownCarStart.position);
+        carRotation.current = ownCarStart.rotation;
+        carSpeed.current = 0;
+        setRenderCarPosition(ownCarStart.position.clone());
+        setRenderCarRotation(ownCarStart.rotation);
+      }
+      if (playerPosition.current.z <= OUTLANDS_ENTRY_Z) {
+        playerPosition.current.set(0, 0, -72);
+        playerRotation.current = Math.PI;
+        clickTarget.current = null;
+        clickPath.current = [];
+        currentRegionRef.current = "city";
+        onWorldRegionChange?.("city");
+        onMoveRef.current({ x: 0, y: 0, z: -72, rotation: Math.PI, vehicle: false });
+      }
+    }
+    onVitalsChange(playerHealthRef.current, currentRegionRef.current);
+  }, [defeatedEnemySet, enemyHealth, expeditionActive, onDrivingChange, onVitalsChange, onWorldRegionChange, outlandsActors, ownCarStart]);
+
+  useEffect(() => {
+    // Keep the immediate hit reaction while requests are queued. Applying an
+    // older response between two automatic-rifle shots would otherwise heal or
+    // briefly revive the target. The final authoritative snapshot is applied
+    // as soon as the queue drains.
+    if (!expeditionActive || expeditionSyncPending) return;
+    let changed = false;
+    for (const { runtime } of outlandsActors) {
+      if (!runtime.enemyId) continue;
+      const enemyId = runtime.enemyId as ExpeditionEnemyId;
+      const storedHealth = Number(enemyHealth?.[enemyId]);
+      const nextHealth = defeatedEnemySet.has(enemyId)
+        ? 0
+        : Number.isFinite(storedHealth)
+          ? THREE.MathUtils.clamp(storedHealth, 0, runtime.maxHealth)
+          : runtime.maxHealth;
+      const shouldBeDead = nextHealth <= 0 || defeatedEnemySet.has(enemyId);
+      if (runtime.health !== nextHealth) {
+        runtime.health = nextHealth;
+        changed = true;
+      }
+      if (shouldBeDead && !runtime.dead) {
+        runtime.dead = true;
+        runtime.respawnAt = Number.POSITIVE_INFINITY;
+        runtime.hitUntil = 0;
+        runtime.aggroed = false;
+        runtime.motionRef.current = "death";
+        runtime.robotMotionRef.current = "death";
+        changed = true;
+      } else if (!shouldBeDead && runtime.dead) {
+        runtime.dead = false;
+        runtime.respawnAt = 0;
+        runtime.ragdollImpact = undefined;
+        runtime.ragdollControllerRef.current = null;
+        runtime.respawnNonce += 1;
+        runtime.motionRef.current = runtime.kind === "human" ? "armedIdle" : "idle";
+        runtime.robotMotionRef.current = "idle";
+        changed = true;
+      }
+    }
+    if (changed) setNpcUiVersion((version) => version + 1);
+  }, [defeatedEnemySet, enemyHealth, expeditionActive, expeditionSyncPending, outlandsActors]);
 
   const remoteVectors = useMemo(() => remotePlayers.map((player) => ({
     ...player,
@@ -2406,9 +2839,15 @@ function NeighborhoodWorld({
   }
 
   function intersectionWorldNormal(intersection: THREE.Intersection, incoming: THREE.Vector3) {
+    let objectMatrix = intersection.object.matrixWorld;
+    if (intersection.object instanceof THREE.InstancedMesh && intersection.instanceId !== undefined) {
+      const instanceMatrix = new THREE.Matrix4();
+      intersection.object.getMatrixAt(intersection.instanceId, instanceMatrix);
+      objectMatrix = new THREE.Matrix4().multiplyMatrices(intersection.object.matrixWorld, instanceMatrix);
+    }
     const normal = intersection.face
       ? intersection.face.normal.clone().applyNormalMatrix(
-          new THREE.Matrix3().getNormalMatrix(intersection.object.matrixWorld)
+          new THREE.Matrix3().getNormalMatrix(objectMatrix)
         ).normalize()
       : incoming.clone().negate();
     if (normal.dot(incoming) > 0) normal.negate();
@@ -2429,20 +2868,20 @@ function NeighborhoodWorld({
     return intersections[0] ?? null;
   }
 
-  function closestCombatZone(runtime: NpcRuntime, referencePoint: THREE.Vector3) {
+  function closestCombatZones(referencePoint: THREE.Vector3) {
     const group = worldGroupRef.current;
-    if (!group) return null;
-    let best: {
+    const closest = new Map<NpcRuntime, {
       bodyPart: BodyPart;
       boneName: string;
       bone?: THREE.Bone;
       modelRoot?: THREE.Object3D;
       point: THREE.Vector3;
-    } | null = null;
-    let bestDistance = Infinity;
+    }>();
+    const bestDistances = new Map<NpcRuntime, number>();
+    if (!group) return closest;
     group.traverse((object) => {
       const metadata = combatMetadata(object);
-      if (!metadata || metadata.runtime !== runtime) return;
+      if (!metadata) return;
       const center = object.getWorldPosition(new THREE.Vector3());
       const towardCenter = center.clone().sub(referencePoint);
       let point = center;
@@ -2455,17 +2894,17 @@ function NeighborhoodWorld({
         point = raycaster.intersectObject(object, false)[0]?.point.clone() ?? center;
       }
       const distance = point.distanceToSquared(referencePoint);
-      if (distance >= bestDistance) return;
-      bestDistance = distance;
-      best = {
+      if (distance >= (bestDistances.get(metadata.runtime) ?? Infinity)) return;
+      bestDistances.set(metadata.runtime, distance);
+      closest.set(metadata.runtime, {
         bodyPart: metadata.bodyPart,
         boneName: metadata.boneName,
         bone: metadata.bone,
         modelRoot: metadata.modelRoot,
         point
-      };
+      });
     });
-    return best;
+    return closest;
   }
 
   function blastReachesTarget(origin: THREE.Vector3, target: THREE.Vector3) {
@@ -2498,28 +2937,40 @@ function NeighborhoodWorld({
 
   function damageNpc(runtime: NpcRuntime, damage: number, now: number, impact: PendingRagdollImpact) {
     if (runtime.dead || damage <= 0) return false;
+    if (runtime.faction === "hostile") runtime.aggroed = true;
     runtime.health = Math.max(0, runtime.health - Math.round(damage));
+    runtime.hitUntil = now + 340;
+    if (runtime.kind === "eyeDrone" || runtime.kind === "quadShell") runtime.robotMotionRef.current = "hit";
     if (runtime.health === 0) {
       runtime.dead = true;
-      runtime.respawnAt = now + NPC_RESPAWN_MS;
+      runtime.respawnAt = now + runtime.respawnMs;
       runtime.motionRef.current = "death";
+      runtime.robotMotionRef.current = "death";
       runtime.deathNonce += 1;
-      const deathVelocity = new THREE.Vector3().fromArray(impact.velocity);
-      if (Number.isFinite(deathVelocity.lengthSq()) && deathVelocity.lengthSq() > 0) {
-        deathVelocity
-          .multiplyScalar(impact.kind === "bullet"
-            ? BULLET_DEATH_IMPULSE_MULTIPLIER
-            : EXPLOSION_DEATH_IMPULSE_MULTIPLIER)
-          .clampLength(0, MAX_DEATH_IMPULSE_SPEED);
+      if (runtime.kind === "resident" || runtime.kind === "human") {
+        const deathVelocity = new THREE.Vector3().fromArray(impact.velocity);
+        if (Number.isFinite(deathVelocity.lengthSq()) && deathVelocity.lengthSq() > 0) {
+          deathVelocity
+            .multiplyScalar(impact.kind === "bullet"
+              ? BULLET_DEATH_IMPULSE_MULTIPLIER
+              : EXPLOSION_DEATH_IMPULSE_MULTIPLIER)
+            .clampLength(0, MAX_DEATH_IMPULSE_SPEED);
+        } else {
+          deathVelocity.set(0, 0, 0);
+        }
+        runtime.ragdollImpact = {
+          ...impact,
+          velocity: deathVelocity.toArray(),
+          nonce: runtime.deathNonce
+        };
       } else {
-        deathVelocity.set(0, 0, 0);
+        runtime.ragdollImpact = undefined;
       }
-      runtime.ragdollImpact = {
-        ...impact,
-        velocity: deathVelocity.toArray(),
-        nonce: runtime.deathNonce
-      };
-      onToast(`${runtime.username} повержен — вернётся в центре города`);
+      if (runtime.enemyId) {
+        onToast(`${runtime.displayName} повержен`);
+      } else {
+        onToast(`${runtime.username} повержен — вернётся в центре города`);
+      }
     }
     setNpcUiVersion((version) => version + 1);
     return runtime.dead;
@@ -2539,6 +2990,85 @@ function NeighborhoodWorld({
       nonce: runtime.deathNonce
     }, CORPSE_RAGDOLL_RESPONSE_SCALE);
     return true;
+  }
+
+  function spawnEnemyTracer(runtime: NpcRuntime, now: number) {
+    const start = runtime.position.clone().setY(runtime.kind === "human" ? 1.25 : 0.95);
+    const end = playerPosition.current.clone().setY(1.02);
+    shotId.current += 1;
+    const shot: ShotEffect = {
+      id: shotId.current,
+      start,
+      end,
+      color: runtime.kind === "human" ? "#ffb15c" : "#ff4f67",
+      weapon: "laser",
+      width: 0.022,
+      tracerLength: 1.4,
+      createdAt: now,
+      duration: 420,
+      tracerDuration: 105,
+      blastDuration: 240
+    };
+    setShotEffects((effects) => [
+      ...effects.filter((effect) => now - effect.createdAt < effect.duration),
+      shot
+    ].slice(-20));
+  }
+
+  function damagePlayer(amount: number, source: NpcRuntime) {
+    if (amount <= 0 || playerHealthRef.current <= 0) return;
+    playerHealthRef.current = Math.max(0, playerHealthRef.current - Math.round(amount));
+    onVitalsChange(playerHealthRef.current, currentRegionRef.current);
+    if (playerHealthRef.current > 0) return;
+
+    onToast(`${source.displayName} вывел вас из строя · добыча в рюкзаке потеряна`);
+    onPlayerDefeated?.();
+    if (drivingRef.current) {
+      drivingRef.current = false;
+      setDriving(false);
+      onDrivingChange(false);
+    }
+    carPosition.current.copy(ownCarStart.position);
+    carRotation.current = ownCarStart.rotation;
+    carSpeed.current = 0;
+    setRenderCarPosition(ownCarStart.position.clone());
+    setRenderCarRotation(ownCarStart.rotation);
+    playerHealthRef.current = playerMaxHealthRef.current;
+    playerPosition.current.set(0, 0, -72);
+    playerRotation.current = Math.PI;
+    clickTarget.current = null;
+    clickPath.current = [];
+    thirdPersonFireHeld.current = false;
+    for (const { runtime } of outlandsActors) runtime.aggroed = false;
+    currentRegionRef.current = "city";
+    onWorldRegionChange?.("city");
+    onVitalsChange(playerHealthRef.current, "city");
+    onMoveRef.current({ x: 0, y: 0, z: -72, rotation: Math.PI, vehicle: false });
+  }
+
+  function advanceOutlandsPatrol(runtime: NpcRuntime, now: number, delta: number) {
+    if (now < runtime.idleUntil) {
+      runtime.motionRef.current = runtime.kind === "human" ? "armedIdle" : "idle";
+      runtime.robotMotionRef.current = "idle";
+      return;
+    }
+    const target = runtime.patrol[runtime.targetIndex] ?? runtime.homePosition;
+    const direction = target.clone().sub(runtime.position).setY(0);
+    const distance = direction.length();
+    if (distance < 0.2) {
+      runtime.position.copy(target);
+      runtime.targetIndex = (runtime.targetIndex + 1) % runtime.patrol.length;
+      runtime.idleUntil = now + 550 + (runtime.seed + runtime.targetIndex * 97) % 1250;
+      runtime.motionRef.current = runtime.kind === "human" ? "armedIdle" : "idle";
+      runtime.robotMotionRef.current = "idle";
+      return;
+    }
+    direction.normalize();
+    runtime.rotationRef.current = Math.atan2(direction.x, direction.z);
+    const requested = runtime.position.clone().addScaledVector(direction, Math.min(distance, runtime.speed * 0.58 * Math.min(delta, WALK_DELTA_CAP)));
+    runtime.position.copy(resolveOutlandsCollisions(runtime.position, requested, 0.55));
+    runtime.motionRef.current = "walk";
+    runtime.robotMotionRef.current = "walk";
   }
 
   function getThirdPersonAimPoint(resolveSurface = true) {
@@ -2596,6 +3126,7 @@ function NeighborhoodWorld({
     normalWorld: THREE.Vector3,
     weapon: WeaponKind
   ) {
+    if (runtime.kind === "eyeDrone" || runtime.kind === "quadShell") return;
     if (!bone?.parent) return;
     bone.updateWorldMatrix(true, false);
     const normal = normalWorld.clone();
@@ -2627,12 +3158,13 @@ function NeighborhoodWorld({
     impactWorld: THREE.Vector3,
     normalWorld: THREE.Vector3,
     incomingWorld: THREE.Vector3,
-    object: THREE.Object3D,
+    intersection: THREE.Intersection,
     weapon: WeaponKind,
     now: number
   ) {
     const group = worldGroupRef.current;
     if (!group) return;
+    const object = intersection.object;
     const point = group.worldToLocal(impactWorld.clone());
     const normal = group.worldToLocal(impactWorld.clone().add(normalWorld)).sub(point).normalize();
     const incoming = group.worldToLocal(impactWorld.clone().add(incomingWorld)).sub(point).normalize();
@@ -2652,25 +3184,100 @@ function NeighborhoodWorld({
       ...effects.filter((current) => now < current.createdAt + current.duration),
       effect
     ].slice(-14));
-    const anchor = dynamicImpactAnchor(object);
+    let markTarget: THREE.Object3D = object;
+    let instanced = false;
+    if (object instanceof THREE.InstancedMesh) {
+      if (intersection.instanceId === undefined || weapon === "rocket") return;
+      object.updateWorldMatrix(true, false);
+      const instanceMatrix = new THREE.Matrix4();
+      object.getMatrixAt(intersection.instanceId, instanceMatrix);
+      const instanceWorldMatrix = new THREE.Matrix4().multiplyMatrices(object.matrixWorld, instanceMatrix);
+      const instanceTarget = new THREE.Mesh(object.geometry, object.material);
+      instanceTarget.matrixAutoUpdate = false;
+      instanceTarget.matrix.copy(instanceWorldMatrix);
+      instanceTarget.matrixWorld.copy(instanceWorldMatrix);
+      markTarget = instanceTarget;
+      instanced = true;
+    }
+    const anchor = instanced ? undefined : dynamicImpactAnchor(object);
     const mark = createSurfaceImpactMark({
       id: impactId.current,
-      target: object,
+      target: markTarget,
       pointWorld: impactWorld,
       normalWorld,
       surface,
       weapon,
       coordinateRoot: group,
-      anchor
+      anchor,
+      sizeScale: instanced ? 0.7 : 1,
+      instanced
     });
     if (mark) {
       setImpactMarks((marks) => {
         const next = [...marks, mark];
-        const bulletMarks = next.filter((current) => current.weapon !== "rocket").slice(-markLimits.bullet);
+        const bulletCandidates = next.filter((current) => current.weapon !== "rocket");
+        const instancedLimit = Math.min(24, markLimits.bullet);
+        const instancedMarks = bulletCandidates.filter((current) => current.instanced).slice(-instancedLimit);
+        const regularLimit = Math.max(0, markLimits.bullet - instancedMarks.length);
+        const regularMarks = regularLimit > 0
+          ? bulletCandidates.filter((current) => !current.instanced).slice(-regularLimit)
+          : [];
         const rocketMarks = next.filter((current) => current.weapon === "rocket").slice(-markLimits.rocket);
-        return [...bulletMarks, ...rocketMarks].sort((left, right) => left.id - right.id);
+        return [...regularMarks, ...instancedMarks, ...rocketMarks].sort((left, right) => left.id - right.id);
       });
     }
+  }
+
+  function resolveWorldAccess(current: THREE.Vector3, requested: THREE.Vector3) {
+    const position = requested.clone();
+    if (position.z > OUTLANDS_ENTRY_Z) {
+      position.x = THREE.MathUtils.clamp(position.x, -41.4, 41.4);
+    }
+    const crossingCheckpointFence = current.z > OUTLANDS_ENTRY_Z - 1
+      && position.z <= OUTLANDS_ENTRY_Z - 1
+      && Math.abs(position.x) > 10;
+    if (crossingCheckpointFence) position.z = OUTLANDS_ENTRY_Z + 0.25;
+    if (!expeditionActiveRef.current && position.z < OUTLANDS_LOCK_Z) {
+      position.z = OUTLANDS_LOCK_Z;
+      clickTarget.current = null;
+      clickPath.current = [];
+      const now = performance.now();
+      if (now - lastOutlandsGateToastAt.current > 1600) {
+        lastOutlandsGateToastAt.current = now;
+        onToastRef.current("Перед выходом за КПП выберите снаряжение и начните вылазку в правой панели");
+      }
+    }
+    return position;
+  }
+
+  function spawnSyntheticImpact(
+    impactWorld: THREE.Vector3,
+    normalWorld: THREE.Vector3,
+    incomingWorld: THREE.Vector3,
+    surface: ImpactSurface,
+    weapon: WeaponKind,
+    now: number
+  ) {
+    const group = worldGroupRef.current;
+    if (!group) return;
+    const point = group.worldToLocal(impactWorld.clone());
+    const normal = group.worldToLocal(impactWorld.clone().add(normalWorld)).sub(point).normalize();
+    const incoming = group.worldToLocal(impactWorld.clone().add(incomingWorld)).sub(point).normalize();
+    impactId.current += 1;
+    const effect: SurfaceImpactEffect = {
+      id: impactId.current,
+      point,
+      normal,
+      incoming,
+      surface,
+      weapon,
+      createdAt: now,
+      duration: weapon === "rocket" ? 1500 : SURFACE_IMPACT_DURATION
+    };
+    setImpactEffects((effects) => [
+      ...effects.filter((current) => now < current.createdAt + current.duration),
+      effect
+    ].slice(-14));
   }
 
   function applyWeaponRecoil(config: (typeof WEAPONS)[WeaponKind]) {
@@ -2693,6 +3300,7 @@ function NeighborhoodWorld({
 
     const weapon = selectedWeaponRef.current;
     const config = WEAPONS[weapon];
+    const shotDamage = config.damage * (expeditionActiveRef.current ? 1 + weaponSkillLevelRef.current * 0.05 : 1);
     const now = performance.now();
     if (now < nextShotAt.current) return;
     const group = worldGroupRef.current;
@@ -2749,16 +3357,21 @@ function NeighborhoodWorld({
         impactWorld,
         impactSurfaceNormal,
         directionWorld,
-        valid.intersection.object,
+        valid.intersection,
         weapon,
         now
       );
     }
-    const combatRuntimes = npcActors.map(({ runtime }) => runtime);
+    const combatRuntimes = [
+      ...npcActors.map(({ runtime }) => runtime),
+      ...outlandsActors.map(({ runtime }) => runtime)
+    ];
+    const blastZones = config.blastRadius ? closestCombatZones(impactWorld) : null;
+    const expeditionHits: ExpeditionHitInput[] = [];
 
     if (config.blastRadius) {
       for (const runtime of combatRuntimes) {
-        const exactZone = directCombat?.runtime === runtime ? directCombat : closestCombatZone(runtime, impactWorld);
+        const exactZone = directCombat?.runtime === runtime ? directCombat : blastZones?.get(runtime) ?? null;
         const bodyPoint = exactZone?.point
           ?? group.localToWorld(runtime.position.clone().setY(0.92));
         const distance = bodyPoint.distanceTo(impactWorld);
@@ -2778,24 +3391,36 @@ function NeighborhoodWorld({
           point: bodyPoint.toArray(),
           velocity: impulseDirection.clone().multiplyScalar((config.blastImpulse ?? config.impactImpulse) * falloff).toArray()
         };
+        const wasAlive = !runtime.dead;
         if (runtime.dead) {
           impactDeadNpc(runtime, impact);
         } else {
-          damageNpc(runtime, config.damage * falloff, now, impact);
+          damageNpc(runtime, shotDamage * falloff, now, impact);
+        }
+        if (wasAlive && expeditionActiveRef.current && runtime.enemyId) {
+          expeditionHits.push({
+            enemyId: runtime.enemyId as ExpeditionEnemyId,
+            zone: expeditionHitZone(exactZone?.bodyPart ?? DEFAULT_BODY_PART),
+            damageScale: falloff
+          });
         }
         const markNormal = directCombat?.runtime === runtime
           ? directCombat.normal
           : impactWorld.clone().sub(bodyPoint).normalize();
-        addCharacterBloodMark(
-          runtime,
-          exactZone?.bodyPart ?? DEFAULT_BODY_PART,
-          exactZone?.boneName ?? DEFAULT_BODY_BONE,
-          exactZone?.bone,
-          bodyPoint,
-          markNormal,
-          weapon
-        );
-        spawnBloodEffect(bodyPoint, bloodDirection, now);
+        if (runtime.kind === "eyeDrone" || runtime.kind === "quadShell") {
+          spawnSyntheticImpact(bodyPoint, markNormal, directionWorld, "metal", weapon, now);
+        } else {
+          addCharacterBloodMark(
+            runtime,
+            exactZone?.bodyPart ?? DEFAULT_BODY_PART,
+            exactZone?.boneName ?? DEFAULT_BODY_BONE,
+            exactZone?.bone,
+            bodyPoint,
+            markNormal,
+            weapon
+          );
+          spawnBloodEffect(bodyPoint, bloodDirection, now);
+        }
       }
     } else if (directCombat) {
       const impulse = directionWorld.clone().multiplyScalar(config.impactImpulse);
@@ -2812,22 +3437,33 @@ function NeighborhoodWorld({
       } else {
         damageNpc(
           directCombat.runtime,
-          config.damage * BODY_DAMAGE_MULTIPLIER[directCombat.bodyPart],
+          shotDamage * BODY_DAMAGE_MULTIPLIER[directCombat.bodyPart],
           now,
           impact
         );
+        if (expeditionActiveRef.current && directCombat.runtime.enemyId) {
+          expeditionHits.push({
+            enemyId: directCombat.runtime.enemyId as ExpeditionEnemyId,
+            zone: expeditionHitZone(directCombat.bodyPart)
+          });
+        }
       }
-      addCharacterBloodMark(
-        directCombat.runtime,
-        directCombat.bodyPart,
-        directCombat.boneName,
-        directCombat.bone,
-        directCombat.point,
-        directCombat.normal,
-        weapon
-      );
-      spawnBloodEffect(directCombat.point, directionWorld, now);
+      if (directCombat.runtime.kind === "eyeDrone" || directCombat.runtime.kind === "quadShell") {
+        spawnSyntheticImpact(directCombat.point, directCombat.normal, directionWorld, "metal", weapon, now);
+      } else {
+        addCharacterBloodMark(
+          directCombat.runtime,
+          directCombat.bodyPart,
+          directCombat.boneName,
+          directCombat.bone,
+          directCombat.point,
+          directCombat.normal,
+          weapon
+        );
+        spawnBloodEffect(directCombat.point, directionWorld, now);
+      }
     }
+    if (expeditionActiveRef.current) onExpeditionShot?.(expeditionHits);
 
     const tracerDistance = shotStartWorld.distanceTo(impactWorld);
     const tracerDuration = THREE.MathUtils.clamp(
@@ -2901,7 +3537,7 @@ function NeighborhoodWorld({
     const setDriveState = (next: boolean) => {
       drivingRef.current = next;
       setDriving(next);
-      onDrivingChange(next);
+      onDrivingChangeRef.current(next);
       if (next) {
         jumpElapsedMs.current = null;
         keys.current.delete("q");
@@ -2918,8 +3554,8 @@ function NeighborhoodWorld({
       if (key === "v") {
         event.preventDefault();
         if (event.repeat) return;
-        if (drivingRef.current || buildMode) {
-          onToastRef.current(buildMode ? "Сначала выйдите из режима обустройства" : "Вид от третьего лица недоступен в машине");
+        if (drivingRef.current || buildModeRef.current) {
+          onToastRef.current(buildModeRef.current ? "Сначала выйдите из режима обустройства" : "Вид от третьего лица недоступен в машине");
           return;
         }
         setCameraMode(cameraModeRef.current === "thirdPerson" ? "strategy" : "thirdPerson");
@@ -2938,7 +3574,7 @@ function NeighborhoodWorld({
       if (key === "r") {
         event.preventDefault();
         if (!event.repeat && !drivingRef.current && !activeInteriorRef.current) {
-          onReload(selectedWeaponRef.current);
+          onReloadRef.current(selectedWeaponRef.current);
         }
         return;
       }
@@ -2950,8 +3586,13 @@ function NeighborhoodWorld({
       const weaponIndex = Number(key) - 1;
       if (Number.isInteger(weaponIndex) && weaponIndex >= 0 && weaponIndex < WEAPON_ORDER.length) {
         const weapon = WEAPON_ORDER[weaponIndex];
+        const lockedWeapon = expeditionActiveRef.current ? expeditionWeaponRef.current : undefined;
+        if (lockedWeapon && weapon !== lockedWeapon) {
+          onToastRef.current(`В эту вылазку взят только ${WEAPONS[lockedWeapon].label.toLowerCase()}`);
+          return;
+        }
         selectedWeaponRef.current = weapon;
-        onWeaponChange(weapon);
+        onWeaponChangeRef.current(weapon);
       }
 
       if (key === "q") {
@@ -2969,6 +3610,23 @@ function NeighborhoodWorld({
 
       if (key !== "e" && key !== "f") return;
       if (event.repeat) return;
+
+      if (key === "e" && !drivingRef.current && nearbyContainerRef.current) {
+        const containerId = nearbyContainerRef.current;
+        if (lootedContainerSetRef.current.has(containerId)) {
+          onToastRef.current("Этот контейнер уже пуст");
+        } else if (!expeditionActiveRef.current) {
+          onToastRef.current("Сначала начните вылазку в правой панели");
+        } else {
+          onLootContainerRef.current?.(containerId);
+        }
+        return;
+      }
+
+      if (key === "e" && !drivingRef.current && nearExtractionRef.current && expeditionActiveRef.current) {
+        onExtractRef.current?.();
+        return;
+      }
 
       if (drivingRef.current) {
         const side = rightVector(carRotation.current).multiplyScalar(1.65);
@@ -3032,8 +3690,13 @@ function NeighborhoodWorld({
       const direction = event.deltaY > 0 ? 1 : -1;
       const nextIndex = (currentIndex + direction + WEAPON_ORDER.length) % WEAPON_ORDER.length;
       const weapon = WEAPON_ORDER[nextIndex];
+      const lockedWeapon = expeditionActiveRef.current ? expeditionWeaponRef.current : undefined;
+      if (lockedWeapon && weapon !== lockedWeapon) {
+        onToastRef.current(`Сменить комплект можно после эвакуации`);
+        return;
+      }
       selectedWeaponRef.current = weapon;
-      onWeaponChange(weapon);
+      onWeaponChangeRef.current(weapon);
     };
     window.addEventListener("keydown", onKeyDown, { passive: false });
     window.addEventListener("keyup", onKeyUp);
@@ -3049,7 +3712,7 @@ function NeighborhoodWorld({
       clearKeys();
       document.body.style.cursor = "default";
     };
-  }, [buildMode, gl, onAimingChange, onCameraModeChange, onDrivingChange, onReload, onWeaponChange]);
+  }, [gl]);
 
   useEffect(() => {
     const element = gl.domElement;
@@ -3270,6 +3933,86 @@ function NeighborhoodWorld({
       }
     }
 
+    for (const { runtime } of outlandsActors) {
+      if (runtime.dead) {
+        if (runtime.enemyId && expeditionActiveRef.current && defeatedEnemySet.has(runtime.enemyId)) continue;
+        if (now >= runtime.respawnAt) {
+          runtime.dead = false;
+          runtime.health = runtime.maxHealth;
+          runtime.ragdollImpact = undefined;
+          runtime.bloodMarks = [];
+          runtime.ragdollControllerRef.current = null;
+          runtime.respawnNonce += 1;
+          runtime.position.copy(runtime.homePosition);
+          runtime.position.x += ((runtime.seed + runtime.respawnNonce * 13) % 9 - 4) * 0.35;
+          runtime.position.z += ((runtime.seed + runtime.respawnNonce * 19) % 9 - 4) * 0.35;
+          runtime.rotationRef.current = Math.PI;
+          runtime.targetIndex = (nearestRouteIndex(runtime.position, runtime.patrol) + 1) % runtime.patrol.length;
+          runtime.idleUntil = now + 900;
+          runtime.motionRef.current = runtime.kind === "human" ? "armedIdle" : "idle";
+          runtime.robotMotionRef.current = "idle";
+          runtime.aggroed = false;
+          setNpcUiVersion((version) => version + 1);
+        }
+        continue;
+      }
+
+      if (now < runtime.hitUntil) {
+        runtime.motionRef.current = runtime.kind === "human" ? "armedIdle" : "idle";
+        runtime.robotMotionRef.current = "hit";
+        continue;
+      }
+
+      const toPlayer = playerPosition.current.clone().sub(runtime.position).setY(0);
+      const playerDistance = toPlayer.length();
+      const homeDistance = runtime.position.distanceTo(runtime.homePosition);
+      const playerInCombatZone = expeditionActiveRef.current
+        && playerPosition.current.z < -105
+        && !activeInteriorRef.current;
+      if (runtime.aggroed && (playerDistance > runtime.aggroRange * 1.85 || homeDistance > runtime.aggroRange * 1.5)) runtime.aggroed = false;
+      const chasing = runtime.faction === "hostile"
+        && playerInCombatZone
+        && playerDistance <= runtime.aggroRange * 1.85
+        && (runtime.aggroed || playerDistance <= runtime.aggroRange);
+
+      if (!chasing) {
+        advanceOutlandsPatrol(runtime, now, delta);
+        continue;
+      }
+
+      runtime.aggroed = true;
+      if (playerDistance > runtime.attackRange) {
+        toPlayer.normalize();
+        runtime.rotationRef.current = Math.atan2(toPlayer.x, toPlayer.z);
+        const requested = runtime.position.clone().addScaledVector(toPlayer, runtime.speed * Math.min(delta, WALK_DELTA_CAP));
+        runtime.position.copy(resolveOutlandsCollisions(runtime.position, requested, 0.55));
+        runtime.motionRef.current = "run";
+        runtime.robotMotionRef.current = "run";
+        continue;
+      }
+
+      runtime.rotationRef.current = Math.atan2(toPlayer.x, toPlayer.z);
+      if (now < runtime.attackUntil) {
+        runtime.motionRef.current = "shoot";
+        runtime.robotMotionRef.current = "attack";
+      } else {
+        runtime.motionRef.current = "armedIdle";
+        runtime.robotMotionRef.current = "idle";
+      }
+      const attackCooldown = 980 + runtime.seed % 420;
+      if (now - runtime.lastAttackAt < attackCooldown) continue;
+      const group = worldGroupRef.current;
+      const startWorld = group?.localToWorld(runtime.position.clone().setY(runtime.kind === "human" ? 1.2 : 0.9));
+      const endWorld = group?.localToWorld(playerPosition.current.clone().setY(1.0));
+      if (startWorld && endWorld && !blastReachesTarget(startWorld, endWorld)) continue;
+      runtime.lastAttackAt = now;
+      runtime.attackUntil = now + 430;
+      runtime.motionRef.current = "shoot";
+      runtime.robotMotionRef.current = "attack";
+      if (runtime.kind === "human") spawnEnemyTracer(runtime, now);
+      damagePlayer(runtime.damage, runtime);
+    }
+
     let didMove = false;
     let completedClickRoute = false;
     if (drivingRef.current) {
@@ -3287,7 +4030,12 @@ function NeighborhoodWorld({
       if (Math.abs(carSpeed.current) < 0.04) carSpeed.current = 0;
       const steerPower = (0.22 + Math.min(1, Math.abs(carSpeed.current) / 4.5)) * Math.sign(carSpeed.current || 1);
       carRotation.current += steering * delta * 1.45 * steerPower;
-      const nextPosition = carPosition.current.clone().addScaledVector(frontVector(carRotation.current), carSpeed.current * delta);
+      const requestedCarPosition = carPosition.current.clone().addScaledVector(frontVector(carRotation.current), carSpeed.current * delta);
+      const nextPosition = resolveOutlandsCollisions(
+        carPosition.current,
+        resolveWorldAccess(carPosition.current, requestedCarPosition),
+        1.05
+      );
       if (isRoad(nextPosition.x, nextPosition.z)) {
         carPosition.current.copy(nextPosition);
         didMove = Math.abs(carSpeed.current) > 0.03;
@@ -3313,8 +4061,9 @@ function NeighborhoodWorld({
         const nextPosition = currentPosition.clone().addScaledVector(movement, movementSpeed * Math.min(delta, WALK_DELTA_CAP));
         const shellResolved = resolveWalkPosition(currentPosition, nextPosition, worldResidents);
         const itemResolved = resolveInteriorItemCollisions(currentPosition, shellResolved, worldResidents, catalog);
-        if (currentPosition.distanceToSquared(itemResolved) > 0.00000025) {
-          playerPosition.current.copy(itemResolved);
+        const worldResolved = resolveOutlandsCollisions(currentPosition, resolveWorldAccess(currentPosition, itemResolved));
+        if (currentPosition.distanceToSquared(worldResolved) > 0.00000025) {
+          playerPosition.current.copy(worldResolved);
           didMove = true;
           if (!facingCamera) playerRotation.current = Math.atan2(movement.x, movement.z);
         }
@@ -3331,9 +4080,15 @@ function NeighborhoodWorld({
             : WALK_SPEED;
         const maxStep = movementSpeed * Math.min(delta, WALK_DELTA_CAP);
         if (distance <= maxStep + 0.001) {
-          didMove = distance > 0.001;
-          playerPosition.current.copy(clickTarget.current);
-          clickTarget.current = clickPath.current.shift() ?? null;
+          const currentPosition = playerPosition.current.clone();
+          const shellResolved = resolveWalkPosition(currentPosition, clickTarget.current, worldResidents);
+          const itemResolved = resolveInteriorItemCollisions(currentPosition, shellResolved, worldResidents, catalog);
+          const worldResolved = resolveOutlandsCollisions(currentPosition, resolveWorldAccess(currentPosition, itemResolved));
+          didMove = currentPosition.distanceToSquared(worldResolved) > 0.000001;
+          playerPosition.current.copy(worldResolved);
+          const reachedTarget = worldResolved.distanceToSquared(clickTarget.current) < 0.04;
+          clickTarget.current = reachedTarget ? clickPath.current.shift() ?? null : null;
+          if (!reachedTarget) clickPath.current = [];
           completedClickRoute = !clickTarget.current && clickPath.current.length === 0;
         } else {
           direction.normalize();
@@ -3342,9 +4097,10 @@ function NeighborhoodWorld({
           const nextPosition = currentPosition.clone().addScaledVector(direction, maxStep);
           const shellResolved = resolveWalkPosition(currentPosition, nextPosition, worldResidents);
           const itemResolved = resolveInteriorItemCollisions(currentPosition, shellResolved, worldResidents, catalog);
-          const actualDistance = currentPosition.distanceTo(itemResolved);
+          const worldResolved = resolveOutlandsCollisions(currentPosition, resolveWorldAccess(currentPosition, itemResolved));
+          const actualDistance = currentPosition.distanceTo(worldResolved);
           if (actualDistance > 0.0005) {
-            playerPosition.current.copy(itemResolved);
+            playerPosition.current.copy(worldResolved);
             didMove = true;
           }
         }
@@ -3370,6 +4126,39 @@ function NeighborhoodWorld({
     }
     if (pendingVisit.current && nextInterior?.username === pendingVisit.current.username) {
       pendingVisit.current = null;
+    }
+
+    const nextRegion = worldRegionAt(playerPosition.current.x, playerPosition.current.z);
+    if (nextRegion !== currentRegionRef.current) {
+      currentRegionRef.current = nextRegion;
+      onWorldRegionChange?.(nextRegion);
+      onVitalsChange(playerHealthRef.current, nextRegion);
+    }
+    let nextNearbyContainer: string | undefined;
+    let nearestContainerDistance = 3.25;
+    for (const container of OUTLAND_CONTAINERS) {
+      const distance = playerPosition.current.distanceTo(new THREE.Vector3().fromArray(container.position));
+      if (distance >= nearestContainerDistance) continue;
+      nearestContainerDistance = distance;
+      nextNearbyContainer = container.id;
+    }
+    if (nextNearbyContainer !== nearbyContainerRef.current) {
+      nearbyContainerRef.current = nextNearbyContainer;
+      setNearbyContainerId(nextNearbyContainer);
+    }
+    const extractionDistance = playerPosition.current.distanceTo(
+      new THREE.Vector3(EXTRACTION_POSITION[0], 0, EXTRACTION_POSITION[2])
+    );
+    const nextNearExtraction = expeditionActiveRef.current && extractionDistance <= EXTRACTION_RADIUS;
+    if (nextNearExtraction !== nearExtractionRef.current) {
+      nearExtractionRef.current = nextNearExtraction;
+      setNearExtraction(nextNearExtraction);
+    }
+    const nextExtractionAvailable = expeditionActiveRef.current
+      && isAtExtractionCheckpoint(playerPosition.current.x, playerPosition.current.z);
+    if (nextExtractionAvailable !== extractionAvailableRef.current) {
+      extractionAvailableRef.current = nextExtractionAvailable;
+      onExtractionAvailabilityChange?.(nextExtractionAvailable);
     }
 
     const locomoting = !drivingRef.current && (didMove || Boolean(clickTarget.current) || clickPath.current.length > 0);
@@ -3616,15 +4405,37 @@ function NeighborhoodWorld({
     }
   }
 
+  function handleOutlandsContainerClick(containerId: string, event: ThreeEvent<MouseEvent>) {
+    if (cameraModeRef.current === "thirdPerson") return;
+    if (keys.current.has("q")) {
+      if (worldGroupRef.current) shootAt(worldGroupRef.current.worldToLocal(event.point.clone()));
+      return;
+    }
+    if (nearbyContainerRef.current !== containerId) {
+      const container = OUTLAND_CONTAINERS.find((entry) => entry.id === containerId);
+      onToast(`Подойдите ближе к ${container?.name.toLowerCase() ?? "контейнеру"}`);
+      return;
+    }
+    if (lootedContainerSet.has(containerId)) {
+      onToast("Этот контейнер уже пуст");
+      return;
+    }
+    if (!expeditionActiveRef.current) {
+      onToast("Сначала выберите снаряжение и начните вылазку");
+      return;
+    }
+    onLootContainer?.(containerId);
+  }
+
   const controlledCarTransform = { position: renderCarPosition, rotation: renderCarRotation };
   const cameraResident = activeInterior ?? ownResident;
   const displayHomePosition = new THREE.Vector3(cameraResident.lot.x, 0, cameraResident.lot.z).sub(viewOrigin);
   const cameraHomeFront = frontVector(cameraResident.lot.rotation);
   const cameraBounds = {
-    minX: -WORLD_X - viewOrigin.x,
-    maxX: WORLD_X - viewOrigin.x,
-    minZ: -WORLD_Z - viewOrigin.z,
-    maxZ: WORLD_Z - viewOrigin.z
+    minX: WORLD_MIN_X - viewOrigin.x,
+    maxX: WORLD_MAX_X - viewOrigin.x,
+    minZ: WORLD_MIN_Z - viewOrigin.z,
+    maxZ: WORLD_MAX_Z - viewOrigin.z
   };
 
   return (
@@ -3633,28 +4444,25 @@ function NeighborhoodWorld({
       <fog attach="fog" args={["#b9ddec", 58, 148]} />
       <Sky distance={450000} sunPosition={[18, 28, 12]} turbidity={3.5} rayleigh={0.72} mieCoefficient={0.006} mieDirectionalG={0.76} />
       <hemisphereLight args={["#dff5ff", "#587447", 1.55]} />
-      <directionalLight
-        castShadow
-        position={[18, 28, 16]}
-        intensity={2.25}
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-45}
-        shadow-camera-right={45}
-        shadow-camera-top={55}
-        shadow-camera-bottom={-55}
-        shadow-bias={-0.00012}
-      />
+      <FollowingSun />
       <Sparkles count={100} scale={[78, 10, 128]} size={1.35} speed={0.18} color="#fff2fb" opacity={0.52} />
       <group ref={worldGroupRef} position={viewOffset}>
         <DistrictGeometry residents={worldResidents} />
+        <OutlandsEnvironment
+          activeExpedition={expeditionActive}
+          lootedContainerIds={lootedContainerSet}
+          nearbyContainerId={nearbyContainerId}
+          nearExtraction={nearExtraction}
+          onContainerClick={handleOutlandsContainerClick}
+        />
         <mesh
           receiveShadow
           userData={{ aimSurface: true }}
           rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, 0.012, 0]}
+          position={[0, 0.012, -120]}
           onClick={handleGroundClick}
         >
-          <planeGeometry args={[94, 140]} />
+          <planeGeometry args={[340, 420]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} />
         </mesh>
 
@@ -3707,6 +4515,68 @@ function NeighborhoodWorld({
             />
           );
         })}
+        {outlandsActors.map(({ definition, runtime }, index) => {
+          const handleHit = (event: ThreeEvent<MouseEvent>) => {
+            if (cameraModeRef.current === "thirdPerson" || !keys.current.has("q") || !isPrimarySceneClick(event)) return;
+            event.stopPropagation();
+            if (!worldGroupRef.current) return;
+            shootAt(worldGroupRef.current.worldToLocal(event.point.clone()));
+          };
+          if (definition.kind === "eyeDrone" || definition.kind === "quadShell") {
+            return (
+              <OutlandsRobot
+                key={definition.id}
+                kind={definition.kind}
+                username={runtime.username}
+                displayName={definition.name}
+                position={runtime.position}
+                rotationRef={runtime.rotationRef}
+                motionRef={runtime.robotMotionRef}
+                health={runtime.health}
+                maxHealth={runtime.maxHealth}
+                dead={runtime.dead}
+                faction={definition.faction}
+                onCombatHit={handleHit}
+              />
+            );
+          }
+          const visual = outlandsHumanVisuals[index % Math.max(1, outlandsHumanVisuals.length)] ?? ownResident;
+          const outfit = getCatalogItem(catalog, visual.avatar.outfit);
+          const character = getCatalogItem(catalog, visual.avatar.character);
+          return (
+            <Player
+              key={definition.id}
+              username={runtime.dead ? `${definition.name} · повержен` : definition.name}
+              color={outfit?.color ?? "#9b4a3c"}
+              position={runtime.position}
+              character={character}
+              outfit={outfit}
+              motionRef={runtime.motionRef}
+              weapon="rifle"
+              rotation={runtime.rotationRef.current}
+              rotationRef={runtime.rotationRef}
+              teleportNonce={runtime.respawnNonce}
+              health={runtime.health}
+              maxHealth={runtime.maxHealth}
+              combatUsername={runtime.username}
+              combatDead={runtime.dead}
+              bloodMarks={runtime.bloodMarks}
+              ragdollImpact={runtime.ragdollImpact}
+              ragdollControllerRef={runtime.ragdollControllerRef}
+              onCombatHit={handleHit}
+            />
+          );
+        })}
+        <Player
+          username="Рейнджер Мира · безопасна"
+          color={getCatalogItem(catalog, rangerVisual.avatar.outfit)?.color ?? "#3cc59a"}
+          position={rangerPosition}
+          character={getCatalogItem(catalog, rangerVisual.avatar.character)}
+          outfit={getCatalogItem(catalog, rangerVisual.avatar.outfit)}
+          motion="armedIdle"
+          weapon="rifle"
+          rotation={Math.PI}
+        />
         {worldResidents.filter((resident) => resident.username !== user.username).map((resident) => (
           <Car
             key={`car-${resident.plotId}`}
@@ -3835,7 +4705,14 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
   const [aiming, setAiming] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>("strategy");
   const [pointerLocked, setPointerLocked] = useState(false);
+  const [worldVitals, setWorldVitals] = useState<{ health: number; region: WorldRegion }>({ health: 100, region: "city" });
   const recoilRef = useRef<WeaponRecoilState>({ x: 0, y: 0, kick: 0 });
+  const previousAmmoExpeditionActiveRef = useRef(false);
+  const lastNoAmmoToastAtRef = useRef(0);
+
+  const handleVitalsChange = useCallback((health: number, region: WorldRegion) => {
+    setWorldVitals((current) => current.health === health && current.region === region ? current : { health, region });
+  }, []);
 
   const cancelReload = useCallback(() => {
     if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current);
@@ -3846,6 +4723,14 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
 
   const startReload = useCallback((weapon: WeaponKind) => {
     const config = WEAPONS[weapon];
+    if (props.expeditionActive && (props.expeditionAmmo ?? 0) <= 0) {
+      const now = performance.now();
+      if (now - lastNoAmmoToastAtRef.current > 900) {
+        lastNoAmmoToastAtRef.current = now;
+        props.onToast("Боеприпасы закончились — возвращайтесь к точке эвакуации");
+      }
+      return;
+    }
     if (ammoRef.current[weapon] >= config.magazineSize) return;
     if (reloadRef.current?.weapon === weapon) return;
     if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current);
@@ -3855,17 +4740,28 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
     setReloadState(nextReload);
     reloadTimerRef.current = window.setTimeout(() => {
       if (reloadRef.current?.startedAt !== startedAt || reloadRef.current.weapon !== weapon) return;
-      const nextAmmo = { ...ammoRef.current, [weapon]: config.magazineSize };
+      const loadedRounds = props.expeditionActive
+        ? Math.min(config.magazineSize, Math.max(0, props.expeditionAmmo ?? 0))
+        : config.magazineSize;
+      const nextAmmo = { ...ammoRef.current, [weapon]: loadedRounds };
       ammoRef.current = nextAmmo;
       setAmmoByWeapon(nextAmmo);
       reloadRef.current = null;
       reloadTimerRef.current = null;
       setReloadState(null);
     }, config.reloadMs);
-  }, []);
+  }, [props.expeditionActive, props.expeditionAmmo, props.onToast]);
 
   const consumeRound = useCallback((weapon: WeaponKind) => {
     if (reloadRef.current) return null;
+    if (props.expeditionActive && (props.expeditionAmmo ?? 0) <= 0) {
+      const now = performance.now();
+      if (now - lastNoAmmoToastAtRef.current > 900) {
+        lastNoAmmoToastAtRef.current = now;
+        props.onToast("Боеприпасы закончились — возвращайтесь к точке эвакуации");
+      }
+      return null;
+    }
     const current = ammoRef.current[weapon];
     if (current <= 0) {
       startReload(weapon);
@@ -3876,14 +4772,36 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
     ammoRef.current = nextAmmo;
     setAmmoByWeapon(nextAmmo);
     return remaining;
-  }, [startReload]);
+  }, [props.expeditionActive, props.expeditionAmmo, props.onToast, startReload]);
 
   const selectWeapon = useCallback((weapon: WeaponKind) => {
+    if (props.expeditionActive && props.expeditionWeapon && weapon !== props.expeditionWeapon) return;
     if (selectedWeaponStateRef.current === weapon) return;
     selectedWeaponStateRef.current = weapon;
     cancelReload();
     setSelectedWeapon(weapon);
-  }, [cancelReload]);
+  }, [cancelReload, props.expeditionActive, props.expeditionWeapon]);
+
+  useEffect(() => {
+    if (props.expeditionActive && props.expeditionWeapon) {
+      selectWeapon(props.expeditionWeapon);
+    }
+  }, [props.expeditionActive, props.expeditionWeapon, selectWeapon]);
+
+  useEffect(() => {
+    const justStarted = props.expeditionActive && !previousAmmoExpeditionActiveRef.current;
+    previousAmmoExpeditionActiveRef.current = Boolean(props.expeditionActive);
+    if (!justStarted) return;
+    const nextAmmo = createWeaponAmmoState();
+    const expeditionWeapon = props.expeditionWeapon ?? selectedWeaponStateRef.current;
+    nextAmmo[expeditionWeapon] = Math.min(
+      WEAPONS[expeditionWeapon].magazineSize,
+      Math.max(0, props.expeditionAmmo ?? 0)
+    );
+    ammoRef.current = nextAmmo;
+    setAmmoByWeapon(nextAmmo);
+    cancelReload();
+  }, [cancelReload, props.expeditionActive, props.expeditionAmmo, props.expeditionWeapon]);
 
   useEffect(() => () => {
     if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current);
@@ -3891,13 +4809,14 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
 
   const weaponConfig = WEAPONS[selectedWeapon];
   const activeReload = reloadState?.weapon === selectedWeapon ? reloadState : null;
+  const playerMaxHealth = 100 + (props.expeditionSkills?.survival ?? 0) * 10;
 
   return (
     <>
       <Canvas
         shadows
         dpr={[1, 1.7]}
-        camera={{ position: [16, 15, 20], fov: 48, near: 0.1, far: 220 }}
+        camera={{ position: [16, 15, 20], fov: 48, near: 0.1, far: 600 }}
         onContextMenu={(event) => event.preventDefault()}
       >
         <NeighborhoodWorld
@@ -3915,6 +4834,7 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
           onCameraModeChange={setCameraMode}
           onPointerLockChange={setPointerLocked}
           recoilRef={recoilRef}
+          onVitalsChange={handleVitalsChange}
         />
       </Canvas>
       {cameraMode === "thirdPerson" ? (
@@ -3924,6 +4844,19 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
             <div className="pointer-lock-hint">Кликните по сцене, чтобы вернуть управление мышью</div>
           ) : null}
         </>
+      ) : null}
+      {!inside && worldVitals.region !== "city" ? (
+        <div className="outlands-vitals" aria-label="Состояние экспедиции">
+          <div className="outlands-vitals-heading">
+            <span>{WORLD_REGION_LABELS[worldVitals.region]}</span>
+            <b>{props.expeditionActive ? "ЭКСПЕДИЦИЯ" : "КПП ЗАКРЫТ"}</b>
+          </div>
+          <div className="outlands-health-row">
+            <span>Здоровье</span>
+            <strong>{Math.max(0, Math.round(worldVitals.health))} / {playerMaxHealth}</strong>
+          </div>
+          <div className="outlands-health-track"><i style={{ width: `${Math.max(0, Math.min(100, worldVitals.health / playerMaxHealth * 100))}%` }} /></div>
+        </div>
       ) : null}
       {!driving && !inside ? (
         <div className={aiming ? "weapon-hud aiming" : "weapon-hud"}>
@@ -3938,7 +4871,11 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
             </div>
             <div className={activeReload ? "weapon-ammo reloading" : "weapon-ammo"}>
               <div><strong>{ammoByWeapon[selectedWeapon]}</strong><span>/ {weaponConfig.magazineSize}</span></div>
-              <small>{activeReload ? "заряжаем магазин" : "магазины ∞"}</small>
+              <small>{activeReload
+                ? "заряжаем магазин"
+                : props.expeditionActive
+                  ? `запас ${Math.max(0, (props.expeditionAmmo ?? 0) - ammoByWeapon[selectedWeapon])}`
+                  : "магазины ∞"}</small>
             </div>
           </div>
           {activeReload ? (
@@ -3952,6 +4889,7 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
                 key={weapon}
                 className={weapon === selectedWeapon ? "active" : ""}
                 type="button"
+                disabled={Boolean(props.expeditionActive && props.expeditionWeapon && weapon !== props.expeditionWeapon)}
                 onClick={() => selectWeapon(weapon)}
                 title={`${WEAPONS[weapon].label}: ${ammoByWeapon[weapon]} / ${WEAPONS[weapon].magazineSize}`}
               >
