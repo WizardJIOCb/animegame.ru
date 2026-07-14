@@ -8,6 +8,8 @@ import {
   EXPEDITION_AMMO_PACK,
   EXPEDITION_BANDAGE_HEAL,
   EXPEDITION_DOWNED_BLEED_OUT_MS,
+  EXPEDITION_ARTIFACTS,
+  EXPEDITION_ARTIFACT_IDS,
   EXPEDITION_CONTAINERS,
   EXPEDITION_CONTAINER_IDS,
   EXPEDITION_ENEMIES,
@@ -15,7 +17,13 @@ import {
   EXPEDITION_EXTRACT_REWARD,
   EXPEDITION_HIT_MULTIPLIERS,
   EXPEDITION_HIT_ZONES,
+  EXPEDITION_GEAR,
+  EXPEDITION_GEAR_IDS,
+  EXPEDITION_GEAR_SLOTS,
+  EXPEDITION_GRENADES,
+  EXPEDITION_GRENADE_IDS,
   EXPEDITION_ITEM_IDS,
+  EXPEDITION_ITEMS,
   EXPEDITION_QUEST_ID,
   EXPEDITION_RECIPES,
   EXPEDITION_RECIPE_IDS,
@@ -31,12 +39,18 @@ import {
   EXPEDITION_WEAPON_IDS,
   type ExpeditionContainerId,
   type ExpeditionEnemyId,
+  type ExpeditionArtifactId,
+  type ExpeditionGearId,
+  type ExpeditionGearSlot,
+  type ExpeditionGrenadeId,
   type ExpeditionHitInput,
   type ExpeditionHitZone,
   type ExpeditionItemId,
   type ExpeditionRecipeId,
   type ExpeditionRunSnapshot,
   type ExpeditionSkillId,
+  type ExpeditionTacticalId,
+  type ExpeditionTacticalTarget,
   type ExpeditionWeaponId,
   type ItemStack,
   type PartyInvite,
@@ -445,6 +459,10 @@ const expeditionSkillIds = new Set<string>(EXPEDITION_SKILL_IDS);
 const expeditionContainerIds = new Set<string>(EXPEDITION_CONTAINER_IDS);
 const expeditionEnemyIds = new Set<string>(EXPEDITION_ENEMY_IDS);
 const expeditionHitZones = new Set<string>(EXPEDITION_HIT_ZONES);
+const expeditionGearIds = new Set<string>(EXPEDITION_GEAR_IDS);
+const expeditionGrenadeIds = new Set<string>(EXPEDITION_GRENADE_IDS);
+const expeditionArtifactIds = new Set<string>(EXPEDITION_ARTIFACT_IDS);
+const expeditionGearSlots = new Set<string>(EXPEDITION_GEAR_SLOTS);
 
 function cloneItemStacks(stacks: ItemStack[]) {
   return stacks.map((stack) => ({ ...stack }));
@@ -527,7 +545,13 @@ function corpseLootForRun(runId: string, enemyId: ExpeditionEnemyId) {
     "quad-warden": { weaponId: "laser", chance: 0.12 },
     "quad-hunter": { weaponId: "rocket", chance: 0.1 },
     "raider-vika": { weaponId: "rifle", chance: 0.28 },
-    "raider-boris": { weaponId: "sniper", chance: 0.16 }
+    "raider-boris": { weaponId: "sniper", chance: 0.16 },
+    "eye-sentinel": { weaponId: "laser", chance: 0.08 },
+    "eye-scorcher": { weaponId: "laser", chance: 0.14 },
+    "quad-bulwark": { weaponId: "rocket", chance: 0.2 },
+    "quad-stalker": { weaponId: "laser", chance: 0.12 },
+    "raider-scout": { weaponId: "sniper", chance: 0.22 },
+    "raider-heavy": { weaponId: "rifle", chance: 0.35 }
   };
   const candidate = weaponCandidates[enemyId];
   const weaponId = candidate
@@ -585,6 +609,8 @@ function makeRunSnapshot(run: ActiveExpeditionRun): ExpeditionRunSnapshot {
     playerHealth: run.playerHealth,
     playerMaxHealth: run.playerMaxHealth,
     playerShield: run.playerShield,
+    supportRobotUntil: run.supportRobotUntil,
+    scannerUntil: run.scannerUntil,
     downedAt: run.downedAt,
     bleedOutAt: run.bleedOutAt,
     enemyHealth: { ...run.enemyHealth },
@@ -627,14 +653,26 @@ function createActiveExpeditionRun(user: User): ActiveExpeditionRun {
     EXPEDITION_START_SHIELD_MODULES,
     itemStackQuantity(user.expedition.stash, "shield-module")
   );
+  const tacticalItems = ([...EXPEDITION_GRENADE_IDS, ...EXPEDITION_ARTIFACT_IDS] as ExpeditionTacticalId[])
+    .map((itemId) => ({
+      itemId,
+      quantity: Math.min(itemStackQuantity(user.expedition.stash, itemId), expeditionGrenadeIds.has(itemId) ? 3 : 1)
+    }))
+    .filter((stack) => stack.quantity > 0);
   const packedItems = ([
     { itemId: "ammo", quantity: ammoToPack },
     { itemId: "bandage", quantity: bandagesToPack },
-    { itemId: "shield-module", quantity: shieldModulesToPack }
+    { itemId: "shield-module", quantity: shieldModulesToPack },
+    ...tacticalItems
   ] satisfies ItemStack[]).filter((stack) => stack.quantity > 0);
   const nextStash = deductItemStacks(user.expedition.stash, packedItems);
   if (nextStash) user.expedition.stash = nextStash;
   const playerMaxHealth = 100 + user.expedition.skills.survival * 10;
+  const gearShield = EXPEDITION_GEAR_SLOTS.reduce((total, slot) => {
+    const gearId = user.expedition.equippedGear[slot];
+    return total + (gearId ? EXPEDITION_GEAR[gearId].bonusShield : 0);
+  }, 0);
+  const armorEffectiveness = 1 + user.expedition.skills.armor * 0.04;
   return {
     id,
     userId: user.id,
@@ -649,7 +687,9 @@ function createActiveExpeditionRun(user: User): ActiveExpeditionRun {
     carriedWeaponIds: [],
     playerHealth: playerMaxHealth,
     playerMaxHealth,
-    playerShield: shieldModulesToPack * EXPEDITION_SHIELD_PER_MODULE,
+    playerShield: Math.round((shieldModulesToPack * EXPEDITION_SHIELD_PER_MODULE + gearShield) * armorEffectiveness),
+    supportRobotUntil: null,
+    scannerUntil: null,
     downedAt: null,
     bleedOutAt: null,
     enemyHealth: makeEnemyHealth(),
@@ -693,11 +733,14 @@ function activeRunForUser(user: User) {
     }
   }
   const playerMaxHealth = 100 + user.expedition.skills.survival * 10;
-  const maximumShield = (Array.isArray(storedRun.backpack) ? storedRun.backpack : []).reduce((total, stack) => (
+  const maximumShield = Math.round(((Array.isArray(storedRun.backpack) ? storedRun.backpack : []).reduce((total, stack) => (
     stack.itemId === "shield-module"
       ? total + stack.quantity * EXPEDITION_SHIELD_PER_MODULE
       : total
-  ), 0);
+  ), 0) + EXPEDITION_GEAR_SLOTS.reduce((total, slot) => {
+    const gearId = user.expedition.equippedGear[slot];
+    return total + (gearId ? EXPEDITION_GEAR[gearId].bonusShield : 0);
+  }, 0)) * (1 + user.expedition.skills.armor * 0.04));
   const storedPlayerHealth = Number(storedRun.playerHealth);
   const playerHealth = Number.isFinite(storedPlayerHealth)
     ? Math.max(0, Math.min(playerMaxHealth, Math.round(storedPlayerHealth)))
@@ -737,6 +780,12 @@ function activeRunForUser(user: User) {
     playerHealth,
     playerMaxHealth,
     playerShield,
+    supportRobotUntil: Number.isFinite(Number(storedRun.supportRobotUntil)) && Number(storedRun.supportRobotUntil) > Date.now()
+      ? Math.round(Number(storedRun.supportRobotUntil))
+      : null,
+    scannerUntil: Number.isFinite(Number(storedRun.scannerUntil)) && Number(storedRun.scannerUntil) > Date.now()
+      ? Math.round(Number(storedRun.scannerUntil))
+      : null,
     downedAt,
     bleedOutAt,
     enemyHealth: makeEnemyHealth(storedRun.enemyHealth, killedEnemyIds),
@@ -1069,6 +1118,42 @@ fastify.post("/api/expedition/loadout", async (request, reply) => {
   }
 });
 
+fastify.post("/api/expedition/equip-gear", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const body = (request.body ?? {}) as { slot?: unknown; gearId?: unknown };
+    const slot = String(body.slot ?? "");
+    const rawGearId = body.gearId == null ? null : String(body.gearId);
+    if (!expeditionGearSlots.has(slot) || (rawGearId !== null && !expeditionGearIds.has(rawGearId))) {
+      return reply.code(400).send({ error: "Неизвестный слот или предмет экипировки" });
+    }
+    const typedSlot = slot as ExpeditionGearSlot;
+    const typedGearId = rawGearId as ExpeditionGearId | null;
+    if (typedGearId && EXPEDITION_GEAR[typedGearId].slot !== typedSlot) {
+      return reply.code(400).send({ error: "Этот предмет нельзя надеть в выбранный слот" });
+    }
+
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    if (activeRunForUser(user)) {
+      return reply.code(409).send({ error: "Экипировку можно менять только в городе или дома" });
+    }
+    if (typedGearId && itemStackQuantity(user.expedition.stash, typedGearId) < 1) {
+      return reply.code(403).send({ error: "Сначала купите или изготовьте этот предмет" });
+    }
+
+    user.expedition.equippedGear[typedSlot] = typedGearId;
+    writeDb(db);
+    return {
+      profile: user.expedition,
+      equipped: typedGearId ? EXPEDITION_GEAR[typedGearId] : null,
+      slot: typedSlot
+    };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
 fastify.post("/api/expedition/buy-weapon", async (request, reply) => {
   try {
     const authenticatedUser = requireUser(request);
@@ -1212,6 +1297,11 @@ fastify.post("/api/expedition/trader/sell", async (request, reply) => {
     const earned = unitPrice * quantity;
     const sold: ItemStack = { itemId: typedItemId, quantity };
     user.expedition.stash = nextStash;
+    for (const slot of EXPEDITION_GEAR_SLOTS) {
+      if (user.expedition.equippedGear[slot] === typedItemId && itemStackQuantity(nextStash, typedItemId) < 1) {
+        user.expedition.equippedGear[slot] = null;
+      }
+    }
     user.coins = Math.min(999_999_999, user.coins + earned);
     writeDb(db);
     return {
@@ -1283,6 +1373,15 @@ fastify.post("/api/expedition/upgrade-skill", async (request, reply) => {
     }
     if (user.expedition.skills[typedSkillId] >= skill.maxLevel) {
       return reply.code(409).send({ error: "Навык уже достиг максимального уровня" });
+    }
+    const missingRequirement = Object.entries(skill.requires ?? {}).find(([requiredSkillId, requiredLevel]) => (
+      user.expedition.skills[requiredSkillId as ExpeditionSkillId] < Number(requiredLevel)
+    ));
+    if (missingRequirement) {
+      const requiredSkill = EXPEDITION_SKILLS[missingRequirement[0] as ExpeditionSkillId];
+      return reply.code(409).send({
+        error: `Сначала повысьте навык «${requiredSkill.name}» до ${missingRequirement[1]} уровня`
+      });
     }
 
     user.expedition.skillPoints -= 1;
@@ -1540,7 +1639,8 @@ fastify.post("/api/expedition/use-bandage", async (request, reply) => {
     }
 
     run.backpack = nextBackpack;
-    const heal = Math.min(EXPEDITION_BANDAGE_HEAL, run.playerMaxHealth - run.playerHealth);
+    const medicineMultiplier = 1 + user.expedition.skills.medicine * 0.08;
+    const heal = Math.min(Math.round(EXPEDITION_BANDAGE_HEAL * medicineMultiplier), run.playerMaxHealth - run.playerHealth);
     run.playerHealth += heal;
     persistActiveRun(user, run);
     writeDb(db);
@@ -1554,12 +1654,137 @@ fastify.post("/api/expedition/use-bandage", async (request, reply) => {
   }
 });
 
+fastify.post("/api/expedition/use-tactical", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const body = (request.body ?? {}) as {
+      itemId?: unknown;
+      origin?: { x?: unknown; z?: unknown };
+      targets?: unknown;
+    };
+    const itemId = String(body.itemId ?? "");
+    if (!expeditionGrenadeIds.has(itemId) && !expeditionArtifactIds.has(itemId)) {
+      return reply.code(400).send({ error: "Неизвестная граната или артефакт" });
+    }
+    const typedItemId = itemId as ExpeditionTacticalId;
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    const run = activeRunForUser(user);
+    if (!run) {
+      return reply.code(409).send({ error: "Тактические предметы доступны только в активной экспедиции" });
+    }
+    if (run.downedAt || run.playerHealth <= 0) {
+      return reply.code(409).send({ error: "В тяжёлом состоянии использовать предмет нельзя" });
+    }
+
+    const used: ItemStack = { itemId: typedItemId, quantity: 1 };
+    const nextBackpack = deductItemStacks(run.backpack, [used]);
+    if (!nextBackpack) {
+      return reply.code(409).send({ error: "Этого предмета нет в рюкзаке" });
+    }
+
+    const now = Date.now();
+    const livePosition = liveNeighborhoodPosition(user.id) ?? run.playerPosition;
+    const originX = Number(body.origin?.x);
+    const originZ = Number(body.origin?.z);
+    const origin = {
+      x: Number.isFinite(originX) ? originX : livePosition.x,
+      z: Number.isFinite(originZ) ? originZ : livePosition.z
+    };
+    if ((origin.x - livePosition.x) ** 2 + (origin.z - livePosition.z) ** 2 > 34 ** 2) {
+      return reply.code(403).send({ error: "Точка применения слишком далеко" });
+    }
+
+    const rawTargets = Array.isArray(body.targets) ? body.targets.slice(0, EXPEDITION_ENEMY_IDS.length) : [];
+    const requestedTargets = new Map<ExpeditionEnemyId, ExpeditionTacticalTarget>();
+    for (const rawTarget of rawTargets) {
+      if (!rawTarget || typeof rawTarget !== "object") continue;
+      const target = rawTarget as { enemyId?: unknown; distance?: unknown; position?: { x?: unknown; z?: unknown } };
+      const enemyId = String(target.enemyId ?? "");
+      if (!expeditionEnemyIds.has(enemyId)) continue;
+      const typedEnemyId = enemyId as ExpeditionEnemyId;
+      const positionX = Number(target.position?.x);
+      const positionZ = Number(target.position?.z);
+      const fallback = EXPEDITION_ENEMIES[typedEnemyId].position;
+      const position = {
+        x: Number.isFinite(positionX) ? positionX : fallback[0],
+        z: Number.isFinite(positionZ) ? positionZ : fallback[1]
+      };
+      // Enemy patrols stay within roughly 30 metres of their authoritative
+      // spawn. This keeps client-side animation responsive without allowing a
+      // forged grenade payload to teleport a remote corpse to the blast.
+      if (Math.hypot(position.x - fallback[0], position.z - fallback[1]) > 32) continue;
+      const distance = Math.hypot(position.x - origin.x, position.z - origin.z);
+      if (!Number.isFinite(distance)) continue;
+      requestedTargets.set(typedEnemyId, { enemyId: typedEnemyId, distance, position });
+    }
+
+    const isNuke = typedItemId === "artifact-nuke";
+    const targets = isNuke
+      ? EXPEDITION_ENEMY_IDS.filter((enemyId) => EXPEDITION_ENEMIES[enemyId].hostile && !run.killedEnemyIds.includes(enemyId)).map((enemyId) => ({
+          enemyId,
+          distance: 0,
+          position: { x: EXPEDITION_ENEMIES[enemyId].position[0], z: EXPEDITION_ENEMIES[enemyId].position[1] }
+        }))
+      : [...requestedTargets.values()];
+
+    run.backpack = nextBackpack;
+    if (typedItemId === "artifact-robot-beacon") {
+      run.supportRobotUntil = now + EXPEDITION_ARTIFACTS[typedItemId].durationMs;
+    } else if (typedItemId === "artifact-scanner") {
+      run.scannerUntil = now + EXPEDITION_ARTIFACTS[typedItemId].durationMs;
+    }
+
+    const grenade = expeditionGrenadeIds.has(typedItemId)
+      ? EXPEDITION_GRENADES[typedItemId as ExpeditionGrenadeId]
+      : null;
+    const radius = grenade?.radius ?? Number.POSITIVE_INFINITY;
+    const demolitionMultiplier = 1 + user.expedition.skills.demolition * 0.08;
+    const hits = targets.flatMap((target) => {
+      if (run.killedEnemyIds.includes(target.enemyId) || target.distance > radius) return [];
+      const enemy = EXPEDITION_ENEMIES[target.enemyId];
+      const falloff = grenade ? Math.max(0.28, 1 - target.distance / (grenade.radius * 1.25)) : 1;
+      const factionMultiplier = grenade && enemy.faction === "robot" ? grenade.robotMultiplier : 1;
+      const damage = isNuke
+        ? 9_999
+        : Math.max(1, Math.round((grenade?.damage ?? 0) * demolitionMultiplier * falloff * factionMultiplier));
+      if (damage <= 0) return [];
+      const remainingHealth = Math.max(0, (run.enemyHealth[target.enemyId] ?? enemy.maxHealth) - damage);
+      const killed = remainingHealth <= 0;
+      run.enemyHealth[target.enemyId] = remainingHealth;
+      if (killed) {
+        run.killedEnemyIds.push(target.enemyId);
+        run.enemyDeathPositions[target.enemyId] = target.position
+          ? { ...target.position }
+          : { x: enemy.position[0], z: enemy.position[1] };
+        user.expedition.stats.enemiesKilled += 1;
+        if (enemy.hostile) user.expedition.stats.hostileEnemiesKilled += 1;
+      }
+      return [{ enemy, damage, remainingHealth, killed, corpseLootAvailable: killed }];
+    });
+
+    persistActiveRun(user, run);
+    writeDb(db);
+    return {
+      run: makeRunSnapshot(run),
+      used,
+      item: EXPEDITION_ITEMS[typedItemId],
+      effect: expeditionGrenadeIds.has(typedItemId)
+        ? EXPEDITION_GRENADES[typedItemId as ExpeditionGrenadeId]
+        : EXPEDITION_ARTIFACTS[typedItemId as ExpeditionArtifactId],
+      hits
+    };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
 fastify.post("/api/expedition/hit", async (request, reply) => {
   try {
     const authenticatedUser = requireUser(request);
     const body = (request.body ?? {}) as { hits?: unknown };
     if (!Array.isArray(body.hits) || body.hits.length > EXPEDITION_ENEMY_IDS.length) {
-      return reply.code(400).send({ error: "Передайте список до пяти попаданий одного выстрела" });
+      return reply.code(400).send({ error: `Передайте список до ${EXPEDITION_ENEMY_IDS.length} попаданий одного выстрела` });
     }
 
     const hitByEnemy = new Map<ExpeditionEnemyId, ExpeditionHitInput>();

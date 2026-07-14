@@ -4,6 +4,9 @@ import type {
   ExpeditionContainerId,
   ExpeditionEnemyDefinition,
   ExpeditionEnemyId,
+  ExpeditionGearDefinition,
+  ExpeditionGearId,
+  ExpeditionGearSlot,
   ExpeditionHitInput,
   ExpeditionItemId,
   ExpeditionProfile,
@@ -12,6 +15,8 @@ import type {
   ExpeditionRunSnapshot,
   ExpeditionSkillDefinition,
   ExpeditionSkillId,
+  ExpeditionTacticalId,
+  ExpeditionTacticalTarget,
   ExpeditionWeaponDefinition,
   ExpeditionWeaponId,
   ItemStack
@@ -27,11 +32,14 @@ export {
 export type {
   ExpeditionContainerId,
   ExpeditionEnemyId,
+  ExpeditionGearId,
+  ExpeditionGearSlot,
   ExpeditionItemId,
   ExpeditionProfile,
   ExpeditionRecipeId,
   ExpeditionRunSnapshot,
   ExpeditionSkillId,
+  ExpeditionTacticalId,
   ExpeditionWeaponId,
   ItemStack,
   PartyInvite,
@@ -104,6 +112,17 @@ export function setExpeditionLoadout(weaponId: ExpeditionWeaponId) {
   return request<{ profile: ExpeditionProfile; weapon: ExpeditionWeaponDefinition }>("/api/expedition/loadout", {
     method: "POST",
     body: JSON.stringify({ weaponId })
+  });
+}
+
+export function equipExpeditionGear(slot: ExpeditionGearSlot, gearId: ExpeditionGearId | null) {
+  return request<{
+    profile: ExpeditionProfile;
+    equipped: ExpeditionGearDefinition | null;
+    slot: ExpeditionGearSlot;
+  }>("/api/expedition/equip-gear", {
+    method: "POST",
+    body: JSON.stringify({ slot, gearId })
   });
 }
 
@@ -204,6 +223,29 @@ export function useExpeditionBandage() {
     used: ItemStack;
     heal: number;
   }>("/api/expedition/use-bandage", { method: "POST" });
+}
+
+export function useExpeditionTactical(
+  itemId: ExpeditionTacticalId,
+  origin: { x: number; z: number },
+  targets: ExpeditionTacticalTarget[] = []
+) {
+  return request<{
+    run: ExpeditionRunSnapshot;
+    used: ItemStack;
+    item: { name: string };
+    effect: { name: string };
+    hits: Array<{
+      enemy: ExpeditionEnemyDefinition;
+      damage: number;
+      remainingHealth: number;
+      killed: boolean;
+      corpseLootAvailable: boolean;
+    }>;
+  }>("/api/expedition/use-tactical", {
+    method: "POST",
+    body: JSON.stringify({ itemId, origin, targets })
+  });
 }
 
 export function syncExpeditionPlayerStatus(status: { health: number; shield: number; downed: boolean }) {

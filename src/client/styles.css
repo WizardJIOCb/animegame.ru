@@ -3068,3 +3068,1469 @@ input:focus {
     font-size: 11px;
   }
 }
+
+/* Sci-fi progression hub */
+.progression-hub {
+  --hub-bg: #071016;
+  --hub-panel: #0c1820;
+  --hub-panel-soft: #101f27;
+  --hub-line: rgba(133, 174, 181, 0.2);
+  --hub-muted: #8da4a8;
+  --hub-text: #ecf7f5;
+  --hub-cyan: #59f1d4;
+  --hub-orange: #ff9b52;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(89, 241, 212, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(89, 241, 212, 0.025) 1px, transparent 1px),
+    radial-gradient(circle at 90% -5%, rgba(30, 176, 157, 0.18), transparent 31%),
+    linear-gradient(155deg, #09151b, var(--hub-bg) 58%);
+  background-size: 28px 28px, 28px 28px, auto, auto;
+  color: var(--hub-text);
+}
+
+.progression-command-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 13px 10px;
+  border-bottom: 1px solid var(--hub-line);
+  background: linear-gradient(90deg, rgba(5, 14, 19, 0.94), rgba(13, 29, 35, 0.94));
+}
+
+.progression-command-mark {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(89, 241, 212, 0.45);
+  clip-path: polygon(12% 0, 100% 0, 100% 76%, 76% 100%, 0 100%, 0 12%);
+  background: rgba(19, 70, 70, 0.44);
+  color: var(--hub-cyan);
+}
+
+.progression-command-mark::before,
+.progression-command-mark i {
+  position: absolute;
+  content: "";
+  border: 1px solid rgba(89, 241, 212, 0.23);
+  border-radius: 50%;
+}
+
+.progression-command-mark::before {
+  width: 28px;
+  height: 28px;
+}
+
+.progression-command-mark i {
+  width: 15px;
+  height: 15px;
+  border-top-color: transparent;
+  animation: progression-radar-spin 3.4s linear infinite;
+}
+
+.progression-command-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.progression-command-copy span {
+  overflow: hidden;
+  color: #6fe9d3;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progression-command-copy b {
+  overflow: hidden;
+  font-size: 14px;
+  letter-spacing: 0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progression-command-meta {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.progression-command-meta > span {
+  padding: 3px 6px;
+  border: 1px solid rgba(141, 164, 168, 0.28);
+  border-radius: 3px;
+  color: #9db1b5;
+  font-size: 7px;
+  font-weight: 950;
+  letter-spacing: 0.09em;
+}
+
+.progression-command-meta > span.is-live {
+  border-color: rgba(255, 155, 82, 0.5);
+  background: rgba(255, 112, 47, 0.13);
+  color: #ffc08c;
+  box-shadow: 0 0 15px rgba(255, 119, 49, 0.13);
+}
+
+.progression-command-meta b {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #ffe0a6;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.progression-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(74px, 1fr));
+  overflow-x: auto;
+  border-bottom: 1px solid var(--hub-line);
+  background: rgba(5, 12, 17, 0.93);
+  scrollbar-width: none;
+}
+
+.progression-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.progression-tabs button {
+  position: relative;
+  min-width: 0;
+  min-height: 48px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  padding: 5px 4px;
+  border-right: 1px solid rgba(133, 174, 181, 0.1);
+  background: transparent;
+  color: #789096;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.025em;
+}
+
+.progression-tabs button::after {
+  position: absolute;
+  right: 10px;
+  bottom: -1px;
+  left: 10px;
+  height: 2px;
+  content: "";
+  background: transparent;
+}
+
+.progression-tabs button:hover,
+.progression-tabs button:focus-visible {
+  background: rgba(89, 241, 212, 0.06);
+  color: #c8e4e1;
+}
+
+.progression-tabs button:focus-visible {
+  outline: 2px solid rgba(89, 241, 212, 0.45);
+  outline-offset: -2px;
+}
+
+.progression-tabs button.active {
+  background: linear-gradient(180deg, rgba(89, 241, 212, 0.11), rgba(89, 241, 212, 0.025));
+  color: var(--hub-cyan);
+}
+
+.progression-tabs button.active::after {
+  background: var(--hub-cyan);
+  box-shadow: 0 0 10px rgba(89, 241, 212, 0.72);
+}
+
+.progression-hub-content {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  scrollbar-color: rgba(89, 241, 212, 0.35) transparent;
+  scrollbar-width: thin;
+}
+
+.progression-tab-stack {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  animation: progression-panel-in 180ms ease-out both;
+}
+
+.progression-hub .expedition-card {
+  gap: 10px;
+  padding: 11px;
+  border-color: var(--hub-line);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.018), transparent 45%),
+    rgba(12, 24, 32, 0.94);
+  color: var(--hub-text);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.14);
+}
+
+.progression-hub .expedition-card-title {
+  color: #eaf8f5;
+}
+
+.progression-hub .expedition-card-title svg {
+  color: var(--hub-cyan);
+}
+
+.progression-hub .expedition-card-title span {
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+.progression-hub .expedition-card-title small {
+  color: #91a8aa;
+  font-size: 8px;
+  letter-spacing: 0.045em;
+}
+
+.progression-hub .expedition-empty,
+.progression-hub .expedition-hint {
+  border: 1px dashed rgba(133, 174, 181, 0.19);
+  background: rgba(116, 145, 148, 0.055);
+  color: #91a4a7;
+  font-size: 10px;
+}
+
+.progression-raid-banner {
+  position: relative;
+  min-height: 130px;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  overflow: hidden;
+  padding: 15px 13px;
+  border: 1px solid rgba(89, 241, 212, 0.28);
+  clip-path: polygon(0 0, calc(100% - 15px) 0, 100% 15px, 100% 100%, 15px 100%, 0 calc(100% - 15px));
+  background:
+    linear-gradient(90deg, rgba(21, 82, 77, 0.38), rgba(7, 20, 27, 0.9)),
+    repeating-linear-gradient(135deg, transparent 0 12px, rgba(89, 241, 212, 0.025) 12px 13px);
+}
+
+.progression-raid-banner::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 90px;
+  height: 2px;
+  content: "";
+  background: var(--hub-cyan);
+  box-shadow: 0 0 13px rgba(89, 241, 212, 0.8);
+}
+
+.progression-raid-banner.is-live {
+  border-color: rgba(255, 155, 82, 0.43);
+  background: linear-gradient(100deg, rgba(104, 48, 23, 0.42), rgba(9, 24, 29, 0.94));
+}
+
+.progression-raid-banner.is-live::after {
+  background: var(--hub-orange);
+  box-shadow: 0 0 13px rgba(255, 155, 82, 0.75);
+}
+
+.progression-raid-orbit {
+  width: 69px;
+  height: 69px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(89, 241, 212, 0.35);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(89, 241, 212, 0.16), transparent 66%);
+  color: var(--hub-cyan);
+  box-shadow: inset 0 0 0 8px rgba(89, 241, 212, 0.025);
+}
+
+.progression-raid-banner > div:nth-child(2) {
+  min-width: 0;
+}
+
+.progression-raid-banner > div:nth-child(2) > span,
+.progression-section-heading > div > span {
+  color: #70e8d2;
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+}
+
+.progression-raid-banner h2,
+.progression-section-heading h2 {
+  margin: 4px 0;
+  color: #f3fcfa;
+  font-size: 20px;
+  line-height: 1.08;
+}
+
+.progression-raid-banner p,
+.progression-section-heading p {
+  margin: 0;
+  color: #9bb0b3;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.progression-raid-vitals {
+  align-self: start;
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+}
+
+.progression-raid-vitals span {
+  color: #7f989d;
+  font-size: 7px;
+  font-weight: 900;
+}
+
+.progression-raid-vitals b {
+  color: #a7f3d0;
+  font-size: 12px;
+}
+
+.progression-hub .expedition-progress-track {
+  height: 5px;
+  background: rgba(0, 0, 0, 0.36);
+}
+
+.progression-hub .expedition-progress-track span {
+  background: linear-gradient(90deg, #21bfa6, #8ff8e1);
+  box-shadow: 0 0 9px rgba(89, 241, 212, 0.35);
+}
+
+.progression-hub .expedition-objective-list > div {
+  border-color: rgba(133, 174, 181, 0.15);
+  background: rgba(125, 155, 159, 0.055);
+  color: #a9babc;
+}
+
+.progression-hub .expedition-objective-list .expedition-objective-complete {
+  border-color: rgba(89, 241, 212, 0.32);
+  background: rgba(31, 127, 113, 0.15);
+  color: #a7f3d0;
+}
+
+.progression-hub .expedition-action {
+  min-height: 38px;
+  border-radius: 5px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.progression-hub .expedition-action-primary {
+  border: 1px solid #5de7ce;
+  background: linear-gradient(135deg, #55e7ce, #24bca5);
+  color: #041614;
+  box-shadow: 0 8px 18px rgba(34, 190, 164, 0.15);
+}
+
+.progression-hub .expedition-action-danger {
+  border: 1px solid rgba(255, 121, 115, 0.4);
+  background: rgba(114, 32, 32, 0.24);
+  color: #ffaaa5;
+}
+
+.progression-hub .expedition-action-muted {
+  border: 1px solid rgba(133, 174, 181, 0.22);
+  background: rgba(133, 174, 181, 0.08);
+  color: #b8cacb;
+}
+
+.progression-party-slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.progression-party-slot {
+  min-width: 0;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px;
+  border: 1px dashed rgba(133, 174, 181, 0.21);
+  border-radius: 6px;
+  color: #72898d;
+  font-size: 9px;
+}
+
+.progression-party-slot.is-filled {
+  border-style: solid;
+  border-color: rgba(89, 241, 212, 0.2);
+  background: rgba(89, 241, 212, 0.045);
+}
+
+.progression-party-slot > span:first-child {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1b766d, #153a3d);
+  color: #d9fffa;
+  font-weight: 950;
+}
+
+.progression-party-slot > div {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+}
+
+.progression-party-slot > div b,
+.progression-party-slot > div small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progression-party-slot > div b {
+  color: #e3f2ef;
+  font-size: 10px;
+}
+
+.progression-party-slot > div small {
+  color: #7e979a;
+  font-size: 8px;
+}
+
+.progression-party-slot > i {
+  flex: 0 0 auto;
+}
+
+.progression-hub .expedition-invite,
+.progression-hub .expedition-online-player,
+.progression-hub .expedition-party-member {
+  border-color: rgba(133, 174, 181, 0.16);
+  background: rgba(133, 174, 181, 0.055);
+  color: #dcecea;
+}
+
+.progression-hub .expedition-invite > div:first-child span,
+.progression-hub .expedition-pending-note {
+  color: #89a1a4;
+}
+
+.progression-hub .expedition-invite-actions button,
+.progression-hub .expedition-online-player button {
+  border-color: rgba(89, 241, 212, 0.25);
+  background: rgba(89, 241, 212, 0.1);
+  color: #aaf7e8;
+}
+
+.progression-section-heading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 3px 8px;
+  border-bottom: 1px solid rgba(133, 174, 181, 0.14);
+}
+
+.progression-section-heading > div {
+  min-width: 0;
+}
+
+.progression-section-heading > svg {
+  flex: 0 0 auto;
+  margin-top: 4px;
+  color: var(--hub-cyan);
+  opacity: 0.82;
+}
+
+.progression-skills-heading strong {
+  min-width: 58px;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  border: 1px solid rgba(89, 241, 212, 0.3);
+  background: rgba(89, 241, 212, 0.075);
+  color: var(--hub-cyan);
+  font-size: 20px;
+}
+
+.progression-skills-heading strong small {
+  color: #8ca3a6;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.progression-idle-callout,
+.progression-lockdown {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid rgba(89, 241, 212, 0.18);
+  border-radius: 7px;
+  background: rgba(89, 241, 212, 0.055);
+  color: #80decf;
+}
+
+.progression-idle-callout > div,
+.progression-lockdown > span {
+  display: grid;
+  gap: 2px;
+}
+
+.progression-idle-callout b,
+.progression-lockdown b {
+  color: #ddf7f2;
+  font-size: 10px;
+}
+
+.progression-idle-callout span,
+.progression-lockdown span {
+  color: #8ca2a5;
+  font-size: 9px;
+}
+
+.progression-lockdown {
+  border-color: rgba(255, 155, 82, 0.25);
+  background: rgba(255, 126, 52, 0.075);
+  color: #ffb276;
+}
+
+.progression-risk-card {
+  border-color: rgba(255, 155, 82, 0.28) !important;
+}
+
+.progression-inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.progression-item-tile {
+  position: relative;
+  min-width: 0;
+  min-height: 142px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: 72px auto auto;
+  gap: 5px;
+  overflow: hidden;
+  padding: 8px;
+  border: 1px solid rgba(133, 174, 181, 0.17);
+  border-radius: 7px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.03), transparent 54%),
+    rgba(11, 25, 32, 0.88);
+}
+
+.progression-item-tile::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 28px;
+  height: 2px;
+  content: "";
+  background: #71858a;
+}
+
+.progression-item-tile.expedition-rarity-uncommon::after { background: #4ade80; }
+.progression-item-tile.expedition-rarity-rare::after { background: #38bdf8; }
+.progression-item-tile.expedition-rarity-epic::after { background: #c084fc; }
+
+.progression-item-art,
+.progression-artifact-art {
+  position: relative;
+  grid-column: 1 / -1;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(133, 174, 181, 0.11);
+  border-radius: 5px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(89, 241, 212, 0.13), transparent 48%),
+    linear-gradient(135deg, rgba(89, 241, 212, 0.035), rgba(0, 0, 0, 0.12));
+  color: #85dace;
+}
+
+.progression-item-art::before,
+.progression-artifact-art::before {
+  position: absolute;
+  width: 45px;
+  height: 45px;
+  content: "";
+  border: 1px solid rgba(89, 241, 212, 0.16);
+  transform: rotate(45deg);
+}
+
+.progression-item-art i,
+.progression-artifact-art i {
+  position: absolute;
+  width: 78px;
+  height: 78px;
+  border: 1px dashed rgba(89, 241, 212, 0.1);
+  border-radius: 50%;
+}
+
+.progression-item-art-power-cell,
+.progression-item-art-shield-module { color: #67e8f9; }
+.progression-item-art-medkit,
+.progression-item-art-bandage { color: #fb7185; }
+.progression-item-art-rifle-blueprint { color: #c084fc; }
+.progression-item-art-ammo { color: #fbbf24; }
+
+.progression-item-rarity {
+  position: absolute;
+  top: 13px;
+  right: 13px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  background: rgba(3, 9, 13, 0.7);
+  color: #8da1a5;
+  font-size: 6px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.progression-item-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.progression-item-copy b {
+  overflow: hidden;
+  color: #e5f3f0;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progression-item-copy small {
+  overflow: hidden;
+  color: #758d91;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progression-item-tile > strong {
+  color: #f1faf8;
+  font-size: 11px;
+}
+
+.progression-item-tile > em {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #a8bdbe;
+  font-size: 8px;
+  font-style: normal;
+}
+
+.progression-hub .expedition-inventory-stat {
+  border-color: rgba(133, 174, 181, 0.15);
+  background: rgba(133, 174, 181, 0.055);
+}
+
+.progression-hub .expedition-inventory-stat span { color: #799195; }
+.progression-hub .expedition-inventory-stat b { color: #e7f5f2; }
+.progression-hub .expedition-inventory-coins { border-color: rgba(245, 190, 81, 0.28); background: rgba(245, 177, 57, 0.07); }
+.progression-hub .expedition-inventory-coins b { color: #ffd58a; }
+
+.progression-hub .expedition-carried-weapons {
+  border-color: rgba(192, 132, 252, 0.24);
+  background: rgba(126, 65, 173, 0.09);
+}
+
+.progression-hub .expedition-carried-weapon { color: #cfa8f5; }
+.progression-hub .expedition-carried-weapon b { color: #eedcff; }
+.progression-hub .expedition-carried-weapon small { color: #a992bd; }
+
+.progression-skill-branches {
+  display: grid;
+  gap: 9px;
+}
+
+.progression-skill-branch {
+  overflow: hidden;
+  border: 1px solid rgba(133, 174, 181, 0.17);
+  border-radius: 8px;
+  background: rgba(10, 22, 29, 0.92);
+}
+
+.progression-skill-branch > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(133, 174, 181, 0.12);
+  background: rgba(133, 174, 181, 0.04);
+}
+
+.progression-skill-branch > header > span {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(89, 241, 212, 0.24);
+  border-radius: 50%;
+  color: var(--hub-cyan);
+}
+
+.progression-skill-branch > header > div {
+  display: grid;
+}
+
+.progression-skill-branch > header b {
+  font-size: 11px;
+}
+
+.progression-skill-branch > header small {
+  color: #7f9699;
+  font-size: 8px;
+}
+
+.progression-skill-path {
+  display: grid;
+  gap: 12px;
+  padding: 10px;
+}
+
+.progression-skill-node {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid rgba(133, 174, 181, 0.14);
+  border-radius: 6px;
+  background: rgba(128, 151, 155, 0.035);
+}
+
+.progression-skill-node.is-available {
+  border-color: rgba(89, 241, 212, 0.25);
+  background: rgba(89, 241, 212, 0.045);
+}
+
+.progression-skill-node.is-maxed {
+  border-color: rgba(74, 222, 128, 0.27);
+}
+
+.progression-skill-node.is-locked {
+  opacity: 0.62;
+}
+
+.progression-skill-link {
+  position: absolute;
+  top: -13px;
+  left: 25px;
+  width: 1px;
+  height: 12px;
+  background: rgba(89, 241, 212, 0.35);
+}
+
+.progression-skill-node-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progression-skill-node-top > span {
+  width: 29px;
+  height: 29px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(89, 241, 212, 0.22);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  background: rgba(89, 241, 212, 0.09);
+  color: #b9f8ec;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.progression-skill-node-top > div {
+  min-width: 0;
+  display: grid;
+}
+
+.progression-skill-node-top b {
+  color: #e6f4f1;
+  font-size: 10px;
+}
+
+.progression-skill-node-top small {
+  color: #759095;
+  font-size: 8px;
+}
+
+.progression-skill-node p {
+  margin: 0;
+  color: #8ca2a5;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.progression-skill-node > em {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #c28b71;
+  font-size: 8px;
+  font-style: normal;
+}
+
+.progression-skill-node > em.is-met {
+  color: #6cd6bc;
+}
+
+.progression-skill-node > button {
+  min-height: 30px;
+  border: 1px solid rgba(89, 241, 212, 0.25);
+  border-radius: 4px;
+  background: rgba(89, 241, 212, 0.09);
+  color: #a6f4e6;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.055em;
+}
+
+.progression-equipment-rig {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 9px;
+}
+
+.progression-rig-silhouette {
+  position: relative;
+  min-height: 210px;
+  overflow: hidden;
+  border: 1px solid rgba(89, 241, 212, 0.14);
+  border-radius: 6px;
+  background:
+    radial-gradient(ellipse at 50% 28%, rgba(89, 241, 212, 0.13), transparent 38%),
+    linear-gradient(rgba(89, 241, 212, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(89, 241, 212, 0.025) 1px, transparent 1px);
+  background-size: auto, 16px 16px, 16px 16px;
+}
+
+.progression-rig-silhouette i {
+  position: absolute;
+  left: 50%;
+  border: 1px solid rgba(103, 232, 249, 0.42);
+  background: rgba(36, 122, 127, 0.17);
+  transform: translateX(-50%);
+  box-shadow: 0 0 20px rgba(89, 241, 212, 0.06);
+}
+
+.progression-rig-silhouette .rig-head { top: 24px; width: 34px; height: 34px; border-radius: 50% 50% 42% 42%; }
+.progression-rig-silhouette .rig-body { top: 62px; width: 61px; height: 85px; clip-path: polygon(19% 0, 81% 0, 100% 22%, 80% 100%, 20% 100%, 0 22%); }
+.progression-rig-silhouette .rig-legs { top: 151px; width: 52px; height: 47px; clip-path: polygon(0 0, 45% 0, 50% 18%, 55% 0, 100% 0, 85% 100%, 59% 100%, 50% 40%, 41% 100%, 15% 100%); }
+
+.progression-equipment-slots {
+  display: grid;
+  gap: 7px;
+}
+
+.progression-equipment-slot {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px dashed rgba(133, 174, 181, 0.23);
+  border-radius: 6px;
+  background: rgba(133, 174, 181, 0.035);
+}
+
+.progression-equipment-slot.is-equipped {
+  border-style: solid;
+  border-color: rgba(89, 241, 212, 0.3);
+}
+
+.progression-equipment-slot > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(133, 174, 181, 0.17);
+  background: rgba(133, 174, 181, 0.07);
+  color: #7aa0a2;
+}
+
+.progression-equipment-slot > div {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.progression-equipment-slot small {
+  color: #728c90;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.progression-equipment-slot b {
+  overflow: hidden;
+  color: #e3f0ee;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progression-equipment-slot em {
+  overflow: hidden;
+  color: #789094;
+  font-size: 8px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progression-equipment-slot > button {
+  padding: 5px 6px;
+  border: 1px solid rgba(255, 155, 82, 0.25);
+  border-radius: 4px;
+  background: rgba(255, 155, 82, 0.08);
+  color: #ffc08c;
+  font-size: 8px;
+}
+
+.progression-gear-options {
+  display: grid;
+  gap: 5px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(133, 174, 181, 0.12);
+}
+
+.progression-gear-options > button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px;
+  border: 1px solid rgba(133, 174, 181, 0.16);
+  border-radius: 5px;
+  background: rgba(133, 174, 181, 0.04);
+  color: #8de9d8;
+  text-align: left;
+}
+
+.progression-gear-options > button span {
+  min-width: 0;
+  display: grid;
+}
+
+.progression-gear-options > button b { color: #e3f0ee; font-size: 9px; }
+.progression-gear-options > button small { overflow: hidden; color: #789094; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.progression-gear-options > button em { color: #8de9d8; font-size: 9px; font-style: normal; }
+
+.progression-weapon-grid {
+  display: grid;
+  gap: 7px;
+}
+
+.progression-weapon-card {
+  display: grid;
+  grid-template-columns: 61px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(133, 174, 181, 0.16);
+  border-radius: 6px;
+  background: rgba(133, 174, 181, 0.035);
+}
+
+.progression-weapon-card.is-selected {
+  border-color: rgba(89, 241, 212, 0.39);
+  background: linear-gradient(90deg, rgba(40, 150, 134, 0.13), rgba(133, 174, 181, 0.025));
+}
+
+.progression-weapon-art {
+  position: relative;
+  grid-row: 1 / 3;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(89, 241, 212, 0.15);
+  background: radial-gradient(circle, rgba(89, 241, 212, 0.13), transparent 68%);
+  color: #83dacf;
+}
+
+.progression-weapon-art i {
+  position: absolute;
+  width: 42px;
+  height: 1px;
+  background: rgba(89, 241, 212, 0.25);
+  transform: rotate(-22deg);
+}
+
+.progression-weapon-card > div:nth-child(2) {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.progression-weapon-card > div:nth-child(2) span { color: #62cdbb; font-size: 6px; font-weight: 950; letter-spacing: 0.08em; }
+.progression-weapon-card > div:nth-child(2) b { color: #edf8f6; font-size: 10px; }
+.progression-weapon-card > div:nth-child(2) small { overflow: hidden; color: #7f9699; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+
+.progression-weapon-stats {
+  grid-column: 2 / 3;
+  display: grid;
+  gap: 3px;
+}
+
+.progression-weapon-stats span {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  color: #678085;
+  font-size: 6px;
+  font-weight: 850;
+}
+
+.progression-weapon-stats i {
+  max-width: 100%;
+  height: 2px;
+  background: #59dec8;
+  box-shadow: 0 0 4px rgba(89, 241, 212, 0.4);
+}
+
+.progression-weapon-card > button {
+  grid-row: 1 / 3;
+  min-width: 62px;
+  border: 1px solid rgba(89, 241, 212, 0.22);
+  border-radius: 4px;
+  background: rgba(89, 241, 212, 0.08);
+  color: #a4ecdf;
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.progression-hub .expedition-recipe {
+  border-color: rgba(133, 174, 181, 0.15);
+  background: rgba(133, 174, 181, 0.035);
+}
+
+.progression-hub .expedition-recipe-copy b { color: #e9f4f2; }
+.progression-hub .expedition-recipe-output { color: #66d8c3; }
+.progression-hub .expedition-recipe-ingredients em { background: rgba(130, 85, 73, 0.18); color: #c69e90; }
+.progression-hub .expedition-recipe-ingredients .expedition-ingredient-ready { background: rgba(32, 137, 105, 0.14); color: #7bddbd; }
+.progression-hub .expedition-recipe-action { border-color: rgba(89, 241, 212, 0.2); background: rgba(89, 241, 212, 0.08); color: #a5eee0; }
+
+.progression-vendor-card {
+  overflow: hidden;
+  border: 1px solid rgba(133, 174, 181, 0.18);
+  border-radius: 8px;
+  background: rgba(10, 23, 30, 0.94);
+}
+
+.progression-vendor-card > header {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border-bottom: 1px solid rgba(133, 174, 181, 0.13);
+  background: linear-gradient(90deg, rgba(89, 241, 212, 0.07), transparent);
+}
+
+.progression-vendor-avatar {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(89, 241, 212, 0.27);
+  clip-path: polygon(10% 0, 100% 0, 100% 78%, 78% 100%, 0 100%, 0 10%);
+  background: rgba(89, 241, 212, 0.1);
+  color: #76dfcd;
+}
+
+.progression-vendor-card > header > div {
+  min-width: 0;
+}
+
+.progression-vendor-card > header small {
+  color: #61cbb9;
+  font-size: 7px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+}
+
+.progression-vendor-card h3 {
+  overflow: hidden;
+  margin: 2px 0 0;
+  color: #e9f5f3;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progression-vendor-card > header > em {
+  color: #849a9d;
+  font-size: 7px;
+  font-style: normal;
+}
+
+.vendor-artifacts > header {
+  background: linear-gradient(90deg, rgba(166, 95, 221, 0.12), transparent);
+}
+
+.vendor-artifacts .progression-vendor-avatar {
+  border-color: rgba(192, 132, 252, 0.34);
+  background: rgba(126, 58, 176, 0.13);
+  color: #d8b4fe;
+}
+
+.progression-vendor-offers {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+}
+
+.progression-vendor-offers > article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 43px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px;
+  border: 1px solid rgba(133, 174, 181, 0.13);
+  border-radius: 5px;
+  background: rgba(133, 174, 181, 0.03);
+}
+
+.progression-vendor-offers .progression-item-art {
+  grid-column: auto;
+  width: 43px;
+  height: 43px;
+}
+
+.progression-vendor-offers .progression-item-art::before { width: 25px; height: 25px; }
+.progression-vendor-offers .progression-item-art i { width: 46px; height: 46px; }
+
+.progression-offer-art {
+  width: 43px;
+  height: 43px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(89, 241, 212, 0.14);
+  background: radial-gradient(circle, rgba(89, 241, 212, 0.12), transparent 70%);
+  color: #70d8c7;
+}
+
+.progression-vendor-offers > article > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.progression-vendor-offers > article b { color: #e5f1ef; font-size: 9px; }
+.progression-vendor-offers > article small { display: -webkit-box; overflow: hidden; color: #7d9497; font-size: 8px; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.progression-vendor-offers > article button {
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 7px;
+  border: 1px solid rgba(245, 190, 81, 0.26);
+  border-radius: 4px;
+  background: rgba(245, 181, 67, 0.08);
+  color: #ffd284;
+  font-size: 8px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.progression-vendor-buyback {
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  border-top: 1px solid rgba(133, 174, 181, 0.12);
+}
+
+.progression-vendor-buyback > button {
+  min-height: 33px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(89, 241, 212, 0.14);
+  border-radius: 4px;
+  background: rgba(89, 241, 212, 0.04);
+  color: #dcecea;
+  font-size: 8px;
+  text-align: left;
+}
+
+.progression-vendor-buyback > button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progression-vendor-buyback > button small { color: #758d90; }
+.progression-vendor-buyback > button b { flex: 0 0 auto; color: #74d9c7; font-size: 8px; }
+
+.progression-artifact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  padding: 9px;
+}
+
+.progression-artifact-grid > article {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 70px auto 1fr auto;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid rgba(192, 132, 252, 0.18);
+  border-radius: 6px;
+  background: rgba(126, 58, 176, 0.045);
+}
+
+.progression-artifact-art {
+  grid-column: auto;
+  height: 70px;
+  color: #d8b4fe;
+}
+
+.progression-artifact-charge { color: #fb7185; }
+.progression-artifact-beacon { color: #fbbf24; }
+.progression-artifact-scanner { color: #67e8f9; }
+
+.progression-artifact-grid > article > div {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+}
+
+.progression-artifact-grid > article b { color: #eee5f7; font-size: 9px; }
+.progression-artifact-grid > article small { display: -webkit-box; overflow: hidden; color: #907fa1; font-size: 7px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+.progression-artifact-grid > article > button {
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid rgba(192, 132, 252, 0.25);
+  border-radius: 4px;
+  background: rgba(126, 58, 176, 0.1);
+  color: #dfc4f7;
+  font-size: 7px;
+  font-weight: 850;
+}
+
+@keyframes progression-radar-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes progression-panel-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 560px) {
+  .progression-command-header {
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .progression-command-mark {
+    width: 38px;
+    height: 38px;
+  }
+
+  .progression-command-copy b {
+    font-size: 12px;
+  }
+
+  .progression-hub-content {
+    padding: 9px;
+  }
+
+  .progression-raid-banner {
+    grid-template-columns: 53px minmax(0, 1fr);
+    min-height: 118px;
+  }
+
+  .progression-raid-orbit {
+    width: 51px;
+    height: 51px;
+  }
+
+  .progression-raid-vitals {
+    position: absolute;
+    top: 9px;
+    right: 9px;
+  }
+
+  .progression-party-slots,
+  .progression-inventory-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .progression-equipment-rig {
+    grid-template-columns: 1fr;
+  }
+
+  .progression-rig-silhouette {
+    display: none;
+  }
+
+  .progression-artifact-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .progression-artifact-grid > article {
+    grid-template-columns: 70px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
+
+  .progression-artifact-grid .progression-artifact-art {
+    grid-row: 1 / 3;
+  }
+
+  .progression-artifact-grid .progression-item-rarity {
+    top: 11px;
+    right: 11px;
+  }
+
+  .progression-artifact-grid > article > button {
+    grid-column: 2;
+  }
+
+  .progression-vendor-card > header {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .progression-vendor-card > header > em {
+    display: none;
+  }
+
+  .progression-vendor-offers > article {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .progression-vendor-offers > article > button {
+    grid-column: 1 / -1;
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 400px) {
+  .progression-inventory-grid,
+  .progression-party-slots {
+    grid-template-columns: 1fr;
+  }
+
+  .progression-item-tile {
+    min-height: 132px;
+  }
+
+  .progression-weapon-card {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .progression-weapon-card > button {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    min-height: 38px;
+  }
+
+  .progression-weapon-stats {
+    grid-column: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progression-command-mark i,
+  .progression-tab-stack {
+    animation: none;
+  }
+}
+
+.tactical-hotbar {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(139, 231, 218, .22);
+}
+
+.tactical-slot {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 2px 5px;
+  padding: 6px 7px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 8px;
+  background: linear-gradient(155deg, rgba(29, 42, 50, .96), rgba(13, 22, 29, .94));
+  color: #e8f6f5;
+}
+
+.tactical-slot small {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, .1);
+  color: #bceee7;
+  font-weight: 900;
+}
+
+.tactical-slot span {
+  overflow: hidden;
+  color: #cfe1e2;
+  font-size: 9px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tactical-slot b {
+  grid-column: 2;
+  color: #fff;
+  font-size: 10px;
+}
+
+.tactical-slot.grenade-frag { border-color: rgba(255, 179, 92, .42); }
+.tactical-slot.grenade-emp { border-color: rgba(84, 217, 255, .46); }
+.tactical-slot.grenade-incendiary { border-color: rgba(255, 92, 53, .48); }
+.tactical-slot.artifact { border-color: rgba(172, 140, 255, .48); background: linear-gradient(155deg, rgba(51, 35, 73, .96), rgba(20, 19, 36, .95)); }
+
+@media (max-width: 980px) {
+  .tactical-hotbar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

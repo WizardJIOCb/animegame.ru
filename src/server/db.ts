@@ -5,6 +5,9 @@ import {
   EXPEDITION_CONTAINER_IDS,
   EXPEDITION_ENEMIES,
   EXPEDITION_ENEMY_IDS,
+  EXPEDITION_GEAR,
+  EXPEDITION_GEAR_IDS,
+  EXPEDITION_GEAR_SLOTS,
   EXPEDITION_ITEM_IDS,
   EXPEDITION_DOWNED_BLEED_OUT_MS,
   EXPEDITION_SHIELD_PER_MODULE,
@@ -13,6 +16,7 @@ import {
   EXPEDITION_WEAPON_IDS,
   type ExpeditionContainerId,
   type ExpeditionEnemyId,
+  type ExpeditionGearId,
   type ExpeditionItemId,
   type ExpeditionProfile,
   type ExpeditionWeaponId,
@@ -112,6 +116,7 @@ const expeditionItemIds = new Set<string>(EXPEDITION_ITEM_IDS);
 const expeditionWeaponIds = new Set<string>(EXPEDITION_WEAPON_IDS);
 const expeditionContainerIds = new Set<string>(EXPEDITION_CONTAINER_IDS);
 const expeditionEnemyIds = new Set<string>(EXPEDITION_ENEMY_IDS);
+const expeditionGearIds = new Set<string>(EXPEDITION_GEAR_IDS);
 
 function normalizeItemStacks(value: unknown, fallback: ItemStack[]) {
   if (!Array.isArray(value)) {
@@ -143,6 +148,7 @@ function normalizeItemStacks(value: unknown, fallback: ItemStack[]) {
 
 function normalizeExpeditionProfile(value: Partial<ExpeditionProfile> | undefined): ExpeditionProfile {
   const defaults = createDefaultExpeditionProfile();
+  const stash = normalizeItemStacks(value?.stash, defaults.stash);
   const unlockedWeapons: ExpeditionWeaponId[] = ["pistol"];
   if (Array.isArray(value?.unlockedWeapons)) {
     for (const candidate of value.unlockedWeapons) {
@@ -158,9 +164,15 @@ function normalizeExpeditionProfile(value: Partial<ExpeditionProfile> | undefine
   const completedQuestIds = Array.isArray(value?.completedQuestIds)
     ? [...new Set(value.completedQuestIds.map(String).map((id) => id.trim()).filter(Boolean))].slice(0, 200)
     : defaults.completedQuestIds;
+  const equippedGear = Object.fromEntries(EXPEDITION_GEAR_SLOTS.map((slot) => {
+    const candidate = value?.equippedGear?.[slot];
+    const gearId = expeditionGearIds.has(String(candidate)) ? candidate as ExpeditionGearId : null;
+    const owned = gearId ? stash.some((stack) => stack.itemId === gearId && stack.quantity > 0) : false;
+    return [slot, gearId && owned && EXPEDITION_GEAR[gearId].slot === slot ? gearId : null];
+  })) as ExpeditionProfile["equippedGear"];
 
   return {
-    stash: normalizeItemStacks(value?.stash, defaults.stash),
+    stash,
     unlockedWeapons,
     selectedWeapon,
     skillPoints: clampInteger(value?.skillPoints, 0, 9_999, defaults.skillPoints),
@@ -168,6 +180,7 @@ function normalizeExpeditionProfile(value: Partial<ExpeditionProfile> | undefine
       skillId,
       clampInteger(value?.skills?.[skillId], 0, EXPEDITION_SKILLS[skillId].maxLevel, defaults.skills[skillId])
     ])) as ExpeditionProfile["skills"],
+    equippedGear,
     completedQuestIds,
     stats: {
       expeditionsStarted: clampInteger(value?.stats?.expeditionsStarted, 0, 999_999_999, 0),
@@ -225,11 +238,14 @@ function normalizePersistedExpeditionRun(
     }
   }
   const playerMaxHealth = 100 + user.expedition.skills.survival * 10;
-  const maximumShield = backpack.reduce((total, stack) => (
+  const maximumShield = Math.round((backpack.reduce((total, stack) => (
     stack.itemId === "shield-module"
       ? total + stack.quantity * EXPEDITION_SHIELD_PER_MODULE
       : total
-  ), 0);
+  ), 0) + EXPEDITION_GEAR_SLOTS.reduce((total, slot) => {
+    const gearId = user.expedition.equippedGear[slot];
+    return total + (gearId ? EXPEDITION_GEAR[gearId].bonusShield : 0);
+  }, 0)) * (1 + user.expedition.skills.armor * 0.04));
   const playerHealth = clampInteger(value.playerHealth, 0, playerMaxHealth, playerMaxHealth);
   const playerShield = clampInteger(value.playerShield, 0, maximumShield, maximumShield);
   const rawPlayerPosition = value.playerPosition;
@@ -268,6 +284,12 @@ function normalizePersistedExpeditionRun(
     playerHealth,
     playerMaxHealth,
     playerShield,
+    supportRobotUntil: Number.isFinite(Number(value.supportRobotUntil)) && Number(value.supportRobotUntil) > Date.now()
+      ? Math.round(Number(value.supportRobotUntil))
+      : null,
+    scannerUntil: Number.isFinite(Number(value.scannerUntil)) && Number(value.scannerUntil) > Date.now()
+      ? Math.round(Number(value.scannerUntil))
+      : null,
     downedAt,
     bleedOutAt,
     enemyHealth,

@@ -13,6 +13,121 @@ export type WorldRegion = "city" | "checkpoint" | "forest" | "depot" | "quarry" 
 export type OutlandsEnemyKind = "eyeDrone" | "quadShell" | "human";
 export type OutlandsFaction = "neutral" | "hostile";
 export type OutlandsAttackStyle = "melee" | "ranged";
+export type OutlandsEnemyBehavior = "patrol" | "sentinel" | "artillery" | "tank" | "stalker" | "skirmisher" | "brute";
+
+export type OutlandsEnemyVisualAttachment =
+  | "none"
+  | "sensor-array"
+  | "thermal-fins"
+  | "bulwark-plates"
+  | "stalker-spines"
+  | "scout-rig"
+  | "heavy-rig";
+
+export type OutlandsEnemyVisualVariant = {
+  kind: OutlandsEnemyKind;
+  modelScale: number;
+  tint: string;
+  accent: string;
+  emissive: string;
+  emissiveIntensity: number;
+  attachment: OutlandsEnemyVisualAttachment;
+};
+
+const DEFAULT_OUTLAND_ENEMY_VISUALS: Record<OutlandsEnemyKind, OutlandsEnemyVisualVariant> = {
+  eyeDrone: {
+    kind: "eyeDrone",
+    modelScale: 1.25,
+    tint: "#ffffff",
+    accent: "#62d9ff",
+    emissive: "#176d89",
+    emissiveIntensity: 0.35,
+    attachment: "none"
+  },
+  quadShell: {
+    kind: "quadShell",
+    modelScale: 1.08,
+    tint: "#ffffff",
+    accent: "#f1b557",
+    emissive: "#6f4214",
+    emissiveIntensity: 0.22,
+    attachment: "none"
+  },
+  human: {
+    kind: "human",
+    modelScale: 1,
+    tint: "#ffffff",
+    accent: "#b65d4b",
+    emissive: "#5e2018",
+    emissiveIntensity: 0.12,
+    attachment: "none"
+  }
+};
+
+// Kept separate from the combat contract so new silhouettes can ship without
+// making older expedition snapshots or enemy definitions unreadable. The
+// caller may opt into a variant simply by using one of these stable ids.
+export const OUTLAND_ENEMY_VISUAL_VARIANTS: Readonly<Record<string, OutlandsEnemyVisualVariant>> = {
+  "eye-sentinel": {
+    kind: "eyeDrone",
+    modelScale: 1.48,
+    tint: "#b9dce5",
+    accent: "#5ef4ff",
+    emissive: "#23d9eb",
+    emissiveIntensity: 1.15,
+    attachment: "sensor-array"
+  },
+  "eye-scorcher": {
+    kind: "eyeDrone",
+    modelScale: 1.32,
+    tint: "#d89568",
+    accent: "#ff7b35",
+    emissive: "#ff3d16",
+    emissiveIntensity: 1.35,
+    attachment: "thermal-fins"
+  },
+  "quad-bulwark": {
+    kind: "quadShell",
+    modelScale: 1.42,
+    tint: "#728a91",
+    accent: "#72c9ff",
+    emissive: "#1976a8",
+    emissiveIntensity: 0.85,
+    attachment: "bulwark-plates"
+  },
+  "quad-stalker": {
+    kind: "quadShell",
+    modelScale: 0.96,
+    tint: "#554d68",
+    accent: "#bd7bff",
+    emissive: "#7437c4",
+    emissiveIntensity: 0.9,
+    attachment: "stalker-spines"
+  },
+  "raider-scout": {
+    kind: "human",
+    modelScale: 0.96,
+    tint: "#718b78",
+    accent: "#71ffd2",
+    emissive: "#1a9d79",
+    emissiveIntensity: 0.65,
+    attachment: "scout-rig"
+  },
+  "raider-heavy": {
+    kind: "human",
+    modelScale: 1.12,
+    tint: "#6f5550",
+    accent: "#ff8a5f",
+    emissive: "#a9321f",
+    emissiveIntensity: 0.55,
+    attachment: "heavy-rig"
+  }
+};
+
+export function outlandsEnemyVisualVariant(enemyId: string, kind: OutlandsEnemyKind) {
+  const configured = OUTLAND_ENEMY_VISUAL_VARIANTS[enemyId];
+  return configured?.kind === kind ? configured : DEFAULT_OUTLAND_ENEMY_VISUALS[kind];
+}
 
 export type OutlandsEnemyDefinition = {
   id: string;
@@ -24,6 +139,7 @@ export type OutlandsEnemyDefinition = {
   aggroRange: number;
   attackRange: number;
   attackStyle: OutlandsAttackStyle;
+  behavior?: OutlandsEnemyBehavior;
   speed: number;
   respawnMs: number;
   position: readonly [number, number, number];
@@ -113,6 +229,102 @@ export const OUTLAND_ENEMIES: readonly OutlandsEnemyDefinition[] = [
     respawnMs: 42_000,
     position: [-17, 0, -177],
     patrol: [[-17, 0, -177], [-29, 0, -187], [-8, 0, -205], [8, 0, -185]]
+  },
+  {
+    id: "eye-sentinel",
+    name: "Дозорный «Искра»",
+    kind: "eyeDrone",
+    faction: "hostile",
+    maxHealth: 95,
+    damage: 9,
+    aggroRange: 44,
+    attackRange: 25,
+    attackStyle: "ranged",
+    behavior: "sentinel",
+    speed: 2.15,
+    respawnMs: 32_000,
+    position: [115, 0, -165],
+    patrol: [[115, 0, -165], [132, 0, -178], [120, 0, -196], [101, 0, -181]]
+  },
+  {
+    id: "eye-scorcher",
+    name: "Испепелитель EYE-X",
+    kind: "eyeDrone",
+    faction: "hostile",
+    maxHealth: 120,
+    damage: 24,
+    aggroRange: 39,
+    attackRange: 22,
+    attackStyle: "ranged",
+    behavior: "artillery",
+    speed: 1.85,
+    respawnMs: 38_000,
+    position: [-118, 0, -235],
+    patrol: [[-118, 0, -235], [-137, 0, -248], [-126, 0, -272], [-104, 0, -258]]
+  },
+  {
+    id: "quad-bulwark",
+    name: "Квад «Бастион»",
+    kind: "quadShell",
+    faction: "hostile",
+    maxHealth: 330,
+    damage: 30,
+    aggroRange: 28,
+    attackRange: 3.8,
+    attackStyle: "melee",
+    behavior: "tank",
+    speed: 1.75,
+    respawnMs: 52_000,
+    position: [45, 0, -285],
+    patrol: [[45, 0, -285], [61, 0, -297], [45, 0, -313], [28, 0, -301]]
+  },
+  {
+    id: "quad-stalker",
+    name: "Квад «Тень»",
+    kind: "quadShell",
+    faction: "hostile",
+    maxHealth: 135,
+    damage: 23,
+    aggroRange: 25,
+    attackRange: 2.9,
+    attackStyle: "melee",
+    behavior: "stalker",
+    speed: 4.85,
+    respawnMs: 34_000,
+    position: [-105, 0, -145],
+    patrol: [[-105, 0, -145], [-126, 0, -159], [-112, 0, -181], [-91, 0, -164]]
+  },
+  {
+    id: "raider-scout",
+    name: "Разведчица Ника",
+    kind: "human",
+    faction: "hostile",
+    maxHealth: 92,
+    damage: 10,
+    aggroRange: 38,
+    attackRange: 20,
+    attackStyle: "ranged",
+    behavior: "skirmisher",
+    speed: 3.25,
+    respawnMs: 40_000,
+    position: [110, 0, -285],
+    patrol: [[110, 0, -285], [134, 0, -298], [121, 0, -320], [96, 0, -309]]
+  },
+  {
+    id: "raider-heavy",
+    name: "Тяжёлый рейдер Гром",
+    kind: "human",
+    faction: "hostile",
+    maxHealth: 240,
+    damage: 20,
+    aggroRange: 34,
+    attackRange: 15,
+    attackStyle: "ranged",
+    behavior: "brute",
+    speed: 2.05,
+    respawnMs: 50_000,
+    position: [8, 0, -260],
+    patrol: [[8, 0, -260], [24, 0, -273], [12, 0, -295], [-8, 0, -280]]
   }
 ] as const;
 
@@ -168,6 +380,7 @@ export const OUTLAND_MODEL_URLS = [
   "/assets/models/kenney-nature/rock_tallC.glb",
   "/assets/models/kenney-nature/tent_detailedOpen.glb",
   "/assets/models/kenney-nature/campfire_stones.glb",
+  "/assets/models/kenney-nature/campfire_logs.glb",
   "/assets/models/kenney-nature/log_stack.glb"
 ] as const;
 

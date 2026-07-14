@@ -44,6 +44,13 @@ const FOOT_SPREAD_ITERATION_STIFFNESS = 1 - Math.pow(
   1 - FOOT_SPREAD_FRAME_STIFFNESS,
   1 / CONSTRAINT_PASSES_PER_STEP
 );
+const HINGE_FRAME_STIFFNESS = 0.98;
+const HINGE_ITERATION_STIFFNESS = 1 - Math.pow(
+  1 - HINGE_FRAME_STIFFNESS,
+  1 / CONSTRAINT_PASSES_PER_STEP
+);
+const HINGE_EXTENSION_TOLERANCE = THREE.MathUtils.degToRad(4);
+const HINGE_CAPTURE_MIN_BEND_SIN = Math.sin(THREE.MathUtils.degToRad(2));
 const CAPSULE_RADIUS_SCALE = 0.82;
 const CAPSULE_SEPARATION_SCALE = 0.94;
 const CAPSULE_REST_SEPARATION_RATIO = 0.9;
@@ -149,6 +156,21 @@ type MaximumDistanceConstraint = {
   second: Particle;
   maximumDistance: number;
   stiffness: number;
+};
+
+type HingeLimitConstraint = {
+  reference: Particle;
+  parent: Particle;
+  joint: Particle;
+  child: Particle;
+  bendFrameU: number;
+  bendFrameV: number;
+  minimumFlex: number;
+  maximumFlex: number;
+  maximumLateral: number;
+  stiffness: number;
+  lastReferenceDirection: THREE.Vector3;
+  lastBendDirection: THREE.Vector3;
 };
 
 type CapsuleSegment = {
@@ -311,6 +333,7 @@ export class SkeletonRagdoll {
   private readonly particleByName = new Map<string, Particle>();
   private readonly constraints: DistanceConstraint[] = [];
   private readonly bendConstraints: MinimumDistanceConstraint[] = [];
+  private readonly hingeLimitConstraints: HingeLimitConstraint[] = [];
   private readonly maximumDistanceConstraints: MaximumDistanceConstraint[] = [];
   private readonly selfCollisionConstraints: MinimumDistanceConstraint[] = [];
   private readonly capsuleSegments: CapsuleSegment[] = [];
@@ -346,6 +369,7 @@ export class SkeletonRagdoll {
     this.captureAimAxes();
     this.createConstraints();
     this.createBendConstraints();
+    this.createHingeLimitConstraints();
     this.createJointLimitConstraints();
     this.createSelfCollisionConstraints();
     this.createCapsuleCollisionConstraints();
@@ -389,6 +413,7 @@ export class SkeletonRagdoll {
     this.particles.length = 0;
     this.constraints.length = 0;
     this.bendConstraints.length = 0;
+    this.hingeLimitConstraints.length = 0;
     this.maximumDistanceConstraints.length = 0;
     this.selfCollisionConstraints.length = 0;
     this.capsuleSegments.length = 0;
@@ -482,6 +507,85 @@ export class SkeletonRagdoll {
     this.addMaximumDistanceConstraint("thigh_l", "calf_r", 1.28, HIP_SPREAD_ITERATION_STIFFNESS);
     this.addMaximumDistanceConstraint("calf_r", "foot_l", 1.36, FOOT_SPREAD_ITERATION_STIFFNESS);
     this.addMaximumDistanceConstraint("calf_l", "foot_r", 1.36, FOOT_SPREAD_ITERATION_STIFFNESS);
+  }
+
+  private createHingeLimitConstraints() {
+    // A three-point distance constraint cannot tell a valid bend from a limb
+    // that has crossed through full extension and folded backwards. Each hinge
+    // therefore carries its captured anatomical bend direction in a frame made
+    // from the upstream shoulder/hip. The frame follows the falling body while
+    // keeping the elbow or knee on the correct side of full extension.
+    const elbowFlex = THREE.MathUtils.degToRad(145);
+    const elbowLateral = THREE.MathUtils.degToRad(32);
+    const kneeFlex = THREE.MathUtils.degToRad(150);
+    const kneeLateral = THREE.MathUtils.degToRad(24);
+    this.addHingeLimitConstraint(
+      "clavicle_l", "upperarm_l", "lowerarm_l", "hand_l",
+      elbowFlex, elbowLateral, 1
+    );
+    this.addHingeLimitConstraint(
+      "clavicle_r", "upperarm_r", "lowerarm_r", "hand_r",
+      elbowFlex, elbowLateral, -1
+    );
+    this.addHingeLimitConstraint(
+      "pelvis", "thigh_l", "calf_l", "foot_l",
+      kneeFlex, kneeLateral, 1
+    );
+    this.addHingeLimitConstraint(
+      "pelvis", "thigh_r", "calf_r", "foot_r",
+      kneeFlex, kneeLateral, -1
+    );
+  }
+
+  private addHingeLimitConstraint(
+    referenceName: string,
+    parentName: string,
+    jointName: string,
+    childName: string,
+    maximumFlex: number,
+    maximumLateral: number,
+    straightPoseBendSign: 1 | -1
+  ) {
+    const reference = this.particleByName.get(referenceName);
+    const parent = this.particleByName.get(parentName);
+    const joint = this.particleByName.get(jointName);
+    const child = this.particleByName.get(childName);
+    if (!reference || !parent || !joint || !child) return;
+
+    const parentAxis = joint.position.clone().sub(parent.position);
+    const childDirection = child.position.clone().sub(joint.position);
+    if (parentAxis.lengthSq() < EPSILON || childDirection.lengthSq() < EPSILON) return;
+    parentAxis.normalize();
+    childDirection.normalize();
+
+    const referenceDirection = reference.position.clone().sub(parent.position);
+    referenceDirection.addScaledVector(parentAxis, -referenceDirection.dot(parentAxis));
+    if (referenceDirection.lengthSq() < EPSILON) return;
+    referenceDirection.normalize();
+    const frameV = new THREE.Vector3().crossVectors(parentAxis, referenceDirection).normalize();
+
+    const capturedBend = childDirection.clone()
+      .addScaledVector(parentAxis, -childDirection.dot(parentAxis));
+    if (capturedBend.lengthSq() < HINGE_CAPTURE_MIN_BEND_SIN * HINGE_CAPTURE_MIN_BEND_SIN) {
+      capturedBend.copy(frameV).multiplyScalar(straightPoseBendSign);
+    } else {
+      capturedBend.normalize();
+    }
+
+    this.hingeLimitConstraints.push({
+      reference,
+      parent,
+      joint,
+      child,
+      bendFrameU: capturedBend.dot(referenceDirection),
+      bendFrameV: capturedBend.dot(frameV),
+      minimumFlex: -HINGE_EXTENSION_TOLERANCE,
+      maximumFlex,
+      maximumLateral,
+      stiffness: HINGE_ITERATION_STIFFNESS,
+      lastReferenceDirection: referenceDirection,
+      lastBendDirection: capturedBend.clone()
+    });
   }
 
   private addMaximumDistanceConstraint(
@@ -832,6 +936,7 @@ export class SkeletonRagdoll {
     for (let iteration = 0; iteration < SOLVER_ITERATIONS; iteration += 1) {
       for (const constraint of this.constraints) this.solveConstraint(constraint);
       for (const constraint of this.bendConstraints) this.solveMinimumDistanceConstraint(constraint);
+      for (const constraint of this.hingeLimitConstraints) this.solveHingeLimitConstraint(constraint);
       for (const constraint of this.maximumDistanceConstraints) this.solveMaximumDistanceConstraint(constraint);
       for (const constraint of this.selfCollisionConstraints) this.solveMinimumDistanceConstraint(constraint);
       for (const constraint of this.segmentCollisionConstraints) this.solveSegmentCollisionConstraint(constraint);
@@ -906,6 +1011,74 @@ export class SkeletonRagdoll {
     offset.multiplyScalar(correction);
     constraint.first.position.addScaledVector(offset, constraint.first.inverseMass / weight);
     constraint.second.position.addScaledVector(offset, -constraint.second.inverseMass / weight);
+  }
+
+  private solveHingeLimitConstraint(constraint: HingeLimitConstraint) {
+    const parentAxis = tempVectorA.copy(constraint.joint.position).sub(constraint.parent.position);
+    if (parentAxis.lengthSq() < EPSILON) return;
+    parentAxis.normalize();
+
+    const referenceDirection = tempVectorB.copy(constraint.reference.position).sub(constraint.parent.position);
+    referenceDirection.addScaledVector(parentAxis, -referenceDirection.dot(parentAxis));
+    if (referenceDirection.lengthSq() < EPSILON) {
+      referenceDirection.copy(constraint.lastReferenceDirection)
+        .addScaledVector(parentAxis, -constraint.lastReferenceDirection.dot(parentAxis));
+      if (referenceDirection.lengthSq() < EPSILON) return;
+    }
+    referenceDirection.normalize();
+    constraint.lastReferenceDirection.copy(referenceDirection);
+
+    const frameV = tempVectorC.crossVectors(parentAxis, referenceDirection);
+    if (frameV.lengthSq() < EPSILON) return;
+    frameV.normalize();
+    const bendDirection = tempVectorD.copy(referenceDirection).multiplyScalar(constraint.bendFrameU)
+      .addScaledVector(frameV, constraint.bendFrameV)
+      .addScaledVector(parentAxis, -tempVectorD.dot(parentAxis));
+    if (bendDirection.lengthSq() < EPSILON) {
+      bendDirection.copy(constraint.lastBendDirection)
+        .addScaledVector(parentAxis, -constraint.lastBendDirection.dot(parentAxis));
+      if (bendDirection.lengthSq() < EPSILON) return;
+    }
+    bendDirection.normalize();
+    constraint.lastBendDirection.copy(bendDirection);
+
+    const lateralDirection = tempVectorE.crossVectors(parentAxis, bendDirection);
+    if (lateralDirection.lengthSq() < EPSILON) return;
+    lateralDirection.normalize();
+
+    const childOffset = tempVectorF.copy(constraint.child.position).sub(constraint.joint.position);
+    const childLength = childOffset.length();
+    if (childLength < EPSILON) return;
+    const childDirection = tempVectorG.copy(childOffset).multiplyScalar(1 / childLength);
+    const forward = THREE.MathUtils.clamp(childDirection.dot(parentAxis), -1, 1);
+    const anatomicalBend = THREE.MathUtils.clamp(childDirection.dot(bendDirection), -1, 1);
+    const lateral = THREE.MathUtils.clamp(childDirection.dot(lateralDirection), -1, 1);
+    const planarLength = Math.hypot(forward, anatomicalBend);
+    const flex = Math.atan2(anatomicalBend, forward);
+    const lateralAngle = Math.atan2(lateral, planarLength);
+    const limitedFlex = THREE.MathUtils.clamp(flex, constraint.minimumFlex, constraint.maximumFlex);
+    const limitedLateral = THREE.MathUtils.clamp(
+      lateralAngle,
+      -constraint.maximumLateral,
+      constraint.maximumLateral
+    );
+    if (Math.abs(limitedFlex - flex) < 1e-5 && Math.abs(limitedLateral - lateralAngle) < 1e-5) return;
+
+    const desiredDirection = tempVectorH.copy(parentAxis).multiplyScalar(Math.cos(limitedFlex))
+      .addScaledVector(bendDirection, Math.sin(limitedFlex))
+      .multiplyScalar(Math.cos(limitedLateral))
+      .addScaledVector(lateralDirection, Math.sin(limitedLateral))
+      .normalize();
+    const correction = tempVectorI.copy(desiredDirection).multiplyScalar(childLength)
+      .sub(childOffset)
+      .multiplyScalar(constraint.stiffness);
+    const weight = constraint.joint.inverseMass + constraint.child.inverseMass;
+    if (weight < EPSILON) return;
+
+    // Equal and opposite mass-weighted corrections preserve the pair's centre
+    // of mass, so bullet/explosion momentum still travels through the ragdoll.
+    constraint.joint.position.addScaledVector(correction, -constraint.joint.inverseMass / weight);
+    constraint.child.position.addScaledVector(correction, constraint.child.inverseMass / weight);
   }
 
   private solveSegmentCollisionConstraint(constraint: SegmentCollisionConstraint) {

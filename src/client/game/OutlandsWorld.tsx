@@ -11,6 +11,8 @@ import {
   OUTLAND_CONTAINERS,
   OUTLANDS_ENTRY_Z,
   QUAD_SHELL_MODEL_URL,
+  outlandsEnemyVisualVariant,
+  type OutlandsEnemyVisualAttachment,
   type OutlandsEnemyKind
 } from "./outlands";
 
@@ -24,6 +26,18 @@ type InstancedPart = {
   geometry: THREE.BufferGeometry;
   material: THREE.Material | THREE.Material[];
   baseMatrix: THREE.Matrix4;
+};
+
+type OutlandsSurfaceTextures = {
+  meadow: THREE.CanvasTexture;
+  forestFloor: THREE.CanvasTexture;
+  trail: THREE.CanvasTexture;
+  quarry: THREE.CanvasTexture;
+  depot: THREE.CanvasTexture;
+  concrete: THREE.CanvasTexture;
+  ruins: THREE.CanvasTexture;
+  organicDetail: THREE.CanvasTexture;
+  hardDetail: THREE.CanvasTexture;
 };
 
 export type RobotMotion = "idle" | "walk" | "run" | "attack" | "hit" | "death";
@@ -57,6 +71,220 @@ function seededRandom(seed: number) {
     value ^= value + Math.imul(value ^ value >>> 7, value | 61);
     return ((value ^ value >>> 14) >>> 0) / 4_294_967_296;
   };
+}
+
+type SurfacePattern = "grass" | "soil" | "track" | "concrete" | "rock" | "detail";
+
+function createSurfaceTexture({
+  seed,
+  base,
+  accents,
+  repeat,
+  pattern,
+  dataTexture = false
+}: {
+  seed: number;
+  base: string;
+  accents: readonly string[];
+  repeat: readonly [number, number];
+  pattern: SurfacePattern;
+  dataTexture?: boolean;
+}) {
+  const size = pattern === "detail" ? 96 : 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas 2D is unavailable");
+  const random = seededRandom(seed);
+  context.fillStyle = base;
+  context.fillRect(0, 0, size, size);
+
+  const fleckCount = pattern === "detail" ? 780 : 520;
+  for (let index = 0; index < fleckCount; index += 1) {
+    const radius = pattern === "rock" || pattern === "concrete"
+      ? 0.35 + random() * 2.1
+      : 0.25 + random() * 1.35;
+    context.globalAlpha = 0.08 + random() * 0.32;
+    context.fillStyle = accents[Math.floor(random() * accents.length)] ?? base;
+    context.beginPath();
+    context.arc(random() * size, random() * size, radius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  context.lineCap = "round";
+  if (pattern === "grass") {
+    for (let index = 0; index < 105; index += 1) {
+      const x = random() * size;
+      const y = random() * size;
+      context.globalAlpha = 0.12 + random() * 0.24;
+      context.strokeStyle = accents[index % accents.length] ?? base;
+      context.lineWidth = 0.45 + random() * 0.8;
+      context.beginPath();
+      context.moveTo(x, y);
+      context.lineTo(x + (random() - 0.5) * 3.5, y - 2 - random() * 5);
+      context.stroke();
+    }
+  } else if (pattern === "soil" || pattern === "track") {
+    for (let index = 0; index < 36; index += 1) {
+      context.globalAlpha = 0.09 + random() * 0.18;
+      context.strokeStyle = accents[index % accents.length] ?? base;
+      context.lineWidth = 0.8 + random() * 2.2;
+      const y = random() * size;
+      context.beginPath();
+      context.moveTo(-8, y);
+      context.bezierCurveTo(size * 0.25, y + (random() - 0.5) * 8, size * 0.72, y + (random() - 0.5) * 8, size + 8, y + (random() - 0.5) * 4);
+      context.stroke();
+    }
+  } else if (pattern === "concrete" || pattern === "rock") {
+    for (let index = 0; index < 18; index += 1) {
+      let x = random() * size;
+      let y = random() * size;
+      context.globalAlpha = pattern === "concrete" ? 0.24 : 0.16;
+      context.strokeStyle = accents[index % accents.length] ?? "#222222";
+      context.lineWidth = 0.45 + random() * 0.7;
+      context.beginPath();
+      context.moveTo(x, y);
+      for (let segment = 0; segment < 3 + Math.floor(random() * 4); segment += 1) {
+        x += (random() - 0.5) * 15;
+        y += 4 + random() * 11;
+        context.lineTo(x, y);
+      }
+      context.stroke();
+    }
+  }
+  context.globalAlpha = 1;
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeat[0], repeat[1]);
+  texture.anisotropy = 4;
+  texture.colorSpace = dataTexture ? THREE.NoColorSpace : THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function useOutlandsSurfaceTextures(): OutlandsSurfaceTextures {
+  const textures = useMemo<OutlandsSurfaceTextures>(() => ({
+    meadow: createSurfaceTexture({
+      seed: 0x6a6d31,
+      base: "#526f49",
+      accents: ["#31593c", "#708253", "#9b8b55", "#243f32"],
+      repeat: [42, 32],
+      pattern: "grass"
+    }),
+    forestFloor: createSurfaceTexture({
+      seed: 0x183d77,
+      base: "#3f6747",
+      accents: ["#294a37", "#5d744c", "#6f5d3e", "#9a8c61"],
+      repeat: [38, 13],
+      pattern: "grass"
+    }),
+    trail: createSurfaceTexture({
+      seed: 0x8841a2,
+      base: "#8d7657",
+      accents: ["#5e5140", "#b4a078", "#6c604d", "#c4b28a"],
+      repeat: [3, 54],
+      pattern: "track"
+    }),
+    quarry: createSurfaceTexture({
+      seed: 0x5c6f02,
+      base: "#9a6748",
+      accents: ["#704936", "#bd8056", "#5d463a", "#d19767"],
+      repeat: [18, 18],
+      pattern: "rock"
+    }),
+    depot: createSurfaceTexture({
+      seed: 0x1559bd,
+      base: "#5b625d",
+      accents: ["#343d39", "#7d8176", "#4b534f", "#9c8c70"],
+      repeat: [16, 12],
+      pattern: "concrete"
+    }),
+    concrete: createSurfaceTexture({
+      seed: 0x9e7103,
+      base: "#70736c",
+      accents: ["#393f3d", "#96958b", "#565c57", "#b2a78e"],
+      repeat: [13, 4],
+      pattern: "concrete"
+    }),
+    ruins: createSurfaceTexture({
+      seed: 0x72c411,
+      base: "#5b605c",
+      accents: ["#2f3735", "#777870", "#876f58", "#aaa28f"],
+      repeat: [20, 18],
+      pattern: "concrete"
+    }),
+    organicDetail: createSurfaceTexture({
+      seed: 0xbad321,
+      base: "#888888",
+      accents: ["#313131", "#5f5f5f", "#bcbcbc", "#e0e0e0"],
+      repeat: [5, 5],
+      pattern: "detail",
+      dataTexture: true
+    }),
+    hardDetail: createSurfaceTexture({
+      seed: 0x9942ca,
+      base: "#999999",
+      accents: ["#3d3d3d", "#666666", "#c9c9c9", "#eeeeee"],
+      repeat: [7, 7],
+      pattern: "rock",
+      dataTexture: true
+    })
+  }), []);
+
+  useEffect(() => () => {
+    Object.values(textures).forEach((texture) => texture.dispose());
+  }, [textures]);
+  return textures;
+}
+
+type MaterialTreatment = {
+  tint?: string;
+  roughness?: number;
+  metalness?: number;
+  detailTexture?: THREE.Texture;
+  bumpScale?: number;
+  emissive?: string;
+  emissiveIntensity?: number;
+};
+
+function cloneStyledMaterial(
+  source: THREE.Material | THREE.Material[],
+  treatment: MaterialTreatment
+): THREE.Material | THREE.Material[] {
+  if (Array.isArray(source)) {
+    return source.map((material) => cloneStyledMaterial(material, treatment) as THREE.Material);
+  }
+  const material = source.clone();
+  const tint = new THREE.Color(treatment.tint ?? "#ffffff");
+  if (material instanceof THREE.MeshStandardMaterial) {
+    material.color.multiply(tint);
+    material.roughness = treatment.roughness ?? material.roughness;
+    material.metalness = treatment.metalness ?? material.metalness;
+    if (treatment.detailTexture) {
+      material.bumpMap = treatment.detailTexture;
+      material.bumpScale = treatment.bumpScale ?? 0.035;
+    }
+    if (treatment.emissive) {
+      material.emissive.lerp(new THREE.Color(treatment.emissive), 0.72);
+      material.emissiveIntensity = Math.max(material.emissiveIntensity, treatment.emissiveIntensity ?? 0.25);
+    }
+    material.envMapIntensity = Math.min(material.envMapIntensity, treatment.metalness ? 1.1 : 0.72);
+  } else if (material instanceof THREE.MeshPhongMaterial) {
+    material.color.multiply(tint);
+    material.shininess = Math.min(material.shininess, treatment.metalness ? 70 : 18);
+  } else if (material instanceof THREE.MeshBasicMaterial) {
+    material.color.multiply(tint);
+  }
+  material.needsUpdate = true;
+  return material;
+}
+
+function disposeMaterial(material: THREE.Material | THREE.Material[]) {
+  if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
+  else material.dispose();
 }
 
 function makeScatter(
@@ -140,10 +368,22 @@ function InstancedPartView({ part, transforms, surface }: {
   );
 }
 
-function InstancedNature({ url, transforms, surface }: {
+function InstancedNature({
+  url,
+  transforms,
+  surface,
+  tint = "#ffffff",
+  roughness = 0.94,
+  detailTexture,
+  bumpScale = 0.025
+}: {
   url: string;
   transforms: ScatterTransform[];
   surface: "wood" | "dirt" | "concrete";
+  tint?: string;
+  roughness?: number;
+  detailTexture?: THREE.Texture;
+  bumpScale?: number;
 }) {
   const gltf = useGLTF(url);
   const parts = useMemo(() => {
@@ -153,12 +393,22 @@ function InstancedNature({ url, transforms, surface }: {
       if (!(object instanceof THREE.Mesh)) return;
       next.push({
         geometry: object.geometry,
-        material: object.material,
+        material: cloneStyledMaterial(object.material, {
+          tint,
+          roughness,
+          metalness: 0,
+          detailTexture,
+          bumpScale
+        }),
         baseMatrix: object.matrixWorld.clone()
       });
     });
     return next;
-  }, [gltf.scene]);
+  }, [bumpScale, detailTexture, gltf.scene, roughness, tint]);
+
+  useEffect(() => () => {
+    parts.forEach((part) => disposeMaterial(part.material));
+  }, [parts]);
 
   return (
     <group>
@@ -174,13 +424,23 @@ function StaticModel({
   position,
   rotation = 0,
   scale = 1,
-  surface = "generic"
+  surface = "generic",
+  tint = "#ffffff",
+  roughness = 0.88,
+  metalness = 0,
+  detailTexture,
+  bumpScale = 0.025
 }: {
   url: string;
   position: [number, number, number];
   rotation?: number;
   scale?: number;
   surface?: "wood" | "dirt" | "concrete" | "metal" | "generic";
+  tint?: string;
+  roughness?: number;
+  metalness?: number;
+  detailTexture?: THREE.Texture;
+  bumpScale?: number;
 }) {
   const gltf = useGLTF(url);
   const model = useMemo(() => {
@@ -189,9 +449,22 @@ function StaticModel({
       if (!(object instanceof THREE.Mesh)) return;
       object.castShadow = true;
       object.receiveShadow = true;
+      object.material = cloneStyledMaterial(object.material, {
+        tint,
+        roughness,
+        metalness,
+        detailTexture,
+        bumpScale
+      });
     });
     return clone;
-  }, [gltf.scene]);
+  }, [bumpScale, detailTexture, gltf.scene, metalness, roughness, tint]);
+
+  useEffect(() => () => {
+    model.traverse((object) => {
+      if (object instanceof THREE.Mesh) disposeMaterial(object.material);
+    });
+  }, [model]);
 
   return (
     <group position={position} rotation={[0, rotation, 0]} scale={scale} userData={{ impactSurface: surface }}>
@@ -277,46 +550,70 @@ function ZoneMarker({ position, title, subtitle, color }: {
   );
 }
 
-function AbandonedDepot() {
+function AbandonedDepot({ textures }: { textures: OutlandsSurfaceTextures }) {
   return (
     <group position={[-40, 0, -210]}>
       <mesh receiveShadow position={[0, 0.03, 0]} userData={{ impactSurface: "concrete" }}>
         <boxGeometry args={[48, 0.06, 36]} />
-        <meshStandardMaterial color="#59605b" roughness={0.96} />
+        <meshStandardMaterial color="#ffffff" map={textures.depot} roughness={0.98} bumpMap={textures.hardDetail} bumpScale={0.018} />
       </mesh>
       <mesh castShadow receiveShadow position={[0, 3.2, -15]} userData={{ impactSurface: "concrete" }}>
         <boxGeometry args={[45, 6.4, 0.7]} />
-        <meshStandardMaterial color="#6c746f" roughness={0.92} />
+        <meshStandardMaterial color="#ddd9cb" map={textures.concrete} roughness={0.96} bumpMap={textures.hardDetail} bumpScale={0.035} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[0, 0.52, -14.58]} userData={{ impactSurface: "concrete" }}>
+        <boxGeometry args={[44.4, 0.86, 0.08]} />
+        <meshStandardMaterial color="#373f3d" map={textures.hardDetail} roughness={1} />
       </mesh>
       {[-21.5, 21.5].map((x) => (
         <mesh key={x} castShadow receiveShadow position={[x, 2.2, 0]} userData={{ impactSurface: "concrete" }}>
           <boxGeometry args={[0.7, 4.4, 30]} />
-          <meshStandardMaterial color="#636a66" roughness={0.94} />
+          <meshStandardMaterial color="#c4c0b3" map={textures.concrete} roughness={0.97} bumpMap={textures.hardDetail} bumpScale={0.03} />
         </mesh>
       ))}
       {[-14, 0, 14].map((x, index) => (
         <group key={x} position={[x, 0, 4 + (index % 2) * 5]} userData={{ impactSurface: "metal" }}>
           <mesh castShadow position={[0, 2.3, 0]}>
             <boxGeometry args={[0.32, 4.6, 0.32]} />
-            <meshStandardMaterial color="#29363b" metalness={0.75} roughness={0.42} />
+            <meshStandardMaterial color="#29363b" roughnessMap={textures.hardDetail} metalness={0.75} roughness={0.48} />
           </mesh>
           <mesh castShadow position={[0, 4.45, 0]} rotation={[0, 0, index % 2 ? 0.22 : -0.18]}>
             <boxGeometry args={[9.5, 0.3, 0.3]} />
-            <meshStandardMaterial color="#35454b" metalness={0.7} roughness={0.45} />
+            <meshStandardMaterial color="#35454b" roughnessMap={textures.hardDetail} metalness={0.7} roughness={0.5} />
           </mesh>
         </group>
       ))}
-      <StaticModel url="/assets/models/kenney-nature/tent_detailedOpen.glb" position={[13, 0, 7]} rotation={2.5} scale={1.7} surface="wood" />
-      <StaticModel url="/assets/models/kenney-nature/log_stack.glb" position={[16, 0, 12]} rotation={1.1} scale={1.45} surface="wood" />
+      <StaticModel
+        url="/assets/models/kenney-nature/tent_detailedOpen.glb"
+        position={[13, 0, 7]}
+        rotation={2.5}
+        scale={3.35}
+        surface="wood"
+        tint="#a9a488"
+        roughness={0.98}
+        detailTexture={textures.organicDetail}
+        bumpScale={0.035}
+      />
+      <StaticModel
+        url="/assets/models/kenney-nature/log_stack.glb"
+        position={[17.5, 0, 12.5]}
+        rotation={1.1}
+        scale={2.15}
+        surface="wood"
+        tint="#8c735a"
+        roughness={1}
+        detailTexture={textures.organicDetail}
+        bumpScale={0.055}
+      />
       <mesh castShadow position={[-10, 1.3, -5]} rotation={[0.08, 0.3, -0.13]} userData={{ impactSurface: "metal" }}>
         <boxGeometry args={[8, 2.6, 3.2]} />
-        <meshStandardMaterial color="#4a5b60" metalness={0.5} roughness={0.58} />
+        <meshStandardMaterial color="#4a5b60" roughnessMap={textures.hardDetail} bumpMap={textures.hardDetail} bumpScale={0.018} metalness={0.5} roughness={0.62} />
       </mesh>
     </group>
   );
 }
 
-function Quarry() {
+function Quarry({ textures }: { textures: OutlandsSurfaceTextures }) {
   const mountains = [
     [118, 9, -224, 18, 11, 16], [137, 13, -250, 23, 17, 21], [124, 8, -281, 19, 12, 18],
     [104, 7, -308, 16, 10, 14], [151, 18, -303, 29, 22, 24]
@@ -325,12 +622,19 @@ function Quarry() {
     <group>
       <mesh receiveShadow position={[85, -0.03, -252]} rotation={[-Math.PI / 2, 0, 0]} userData={{ impactSurface: "dirt" }}>
         <circleGeometry args={[56, 48]} />
-        <meshStandardMaterial color="#9b6646" roughness={1} />
+        <meshStandardMaterial color="#ffffff" map={textures.quarry} roughness={1} bumpMap={textures.hardDetail} bumpScale={0.055} />
       </mesh>
       {mountains.map(([x, y, z, sx, sy, sz], index) => (
         <mesh key={index} castShadow receiveShadow position={[x, y - 2.5, z]} scale={[sx, sy, sz]} rotation={[0.08, index * 0.71, -0.06]} userData={{ impactSurface: "dirt" }}>
           <dodecahedronGeometry args={[1, 1]} />
-          <meshStandardMaterial color={index % 2 ? "#80614f" : "#735344"} roughness={0.98} flatShading />
+          <meshStandardMaterial
+            color={index % 2 ? "#8a6853" : "#755346"}
+            roughnessMap={textures.hardDetail}
+            bumpMap={textures.hardDetail}
+            bumpScale={0.045}
+            roughness={0.99}
+            flatShading
+          />
         </mesh>
       ))}
       <mesh receiveShadow position={[75, 0.05, -251]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -341,7 +645,7 @@ function Quarry() {
   );
 }
 
-function OldCityRuins() {
+function OldCityRuins({ textures }: { textures: OutlandsSurfaceTextures }) {
   const blocks = [
     [-87, -275, 18, 7, 10], [-60, -274, 14, 11, 8], [-91, -301, 11, 15, 6], [-61, -306, 19, 8, 12]
   ] as const;
@@ -349,21 +653,27 @@ function OldCityRuins() {
     <group>
       <mesh receiveShadow position={[-76, -0.025, -289]} rotation={[-Math.PI / 2, 0, 0]} userData={{ impactSurface: "concrete" }}>
         <planeGeometry args={[76, 72]} />
-        <meshStandardMaterial color="#5d625e" roughness={1} />
+        <meshStandardMaterial color="#ffffff" map={textures.ruins} roughness={1} bumpMap={textures.hardDetail} bumpScale={0.028} />
       </mesh>
       {blocks.map(([x, z, width, depth, height], index) => (
         <group key={index} position={[x, 0, z]} rotation={[0, index * 0.27 - 0.25, 0]}>
           <mesh castShadow receiveShadow position={[0, height / 2, -depth / 2]} userData={{ impactSurface: "concrete" }}>
             <boxGeometry args={[width, height, 0.55]} />
-            <meshStandardMaterial color={index % 2 ? "#77746e" : "#686d69"} roughness={0.98} />
+            <meshStandardMaterial
+              color={index % 2 ? "#d2c9b9" : "#b9c0b9"}
+              map={textures.concrete}
+              bumpMap={textures.hardDetail}
+              bumpScale={0.04}
+              roughness={0.99}
+            />
           </mesh>
           <mesh castShadow receiveShadow position={[-width / 2, height * 0.32, 0]} userData={{ impactSurface: "concrete" }}>
             <boxGeometry args={[0.55, height * 0.64, depth]} />
-            <meshStandardMaterial color="#74716a" roughness={0.98} />
+            <meshStandardMaterial color="#c1b9aa" map={textures.concrete} bumpMap={textures.hardDetail} bumpScale={0.04} roughness={0.99} />
           </mesh>
           <mesh castShadow position={[width * 0.18, 1, depth * 0.05]} rotation={[0.2, 0.35, 0.42]} userData={{ impactSurface: "concrete" }}>
             <boxGeometry args={[width * 0.7, 0.45, 1.2]} />
-            <meshStandardMaterial color="#545955" roughness={1} />
+            <meshStandardMaterial color="#77766d" map={textures.concrete} bumpMap={textures.hardDetail} bumpScale={0.035} roughness={1} />
           </mesh>
         </group>
       ))}
@@ -475,6 +785,144 @@ function robotAnimationName(kind: "eyeDrone" | "quadShell", motion: RobotMotion)
   return "Idle";
 }
 
+export function OutlandsEnemyVariantAttachments({
+  enemyId,
+  kind
+}: {
+  enemyId: string;
+  kind: OutlandsEnemyKind;
+}) {
+  const visual = outlandsEnemyVisualVariant(enemyId, kind);
+  const attachment: OutlandsEnemyVisualAttachment = visual.attachment;
+  if (attachment === "none") return null;
+  const shell = visual.tint;
+  const accent = visual.accent;
+  const glow = visual.emissive;
+  const glowIntensity = visual.emissiveIntensity;
+
+  if (attachment === "sensor-array") {
+    return (
+      <group userData={{ impactSurface: "metal" }}>
+        <mesh castShadow position={[0, 0.18, 0]} rotation={[Math.PI / 2, 0, 0]} raycast={() => null}>
+          <torusGeometry args={[0.53, 0.055, 8, 28]} />
+          <meshStandardMaterial color={shell} metalness={0.82} roughness={0.28} />
+        </mesh>
+        {[-0.36, 0, 0.36].map((x, index) => (
+          <group key={x} position={[x, 0.48 + (index % 2) * 0.12, 0]}>
+            <mesh castShadow raycast={() => null}>
+              <cylinderGeometry args={[0.025, 0.04, 0.58, 8]} />
+              <meshStandardMaterial color={shell} metalness={0.88} roughness={0.25} />
+            </mesh>
+            <mesh position={[0, 0.32, 0]} raycast={() => null}>
+              <sphereGeometry args={[0.09 + index * 0.012, 12, 9]} />
+              <meshStandardMaterial color={accent} emissive={glow} emissiveIntensity={glowIntensity} metalness={0.32} roughness={0.22} />
+            </mesh>
+          </group>
+        ))}
+      </group>
+    );
+  }
+
+  if (attachment === "thermal-fins") {
+    return (
+      <group userData={{ impactSurface: "metal" }}>
+        {[-1, 1].flatMap((side) => [-0.28, 0.28].map((z, index) => (
+          <mesh
+            key={`${side}-${z}`}
+            castShadow
+            position={[side * 0.58, index ? 0.08 : -0.08, z]}
+            rotation={[0, 0, side * (0.48 + index * 0.13)]}
+            raycast={() => null}
+          >
+            <boxGeometry args={[0.11, 0.72, 0.36]} />
+            <meshStandardMaterial color={index ? accent : shell} emissive={glow} emissiveIntensity={index ? glowIntensity * 0.42 : 0.08} metalness={0.72} roughness={0.31} />
+          </mesh>
+        )))}
+        <mesh position={[0, -0.02, -0.57]} raycast={() => null}>
+          <sphereGeometry args={[0.2, 14, 10]} />
+          <meshStandardMaterial color={accent} emissive={glow} emissiveIntensity={glowIntensity * 1.35} roughness={0.18} />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (attachment === "bulwark-plates") {
+    return (
+      <group userData={{ impactSurface: "metal" }}>
+        <mesh castShadow position={[0, 1.02, -0.72]} rotation={[-0.2, 0, 0]} raycast={() => null}>
+          <boxGeometry args={[1.72, 0.78, 0.18]} />
+          <meshStandardMaterial color={shell} metalness={0.68} roughness={0.39} />
+        </mesh>
+        {[-1, 1].map((side) => (
+          <mesh key={side} castShadow position={[side * 0.82, 0.78, -0.12]} rotation={[0, side * 0.22, side * -0.12]} raycast={() => null}>
+            <boxGeometry args={[0.38, 0.62, 1.25]} />
+            <meshStandardMaterial color={shell} metalness={0.7} roughness={0.37} />
+          </mesh>
+        ))}
+        <mesh position={[0, 1.05, -0.825]} raycast={() => null}>
+          <boxGeometry args={[0.76, 0.11, 0.04]} />
+          <meshStandardMaterial color={accent} emissive={glow} emissiveIntensity={glowIntensity} roughness={0.2} />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (attachment === "stalker-spines") {
+    return (
+      <group userData={{ impactSurface: "metal" }}>
+        {[-0.64, -0.22, 0.22, 0.64].map((z, index) => (
+          <mesh key={z} castShadow position={[0, 1.12 + Math.sin(index * 1.7) * 0.08, z]} rotation={[0.2 + index * 0.08, 0, 0]} raycast={() => null}>
+            <coneGeometry args={[0.115, 0.68 - index * 0.055, 7]} />
+            <meshStandardMaterial color={index % 2 ? accent : shell} emissive={glow} emissiveIntensity={index % 2 ? glowIntensity * 0.45 : 0.12} metalness={0.78} roughness={0.3} />
+          </mesh>
+        ))}
+        <mesh position={[0, 0.86, -0.54]} raycast={() => null}>
+          <sphereGeometry args={[0.13, 12, 9]} />
+          <meshStandardMaterial color={accent} emissive={glow} emissiveIntensity={glowIntensity * 1.2} roughness={0.2} />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (attachment === "scout-rig") {
+    return (
+      <group userData={{ impactSurface: "metal" }}>
+        <mesh castShadow position={[0, 1.18, 0.28]} raycast={() => null}>
+          <boxGeometry args={[0.48, 0.7, 0.24]} />
+          <meshStandardMaterial color={shell} roughness={0.72} metalness={0.22} />
+        </mesh>
+        <mesh castShadow position={[0.28, 1.73, 0.25]} rotation={[0, 0, -0.08]} raycast={() => null}>
+          <cylinderGeometry args={[0.018, 0.025, 0.7, 7]} />
+          <meshStandardMaterial color={accent} metalness={0.65} roughness={0.32} />
+        </mesh>
+        <mesh position={[0, 1.67, -0.24]} raycast={() => null}>
+          <boxGeometry args={[0.42, 0.09, 0.06]} />
+          <meshStandardMaterial color={accent} emissive={glow} emissiveIntensity={glowIntensity} roughness={0.18} />
+        </mesh>
+      </group>
+    );
+  }
+
+  return (
+    <group userData={{ impactSurface: "metal" }}>
+      <mesh castShadow position={[0, 1.12, 0.31]} raycast={() => null}>
+        <boxGeometry args={[0.7, 0.88, 0.32]} />
+        <meshStandardMaterial color={shell} roughness={0.58} metalness={0.36} />
+      </mesh>
+      {[-1, 1].map((side) => (
+        <mesh key={side} castShadow position={[side * 0.49, 1.48, -0.02]} rotation={[0, 0, side * 0.1]} raycast={() => null}>
+          <boxGeometry args={[0.4, 0.34, 0.52]} />
+          <meshStandardMaterial color={shell} metalness={0.48} roughness={0.48} />
+        </mesh>
+      ))}
+      <mesh castShadow position={[0, 1.2, -0.25]} raycast={() => null}>
+        <boxGeometry args={[0.72, 0.55, 0.12]} />
+        <meshStandardMaterial color={accent} emissive={glow} emissiveIntensity={glowIntensity * 0.22} metalness={0.52} roughness={0.42} />
+      </mesh>
+    </group>
+  );
+}
+
 export function OutlandsRobot({
   kind,
   username,
@@ -488,6 +936,8 @@ export function OutlandsRobot({
   faction,
   onCombatHit
 }: OutlandsRobotProps) {
+  const enemyId = username.startsWith("outlands:") ? username.slice("outlands:".length) : username;
+  const visual = outlandsEnemyVisualVariant(enemyId, kind);
   const url = kind === "eyeDrone" ? EYE_DRONE_MODEL_URL : QUAD_SHELL_MODEL_URL;
   const gltf = useGLTF(url);
   const model = useMemo(() => {
@@ -496,9 +946,21 @@ export function OutlandsRobot({
       if (!(object instanceof THREE.Mesh)) return;
       object.castShadow = true;
       object.receiveShadow = true;
+      object.material = cloneStyledMaterial(object.material, {
+        tint: visual.tint,
+        roughness: kind === "eyeDrone" ? 0.34 : 0.43,
+        metalness: kind === "eyeDrone" ? 0.62 : 0.55,
+        emissive: visual.emissive,
+        emissiveIntensity: visual.emissiveIntensity * 0.24
+      });
     });
     return clone;
-  }, [gltf.scene]);
+  }, [gltf.scene, kind, visual.emissive, visual.emissiveIntensity, visual.tint]);
+  useEffect(() => () => {
+    model.traverse((object) => {
+      if (object instanceof THREE.Mesh) disposeMaterial(object.material);
+    });
+  }, [model]);
   const { actions } = useAnimations(gltf.animations, model);
   const groupRef = useRef<THREE.Group>(null);
   const lastAction = useRef<THREE.AnimationAction | null>(null);
@@ -532,8 +994,11 @@ export function OutlandsRobot({
     }
   });
 
-  const hitboxPosition: [number, number, number] = kind === "eyeDrone" ? [0, 0, 0] : [0, 0.82, 0];
-  const hitboxSize: [number, number, number] = kind === "eyeDrone" ? [1.2, 1.1, 1.2] : [1.75, 1.6, 1.75];
+  const baseModelScale = kind === "eyeDrone" ? 1.25 : 1.08;
+  const variantScaleRatio = THREE.MathUtils.clamp(visual.modelScale / baseModelScale, 0.82, 1.36);
+  const hitboxPosition: [number, number, number] = kind === "eyeDrone" ? [0, 0, 0] : [0, 0.82 * variantScaleRatio, 0];
+  const baseHitboxSize: [number, number, number] = kind === "eyeDrone" ? [1.2, 1.1, 1.2] : [1.75, 1.6, 1.75];
+  const hitboxSize = baseHitboxSize.map((value) => value * variantScaleRatio) as [number, number, number];
   const healthPercent = Math.max(0, Math.min(100, health / maxHealth * 100));
 
   return (
@@ -542,7 +1007,8 @@ export function OutlandsRobot({
       position={position}
       userData={{ playerUsername: username, impactSurface: "metal", impactDynamic: true }}
     >
-      <primitive object={model} scale={kind === "eyeDrone" ? 1.25 : 1.08} />
+      <primitive object={model} scale={visual.modelScale} />
+      <OutlandsEnemyVariantAttachments enemyId={enemyId} kind={kind} />
       <mesh
         position={hitboxPosition}
         userData={{
@@ -557,7 +1023,7 @@ export function OutlandsRobot({
         <boxGeometry args={hitboxSize} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
-      <Html center position={[0, kind === "eyeDrone" ? 1.1 : 2.25, 0]} distanceFactor={14} style={{ pointerEvents: "none" }}>
+      <Html center position={[0, (kind === "eyeDrone" ? 1.1 : 2.25) * variantScaleRatio, 0]} distanceFactor={14} style={{ pointerEvents: "none" }}>
         <div className={`outlands-enemy-label ${faction}${dead ? " dead" : ""}`}>
           <div><b>{displayName}</b><span>{faction === "neutral" ? "нейтральный" : dead ? "уничтожен" : "опасность"}</span></div>
           <i><em style={{ width: `${healthPercent}%` }} /></i>
@@ -574,39 +1040,125 @@ export function OutlandsEnvironment({
   nearExtraction,
   onContainerClick
 }: OutlandsEnvironmentProps) {
+  const textures = useOutlandsSurfaceTextures();
   return (
     <group>
       <mesh receiveShadow position={[0, -0.085, -201]} rotation={[-Math.PI / 2, 0, 0]} userData={{ impactSurface: "dirt" }}>
         <planeGeometry args={[340, 262]} />
-        <meshStandardMaterial color="#506d4d" roughness={1} />
+        <meshStandardMaterial color="#ffffff" map={textures.meadow} roughness={1} bumpMap={textures.organicDetail} bumpScale={0.035} />
       </mesh>
       <mesh receiveShadow position={[0, -0.07, -141]} rotation={[-Math.PI / 2, 0, 0]} userData={{ impactSurface: "dirt" }}>
         <planeGeometry args={[300, 76]} />
-        <meshStandardMaterial color="#3f6948" roughness={1} />
+        <meshStandardMaterial color="#ffffff" map={textures.forestFloor} roughness={1} bumpMap={textures.organicDetail} bumpScale={0.045} />
       </mesh>
       <mesh receiveShadow position={[0, -0.048, -201]} rotation={[-Math.PI / 2, 0, 0]} userData={{ impactSurface: "dirt" }}>
         <planeGeometry args={[9.5, 262]} />
-        <meshStandardMaterial color="#866e52" roughness={1} />
+        <meshStandardMaterial color="#9b8a6d" map={textures.trail} roughness={1} bumpMap={textures.hardDetail} bumpScale={0.032} />
       </mesh>
       <mesh receiveShadow position={[0, -0.039, -201]} rotation={[-Math.PI / 2, 0, 0]} userData={{ impactSurface: "dirt" }}>
         <planeGeometry args={[3.8, 262]} />
-        <meshStandardMaterial color="#9e8766" roughness={1} />
+        <meshStandardMaterial color="#c0aa82" map={textures.trail} roughness={0.98} bumpMap={textures.hardDetail} bumpScale={0.02} />
       </mesh>
 
       <CheckpointGate activeExpedition={activeExpedition} nearExtraction={nearExtraction} />
-      <AbandonedDepot />
-      <Quarry />
-      <OldCityRuins />
+      <AbandonedDepot textures={textures} />
+      <Quarry textures={textures} />
+      <OldCityRuins textures={textures} />
 
-      <InstancedNature url="/assets/models/kenney-nature/tree_pineTallA.glb" transforms={FOREST_TREES_A} surface="wood" />
-      <InstancedNature url="/assets/models/kenney-nature/tree_pineTallB.glb" transforms={FOREST_TREES_B} surface="wood" />
-      <InstancedNature url="/assets/models/kenney-nature/tree_pineSmallC.glb" transforms={BORDER_TREES} surface="wood" />
-      <InstancedNature url="/assets/models/kenney-nature/rock_largeB.glb" transforms={QUARRY_ROCKS_A} surface="dirt" />
-      <InstancedNature url="/assets/models/kenney-nature/rock_largeE.glb" transforms={RUIN_ROCKS} surface="concrete" />
+      <InstancedNature
+        url="/assets/models/kenney-nature/tree_pineTallA.glb"
+        transforms={FOREST_TREES_A}
+        surface="wood"
+        tint="#bed4b7"
+        roughness={0.98}
+        detailTexture={textures.organicDetail}
+        bumpScale={0.045}
+      />
+      <InstancedNature
+        url="/assets/models/kenney-nature/tree_pineTallB.glb"
+        transforms={FOREST_TREES_B}
+        surface="wood"
+        tint="#a8c5aa"
+        roughness={0.99}
+        detailTexture={textures.organicDetail}
+        bumpScale={0.05}
+      />
+      <InstancedNature
+        url="/assets/models/kenney-nature/tree_pineSmallC.glb"
+        transforms={BORDER_TREES}
+        surface="wood"
+        tint="#96b49c"
+        roughness={0.99}
+        detailTexture={textures.organicDetail}
+        bumpScale={0.055}
+      />
+      <InstancedNature
+        url="/assets/models/kenney-nature/rock_largeB.glb"
+        transforms={QUARRY_ROCKS_A}
+        surface="dirt"
+        tint="#b98f73"
+        roughness={1}
+        detailTexture={textures.hardDetail}
+        bumpScale={0.07}
+      />
+      <InstancedNature
+        url="/assets/models/kenney-nature/rock_largeE.glb"
+        transforms={RUIN_ROCKS}
+        surface="concrete"
+        tint="#a5a69e"
+        roughness={1}
+        detailTexture={textures.hardDetail}
+        bumpScale={0.065}
+      />
 
-      <StaticModel url="/assets/models/kenney-nature/campfire_stones.glb" position={[11, 0, -137]} scale={1.7} surface="concrete" />
-      <StaticModel url="/assets/models/kenney-nature/tent_detailedOpen.glb" position={[14, 0, -141]} rotation={-0.5} scale={1.55} surface="wood" />
-      <pointLight position={[11, 1.05, -137]} color="#ff9c55" intensity={4.2} distance={9} />
+      <mesh receiveShadow position={[13, -0.024, -140]} rotation={[-Math.PI / 2, 0, 0]} userData={{ impactSurface: "dirt" }}>
+        <circleGeometry args={[10.5, 36]} />
+        <meshStandardMaterial color="#9b7958" map={textures.quarry} roughness={1} bumpMap={textures.hardDetail} bumpScale={0.035} />
+      </mesh>
+      <StaticModel
+        url="/assets/models/kenney-nature/campfire_stones.glb"
+        position={[11, 0, -137]}
+        scale={2.25}
+        surface="concrete"
+        tint="#b6a28c"
+        roughness={1}
+        detailTexture={textures.hardDetail}
+        bumpScale={0.055}
+      />
+      <StaticModel
+        url="/assets/models/kenney-nature/campfire_logs.glb"
+        position={[11, 0.08, -137]}
+        rotation={0.34}
+        scale={1.85}
+        surface="wood"
+        tint="#9a6946"
+        roughness={0.99}
+        detailTexture={textures.organicDetail}
+        bumpScale={0.05}
+      />
+      <StaticModel
+        url="/assets/models/kenney-nature/tent_detailedOpen.glb"
+        position={[15.5, 0, -142.5]}
+        rotation={-0.5}
+        scale={3.2}
+        surface="wood"
+        tint="#b9b18a"
+        roughness={0.98}
+        detailTexture={textures.organicDetail}
+        bumpScale={0.035}
+      />
+      <StaticModel
+        url="/assets/models/kenney-nature/log_stack.glb"
+        position={[19.5, 0, -136.2]}
+        rotation={-0.9}
+        scale={1.8}
+        surface="wood"
+        tint="#936d4c"
+        roughness={1}
+        detailTexture={textures.organicDetail}
+        bumpScale={0.055}
+      />
+      <pointLight position={[11, 1.35, -137]} color="#ff9c55" intensity={5.1} distance={11} />
 
       <ZoneMarker position={[11, 0, -116]} title="ХВОЙНЫЙ РУБЕЖ" subtitle="низкая угроза · ресурсы" color="#4ff0ad" />
       <ZoneMarker position={[-16, 0, -181]} title="ЗАБРОШЕННОЕ ДЕПО" subtitle="роботы · энергоблоки" color="#ffb45e" />
