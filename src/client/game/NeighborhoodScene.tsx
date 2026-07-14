@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "
 import * as THREE from "three";
 import type { CatalogItem, HomeState, NeighborhoodResident, PublicUser, RemotePlayer } from "../types";
 import {
+  createSurfaceImpactMark,
   MuzzleFlashEffect,
   SurfaceImpactEffectView,
   SurfaceImpactMarks,
@@ -2126,6 +2127,7 @@ function NeighborhoodWorld({
   const [bloodEffects, setBloodEffects] = useState<BloodEffect[]>([]);
   const [impactEffects, setImpactEffects] = useState<SurfaceImpactEffect[]>([]);
   const [impactMarks, setImpactMarks] = useState<SurfaceImpactMark[]>([]);
+  const impactMarkGeometriesRef = useRef(new Set<THREE.BufferGeometry>());
   const markLimits = useMemo(impactMarkLimits, []);
   const [, setNpcUiVersion] = useState(0);
   const [driving, setDriving] = useState(false);
@@ -2523,28 +2525,25 @@ function NeighborhoodWorld({
       ...effects.filter((current) => now < current.createdAt + current.duration),
       effect
     ].slice(-14));
-    const mark: SurfaceImpactMark = {
-      id: impactId.current,
-      point: point.clone(),
-      normal: normal.clone(),
-      surface,
-      weapon
-    };
     const anchor = dynamicImpactAnchor(object);
-    if (anchor) {
-      anchor.updateWorldMatrix(true, false);
-      mark.anchor = anchor;
-      mark.anchorPoint = anchor.worldToLocal(impactWorld.clone());
-      mark.anchorNormal = anchor.worldToLocal(impactWorld.clone().add(normalWorld))
-        .sub(mark.anchorPoint)
-        .normalize();
-    }
-    setImpactMarks((marks) => {
-      const next = [...marks, mark];
-      const bulletMarks = next.filter((current) => current.weapon !== "rocket").slice(-markLimits.bullet);
-      const rocketMarks = next.filter((current) => current.weapon === "rocket").slice(-markLimits.rocket);
-      return [...bulletMarks, ...rocketMarks].sort((left, right) => left.id - right.id);
+    const mark = createSurfaceImpactMark({
+      id: impactId.current,
+      target: object,
+      pointWorld: impactWorld,
+      normalWorld,
+      surface,
+      weapon,
+      coordinateRoot: group,
+      anchor
     });
+    if (mark) {
+      setImpactMarks((marks) => {
+        const next = [...marks, mark];
+        const bulletMarks = next.filter((current) => current.weapon !== "rocket").slice(-markLimits.bullet);
+        const rocketMarks = next.filter((current) => current.weapon === "rocket").slice(-markLimits.rocket);
+        return [...bulletMarks, ...rocketMarks].sort((left, right) => left.id - right.id);
+      });
+    }
   }
 
   function applyWeaponRecoil(config: (typeof WEAPONS)[WeaponKind]) {
@@ -2963,6 +2962,19 @@ function NeighborhoodWorld({
     }, Math.max(24, nextExpiry - performance.now() + 24));
     return () => window.clearTimeout(timeout);
   }, [impactEffects]);
+
+  useEffect(() => {
+    const currentGeometries = new Set(impactMarks.map((mark) => mark.geometry));
+    for (const geometry of impactMarkGeometriesRef.current) {
+      if (!currentGeometries.has(geometry)) geometry.dispose();
+    }
+    impactMarkGeometriesRef.current = currentGeometries;
+  }, [impactMarks]);
+
+  useEffect(() => () => {
+    for (const geometry of impactMarkGeometriesRef.current) geometry.dispose();
+    impactMarkGeometriesRef.current.clear();
+  }, []);
 
   useEffect(() => {
     const announcePosition = () => onMove({

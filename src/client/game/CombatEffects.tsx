@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import { DecalGeometry } from "three/examples/jsm/geometries/DecalGeometry.js";
 import type { WeaponKind } from "./combat";
 
 export type ImpactSurface = "dirt" | "asphalt" | "concrete" | "wood" | "metal" | "glass" | "generic";
@@ -18,13 +19,10 @@ export type SurfaceImpactEffect = {
 
 export type SurfaceImpactMark = {
   id: number;
-  point: THREE.Vector3;
-  normal: THREE.Vector3;
   surface: ImpactSurface;
   weapon: WeaponKind;
+  geometry: THREE.BufferGeometry;
   anchor?: THREE.Object3D;
-  anchorPoint?: THREE.Vector3;
-  anchorNormal?: THREE.Vector3;
 };
 
 type MuzzleFlashEffectProps = {
@@ -86,7 +84,6 @@ const UP = new THREE.Vector3(0, 1, 0);
 const FALLBACK_FORWARD = new THREE.Vector3(0, 0, 1);
 const MARK_FORWARD = new THREE.Vector3(0, 0, 1);
 const GRAVITY = 9.81;
-const IMPACT_MARK_CAPACITY = 144;
 
 const IMPACT_MARK_TINTS: Record<ImpactSurface, string> = {
   dirt: "#aa8159",
@@ -392,7 +389,7 @@ function createImpactMarkTexture(kind: "bullet" | "rocket") {
   return texture;
 }
 
-function impactMarkSize(mark: SurfaceImpactMark) {
+function impactMarkSize(mark: Pick<SurfaceImpactMark, "id" | "surface" | "weapon">) {
   const baseSize: Record<WeaponKind, number> = {
     pistol: 0.075,
     rifle: 0.068,
@@ -410,26 +407,184 @@ function impactMarkSize(mark: SurfaceImpactMark) {
   return baseSize[mark.weapon] * surfaceScale * (0.86 + markRandom(mark.id * 19 + 7) * 0.3);
 }
 
+function facingDecalGeometry(source: THREE.BufferGeometry, facingNormal: THREE.Vector3) {
+  const positions = source.getAttribute("position");
+  const normals = source.getAttribute("normal");
+  const uvs = source.getAttribute("uv");
+  const nextPositions: number[] = [];
+  const nextNormals: number[] = [];
+  const nextUvs: number[] = [];
+  const faceNormal = new THREE.Vector3();
+  const first = new THREE.Vector3();
+  const second = new THREE.Vector3();
+  const third = new THREE.Vector3();
+
+  for (let index = 0; index < positions.count; index += 3) {
+    first.fromBufferAttribute(positions, index);
+    second.fromBufferAttribute(positions, index + 1);
+    third.fromBufferAttribute(positions, index + 2);
+    if (normals) {
+      faceNormal.set(0, 0, 0);
+      for (let offset = 0; offset < 3; offset += 1) {
+        faceNormal.x += normals.getX(index + offset);
+        faceNormal.y += normals.getY(index + offset);
+        faceNormal.z += normals.getZ(index + offset);
+      }
+      faceNormal.normalize();
+    } else {
+      faceNormal.subVectors(second, first).cross(third.clone().sub(first)).normalize();
+    }
+    if (faceNormal.dot(facingNormal) <= 0.3) continue;
+
+    for (let offset = 0; offset < 3; offset += 1) {
+      const vertexIndex = index + offset;
+      nextPositions.push(positions.getX(vertexIndex), positions.getY(vertexIndex), positions.getZ(vertexIndex));
+      if (normals) {
+        nextNormals.push(normals.getX(vertexIndex), normals.getY(vertexIndex), normals.getZ(vertexIndex));
+      } else {
+        nextNormals.push(faceNormal.x, faceNormal.y, faceNormal.z);
+      }
+      nextUvs.push(uvs.getX(vertexIndex), uvs.getY(vertexIndex));
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(nextPositions, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(nextNormals, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(nextUvs, 2));
+  return geometry;
+}
+
+export function createSurfaceImpactMark({
+  id,
+  target,
+  pointWorld,
+  normalWorld,
+  surface,
+  weapon,
+  coordinateRoot,
+  anchor
+}: {
+  id: number;
+  target: THREE.Object3D;
+  pointWorld: THREE.Vector3;
+  normalWorld: THREE.Vector3;
+  surface: ImpactSurface;
+  weapon: WeaponKind;
+  coordinateRoot: THREE.Object3D;
+  anchor?: THREE.Object3D;
+}): SurfaceImpactMark | null {
+  if (!(target instanceof THREE.Mesh) || !target.geometry?.getAttribute("position")) return null;
+  target.updateWorldMatrix(true, false);
+  coordinateRoot.updateWorldMatrix(true, false);
+  anchor?.updateWorldMatrix(true, false);
+
+  const normal = safeDirection(normalWorld, UP);
+  const markInfo = { id, surface, weapon };
+  const radius = impactMarkSize(markInfo);
+  const orientation = new THREE.Quaternion().setFromUnitVectors(MARK_FORWARD, normal);
+  orientation.multiply(
+    new THREE.Quaternion().setFromAxisAngle(MARK_FORWARD, markRandom(id * 37 + 11) * Math.PI * 2)
+  );
+  const projectorPosition = pointWorld.clone().addScaledVector(normal, 0.002);
+  const projectorSize = new THREE.Vector3(radius * 2, radius * 2, weapon === "rocket" ? 0.1 : 0.038);
+  const projected = new DecalGeometry(
+    target,
+    projectorPosition,
+    new THREE.Euler().setFromQuaternion(orientation),
+    projectorSize
+  );
+  const clipped = facingDecalGeometry(projected, normal);
+  projected.dispose();
+  if (clipped.getAttribute("position").count === 0) {
+    clipped.dispose();
+    return null;
+  }
+
+  const coordinateSpace = anchor ?? coordinateRoot;
+  coordinateSpace.updateWorldMatrix(true, false);
+  clipped.applyMatrix4(coordinateSpace.matrixWorld.clone().invert());
+  return { id, surface, weapon, geometry: clipped, anchor };
+}
+
+type ImpactMarkBatchEntry = {
+  mark: SurfaceImpactMark;
+  start: number;
+  count: number;
+};
+
+type ImpactMarkBatch = {
+  geometry: THREE.BufferGeometry;
+  entries: ImpactMarkBatchEntry[];
+};
+
+function buildImpactMarkBatch(marks: SurfaceImpactMark[]): ImpactMarkBatch {
+  const entries: ImpactMarkBatchEntry[] = [];
+  let vertexCount = 0;
+  for (const mark of marks) {
+    const count = mark.geometry.getAttribute("position").count;
+    entries.push({ mark, start: vertexCount, count });
+    vertexCount += count;
+  }
+
+  const positions = new Float32Array(vertexCount * 3);
+  const uvs = new Float32Array(vertexCount * 2);
+  const colors = new Float32Array(vertexCount * 3);
+  const tint = new THREE.Color();
+  for (const entry of entries) {
+    const sourcePosition = entry.mark.geometry.getAttribute("position");
+    const sourceUv = entry.mark.geometry.getAttribute("uv");
+    tint.set(IMPACT_MARK_TINTS[entry.mark.surface]);
+    for (let index = 0; index < entry.count; index += 1) {
+      const targetIndex = entry.start + index;
+      positions[targetIndex * 3] = sourcePosition.getX(index);
+      positions[targetIndex * 3 + 1] = sourcePosition.getY(index);
+      positions[targetIndex * 3 + 2] = sourcePosition.getZ(index);
+      uvs[targetIndex * 2] = sourceUv.getX(index);
+      uvs[targetIndex * 2 + 1] = sourceUv.getY(index);
+      colors[targetIndex * 3] = tint.r;
+      colors[targetIndex * 3 + 1] = tint.g;
+      colors[targetIndex * 3 + 2] = tint.b;
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  const positionAttribute = new THREE.BufferAttribute(positions, 3);
+  if (marks.some((mark) => mark.anchor)) {
+    positionAttribute.setUsage(THREE.DynamicDrawUsage);
+  }
+  geometry.setAttribute("position", positionAttribute);
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  return { geometry, entries };
+}
+
 export function SurfaceImpactMarks({ marks }: { marks: SurfaceImpactMark[] }) {
-  const bulletRef = useRef<THREE.InstancedMesh>(null);
-  const rocketRef = useRef<THREE.InstancedMesh>(null);
+  const bulletRef = useRef<THREE.Mesh>(null);
+  const rocketRef = useRef<THREE.Mesh>(null);
   const bulletTexture = useMemo(() => createImpactMarkTexture("bullet"), []);
   const rocketTexture = useMemo(() => createImpactMarkTexture("rocket"), []);
   const textureEffectGeneration = useRef(0);
   const bulletMarks = useMemo(() => marks.filter((mark) => mark.weapon !== "rocket"), [marks]);
   const rocketMarks = useMemo(() => marks.filter((mark) => mark.weapon === "rocket"), [marks]);
-  const scratch = useMemo(() => ({
-    matrix: new THREE.Matrix4(),
-    normal: new THREE.Vector3(),
-    position: new THREE.Vector3(),
-    quaternion: new THREE.Quaternion(),
-    roll: new THREE.Quaternion(),
-    scale: new THREE.Vector3(),
-    color: new THREE.Color(),
-    anchorPoint: new THREE.Vector3(),
-    anchorNormalEnd: new THREE.Vector3()
-  }), []);
+  const bulletBatch = useMemo(() => buildImpactMarkBatch(bulletMarks), [bulletMarks]);
+  const rocketBatch = useMemo(() => buildImpactMarkBatch(rocketMarks), [rocketMarks]);
   const hasDynamicMarks = useMemo(() => marks.some((mark) => mark.anchor), [marks]);
+  const mountedRef = useRef(false);
+  const currentGeometryRef = useRef({ bullet: bulletBatch.geometry, rocket: rocketBatch.geometry });
+  currentGeometryRef.current = { bullet: bulletBatch.geometry, rocket: rocketBatch.geometry };
+  const scratch = useMemo(() => ({
+    inverseRoot: new THREE.Matrix4(),
+    transform: new THREE.Matrix4(),
+    position: new THREE.Vector3()
+  }), []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const generation = ++textureEffectGeneration.current;
@@ -442,79 +597,73 @@ export function SurfaceImpactMarks({ marks }: { marks: SurfaceImpactMark[] }) {
     };
   }, [bulletTexture, rocketTexture]);
 
-  const updateMeshes = useCallback((updateColors: boolean) => {
-    const updateMesh = (mesh: THREE.InstancedMesh | null, entries: SurfaceImpactMark[]) => {
-      if (!mesh) return;
-      if (updateColors) configureDynamicMesh(mesh);
-      mesh.count = Math.min(entries.length, IMPACT_MARK_CAPACITY);
-      const startIndex = Math.max(0, entries.length - IMPACT_MARK_CAPACITY);
-      for (let entryIndex = startIndex; entryIndex < entries.length; entryIndex += 1) {
-        const mark = entries[entryIndex];
-        const index = entryIndex - startIndex;
-        if (mark.anchor && (!mark.anchor.parent || !mark.anchorPoint || !mark.anchorNormal || !mesh.parent)) {
-          scratch.matrix.makeScale(0, 0, 0);
-          mesh.setMatrixAt(index, scratch.matrix);
-          if (updateColors) mesh.setColorAt(index, scratch.color.set(IMPACT_MARK_TINTS[mark.surface]));
-          continue;
-        }
-        scratch.position.copy(mark.point);
-        scratch.normal.copy(mark.normal);
-        if (mark.anchor?.parent && mark.anchorPoint && mark.anchorNormal && mesh.parent) {
-          mark.anchor.updateWorldMatrix(true, false);
-          mesh.parent.updateWorldMatrix(true, false);
-          scratch.anchorPoint.copy(mark.anchorPoint);
-          scratch.anchorNormalEnd.copy(mark.anchorPoint).add(mark.anchorNormal);
-          mark.anchor.localToWorld(scratch.anchorPoint);
-          mark.anchor.localToWorld(scratch.anchorNormalEnd);
-          mesh.parent.worldToLocal(scratch.anchorPoint);
-          mesh.parent.worldToLocal(scratch.anchorNormalEnd);
-          scratch.position.copy(scratch.anchorPoint);
-          scratch.normal.copy(scratch.anchorNormalEnd).sub(scratch.anchorPoint);
-        }
-        if (scratch.normal.lengthSq() < 0.000001) scratch.normal.copy(UP);
-        else scratch.normal.normalize();
-        const offset = mark.weapon === "rocket" ? 0.014 : 0.007;
-        scratch.position.addScaledVector(scratch.normal, offset + (mark.id % 3) * 0.0007);
-        scratch.quaternion.setFromUnitVectors(MARK_FORWARD, scratch.normal);
-        scratch.roll.setFromAxisAngle(MARK_FORWARD, markRandom(mark.id * 37 + 11) * Math.PI * 2);
-        scratch.quaternion.multiply(scratch.roll);
-        const size = impactMarkSize(mark);
-        scratch.scale.set(
-          size * (0.9 + markRandom(mark.id * 43 + 17) * 0.18),
-          size * (0.9 + markRandom(mark.id * 47 + 23) * 0.18),
-          1
-        );
-        scratch.matrix.compose(scratch.position, scratch.quaternion, scratch.scale);
-        mesh.setMatrixAt(index, scratch.matrix);
-        if (updateColors) mesh.setColorAt(index, scratch.color.set(IMPACT_MARK_TINTS[mark.surface]));
-      }
-      mesh.instanceMatrix.needsUpdate = true;
-      if (updateColors && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  useEffect(() => {
+    const geometry = bulletBatch.geometry;
+    return () => {
+      queueMicrotask(() => {
+        if (!mountedRef.current || currentGeometryRef.current.bullet !== geometry) geometry.dispose();
+      });
     };
+  }, [bulletBatch.geometry]);
 
-    updateMesh(bulletRef.current, bulletMarks);
-    updateMesh(rocketRef.current, rocketMarks);
-  }, [bulletMarks, rocketMarks, scratch]);
+  useEffect(() => {
+    const geometry = rocketBatch.geometry;
+    return () => {
+      queueMicrotask(() => {
+        if (!mountedRef.current || currentGeometryRef.current.rocket !== geometry) geometry.dispose();
+      });
+    };
+  }, [rocketBatch.geometry]);
+
+  const updateDynamicGeometry = useCallback((mesh: THREE.Mesh | null, batch: ImpactMarkBatch) => {
+    if (!mesh?.parent) return;
+    mesh.parent.updateWorldMatrix(true, false);
+    scratch.inverseRoot.copy(mesh.parent.matrixWorld).invert();
+    const outputPosition = batch.geometry.getAttribute("position") as THREE.BufferAttribute;
+    outputPosition.clearUpdateRanges();
+    let changed = false;
+
+    for (const entry of batch.entries) {
+      if (!entry.mark.anchor) continue;
+      const sourcePosition = entry.mark.geometry.getAttribute("position");
+      const anchor = entry.mark.anchor;
+      if (anchor.parent) {
+        anchor.updateWorldMatrix(true, false);
+        scratch.transform.multiplyMatrices(scratch.inverseRoot, anchor.matrixWorld);
+        for (let index = 0; index < entry.count; index += 1) {
+          scratch.position.fromBufferAttribute(sourcePosition, index).applyMatrix4(scratch.transform);
+          outputPosition.setXYZ(entry.start + index, scratch.position.x, scratch.position.y, scratch.position.z);
+        }
+      } else {
+        for (let index = 0; index < entry.count; index += 1) {
+          outputPosition.setXYZ(entry.start + index, 0, 0, 0);
+        }
+      }
+      outputPosition.addUpdateRange(entry.start * 3, entry.count * 3);
+      changed = true;
+    }
+
+    if (changed) {
+      outputPosition.needsUpdate = true;
+    }
+  }, [scratch]);
+
+  const updateDynamicBatches = useCallback(() => {
+    updateDynamicGeometry(bulletRef.current, bulletBatch);
+    updateDynamicGeometry(rocketRef.current, rocketBatch);
+  }, [bulletBatch, rocketBatch, updateDynamicGeometry]);
 
   useLayoutEffect(() => {
-    updateMeshes(true);
-  }, [updateMeshes]);
+    updateDynamicBatches();
+  }, [updateDynamicBatches]);
 
   useFrame(() => {
-    if (hasDynamicMarks) updateMeshes(false);
+    if (hasDynamicMarks) updateDynamicBatches();
   });
 
   return (
     <>
-      <instancedMesh
-        ref={bulletRef}
-        args={[undefined, undefined, IMPACT_MARK_CAPACITY]}
-        count={0}
-        frustumCulled={false}
-        renderOrder={2}
-        raycast={() => null}
-      >
-        <planeGeometry args={[2, 2]} />
+      <mesh ref={bulletRef} geometry={bulletBatch.geometry} frustumCulled={false} renderOrder={2} raycast={() => null}>
         <meshBasicMaterial
           map={bulletTexture}
           vertexColors
@@ -526,16 +675,8 @@ export function SurfaceImpactMarks({ marks }: { marks: SurfaceImpactMark[] }) {
           polygonOffsetUnits={-4}
           toneMapped={false}
         />
-      </instancedMesh>
-      <instancedMesh
-        ref={rocketRef}
-        args={[undefined, undefined, IMPACT_MARK_CAPACITY]}
-        count={0}
-        frustumCulled={false}
-        renderOrder={2}
-        raycast={() => null}
-      >
-        <planeGeometry args={[2, 2]} />
+      </mesh>
+      <mesh ref={rocketRef} geometry={rocketBatch.geometry} frustumCulled={false} renderOrder={2} raycast={() => null}>
         <meshBasicMaterial
           map={rocketTexture}
           vertexColors
@@ -547,7 +688,7 @@ export function SurfaceImpactMarks({ marks }: { marks: SurfaceImpactMark[] }) {
           polygonOffsetUnits={-4}
           toneMapped={false}
         />
-      </instancedMesh>
+      </mesh>
     </>
   );
 }
