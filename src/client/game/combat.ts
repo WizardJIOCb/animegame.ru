@@ -122,6 +122,14 @@ export const WEAPON_MODELS: Record<WeaponKind, WeaponModelConfig> = {
   }
 };
 
+export const CHARACTER_ANIMATION_URL = "/assets/animations/quaternius-universal/UAL1_Standard.glb";
+export const TOWN_CAR_MODEL_URL = "/assets/models/custom/town-car.glb";
+export const CORE_GAME_MODEL_URLS = [
+  CHARACTER_ANIMATION_URL,
+  TOWN_CAR_MODEL_URL,
+  ...Object.values(WEAPON_MODELS).map((weapon) => weapon.url)
+];
+
 export const WEAPONS: Record<WeaponKind, WeaponConfig> = {
   pistol: {
     label: "Пистолет",

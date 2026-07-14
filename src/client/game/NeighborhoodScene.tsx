@@ -5,6 +5,7 @@ import * as THREE from "three";
 import type { CatalogItem, HomeState, NeighborhoodResident, PublicUser, RemotePlayer } from "../types";
 import { HomePlacedObject, Player } from "./GameScene";
 import {
+  TOWN_CAR_MODEL_URL,
   WEAPONS,
   WEAPON_ORDER,
   type BodyPart,
@@ -1763,7 +1764,7 @@ function BloodHitEffect({ effect }: { effect: BloodEffect }) {
 }
 
 function TownCar({ color, active = false }: { color: string; active?: boolean }) {
-  const gltf = useGLTF("/assets/models/custom/town-car.glb");
+  const gltf = useGLTF(TOWN_CAR_MODEL_URL);
   const model = useMemo(() => {
     const clone = gltf.scene.clone(true);
     clone.traverse((object) => {
@@ -3538,5 +3539,3 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
     </>
   );
 }
-
-useGLTF.preload("/assets/models/custom/town-car.glb");
