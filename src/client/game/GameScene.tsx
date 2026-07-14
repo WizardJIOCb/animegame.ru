@@ -1844,7 +1844,8 @@ function CharacterModel({
   combatUsername,
   combatDead = false,
   onCombatHit,
-  ragdollImpact
+  ragdollImpact,
+  ragdollControllerRef
 }: {
   item: CatalogItem;
   motion: CharacterMotion;
@@ -1861,6 +1862,7 @@ function CharacterModel({
   combatDead?: boolean;
   onCombatHit?: (event: ThreeEvent<MouseEvent>) => void;
   ragdollImpact?: RagdollImpact;
+  ragdollControllerRef?: RefObject<SkeletonRagdoll | null>;
 }) {
   const gltf = useGLTF(item.modelUrl ?? "");
   const ragdollRef = useRef<SkeletonRagdoll | null>(null);
@@ -1908,17 +1910,21 @@ function CharacterModel({
   );
 
   useEffect(() => {
-    ragdollRef.current?.dispose();
+    const previous = ragdollRef.current;
+    if (ragdollControllerRef?.current === previous) ragdollControllerRef.current = null;
+    previous?.dispose();
     ragdollRef.current = null;
     if (!combatDead || !ragdollImpact) return;
 
     const ragdoll = new SkeletonRagdoll(scene, ragdollImpact);
     ragdollRef.current = ragdoll;
+    if (ragdollControllerRef) ragdollControllerRef.current = ragdoll;
     return () => {
       if (ragdollRef.current === ragdoll) ragdollRef.current = null;
+      if (ragdollControllerRef?.current === ragdoll) ragdollControllerRef.current = null;
       ragdoll.dispose();
     };
-  }, [combatDead, ragdollImpact?.nonce, scene]);
+  }, [combatDead, ragdollControllerRef, ragdollImpact?.nonce, scene]);
 
   useFrame((_, delta) => {
     ragdollRef.current?.step(Math.min(delta, 0.08));
@@ -1927,7 +1933,7 @@ function CharacterModel({
   return (
     <>
       <primitive object={scene} scale={item.modelScale ?? 1} />
-      {combatUsername && onCombatHit && !combatDead ? (
+      {combatUsername && onCombatHit ? (
         <CharacterCombatHitboxes
           targetScene={scene}
           username={combatUsername}
@@ -2044,11 +2050,11 @@ function CombatCharacterFallback({
   return (
     <>
       <ProceduralPlayerBody color={color} isSelf={isSelf} />
-      {username && onCombatHit && !dead ? (
+      {username && onCombatHit ? (
         <mesh
           name={`combat-hitbox:${username}:fallback`}
           position={[0, 0.88, 0]}
-          userData={{ combatHitbox: true, username, bodyPart: "chest", boneName: "spine_03" }}
+          userData={{ combatHitbox: true, combatDead: dead, username, bodyPart: "chest", boneName: "spine_03" }}
           onClick={onCombatHit}
         >
           <capsuleGeometry args={[0.36, 1.05, 6, 12]} />
@@ -2391,7 +2397,8 @@ export function Player({
   combatUsername,
   combatDead = false,
   onCombatHit,
-  ragdollImpact
+  ragdollImpact,
+  ragdollControllerRef
 }: {
   username: string;
   color: string;
@@ -2420,6 +2427,7 @@ export function Player({
   combatDead?: boolean;
   onCombatHit?: (event: ThreeEvent<MouseEvent>) => void;
   ragdollImpact?: RagdollImpact;
+  ragdollControllerRef?: RefObject<SkeletonRagdoll | null>;
 }) {
   const group = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
@@ -2508,6 +2516,7 @@ export function Player({
                 combatDead={combatDead}
                 onCombatHit={onCombatHit}
                 ragdollImpact={ragdollImpact}
+                ragdollControllerRef={ragdollControllerRef}
               />
             </Suspense>
           ) : (

@@ -14,6 +14,7 @@ import {
   type WeaponRecoilState,
   type WeaponKind
 } from "./combat";
+import type { SkeletonRagdoll } from "./ragdoll";
 
 type WorldPosition = { x: number; y: number; z: number; rotation?: number; vehicle?: boolean };
 
@@ -90,6 +91,8 @@ const NPC_RESPAWN_MS = 6200;
 const BULLET_DEATH_IMPULSE_MULTIPLIER = 1.95;
 const EXPLOSION_DEATH_IMPULSE_MULTIPLIER = 1.6;
 const MAX_DEATH_IMPULSE_SPEED = 14;
+const CORPSE_RAGDOLL_RESPONSE_SCALE = 0.38;
+const MAX_CORPSE_IMPULSE_SPEED = 8;
 const INTERIOR_GRID_STEP = 0.45;
 const PLAYER_PATH_CLEARANCE = 0.28;
 const CAR_MAX_SPEED = 12.5;
@@ -116,6 +119,7 @@ type NpcRuntime = {
   respawnNonce: number;
   deathNonce: number;
   ragdollImpact?: RagdollImpact;
+  ragdollControllerRef: { current: SkeletonRagdoll | null };
 };
 
 type PendingRagdollImpact = Omit<RagdollImpact, "nonce">;
@@ -1570,7 +1574,8 @@ function createNpcRuntime(resident: NeighborhoodResident): NpcRuntime {
     speed: 0.92 + (seed % 36) / 100,
     seed,
     respawnNonce: 0,
-    deathNonce: 0
+    deathNonce: 0,
+    ragdollControllerRef: { current: null }
   };
 }
 
@@ -2227,7 +2232,7 @@ function NeighborhoodWorld({
     if (!object.userData.combatHitbox) return null;
     const username = object.userData.combatUsername ?? object.userData.username;
     const runtime = typeof username === "string" ? npcRuntimeMap.current.get(username) : undefined;
-    if (!runtime || runtime.dead || object.userData.combatDead) return null;
+    if (!runtime) return null;
     return {
       runtime,
       bodyPart: (object.userData.bodyPart ?? DEFAULT_BODY_PART) as BodyPart,
@@ -2333,6 +2338,22 @@ function NeighborhoodWorld({
     }
     setNpcUiVersion((version) => version + 1);
     return runtime.dead;
+  }
+
+  function impactDeadNpc(runtime: NpcRuntime, impact: PendingRagdollImpact) {
+    if (!runtime.dead) return false;
+    const ragdoll = runtime.ragdollControllerRef.current;
+    if (!ragdoll) return false;
+    const velocity = new THREE.Vector3().fromArray(impact.velocity);
+    if (!Number.isFinite(velocity.lengthSq()) || velocity.lengthSq() < 0.000001) return false;
+    velocity.clampLength(0, MAX_CORPSE_IMPULSE_SPEED);
+    runtime.deathNonce += 1;
+    ragdoll.addImpact({
+      ...impact,
+      velocity: velocity.toArray(),
+      nonce: runtime.deathNonce
+    }, CORPSE_RAGDOLL_RESPONSE_SCALE);
+    return true;
   }
 
   function getThirdPersonAimPoint(resolveSurface = true) {
@@ -2448,10 +2469,10 @@ function NeighborhoodWorld({
           new THREE.Matrix3().getNormalMatrix(valid.intersection.object.matrixWorld)
         )
       : null;
-    const aliveRuntimes = npcActors.map(({ runtime }) => runtime).filter((runtime) => !runtime.dead);
+    const combatRuntimes = npcActors.map(({ runtime }) => runtime);
 
     if (config.blastRadius) {
-      for (const runtime of aliveRuntimes) {
+      for (const runtime of combatRuntimes) {
         const exactZone = directCombat?.runtime === runtime ? directCombat : closestCombatZone(runtime, impactWorld);
         const bodyPoint = exactZone?.point
           ?? group.localToWorld(runtime.position.clone().setY(0.92));
@@ -2465,30 +2486,40 @@ function NeighborhoodWorld({
         impulseDirection.y += 0.32;
         impulseDirection.normalize();
         const bloodDirection = impulseDirection.clone();
-        damageNpc(runtime, config.damage * falloff, now, {
+        const impact: PendingRagdollImpact = {
           kind: "explosion",
           bodyPart: exactZone?.bodyPart ?? DEFAULT_BODY_PART,
           boneName: exactZone?.boneName ?? DEFAULT_BODY_BONE,
           point: bodyPoint.toArray(),
           velocity: impulseDirection.clone().multiplyScalar((config.blastImpulse ?? config.impactImpulse) * falloff).toArray()
-        });
+        };
+        if (runtime.dead) {
+          impactDeadNpc(runtime, impact);
+        } else {
+          damageNpc(runtime, config.damage * falloff, now, impact);
+        }
         spawnBloodEffect(bodyPoint, bloodDirection, now);
       }
     } else if (directCombat) {
       const impulse = directionWorld.clone().multiplyScalar(config.impactImpulse);
       impulse.y += 0.24;
-      damageNpc(
-        directCombat.runtime,
-        config.damage * BODY_DAMAGE_MULTIPLIER[directCombat.bodyPart],
-        now,
-        {
-          kind: "bullet",
-          bodyPart: directCombat.bodyPart,
-          boneName: directCombat.boneName,
-          point: directCombat.point.toArray(),
-          velocity: impulse.toArray()
-        }
-      );
+      const impact: PendingRagdollImpact = {
+        kind: "bullet",
+        bodyPart: directCombat.bodyPart,
+        boneName: directCombat.boneName,
+        point: directCombat.point.toArray(),
+        velocity: impulse.toArray()
+      };
+      if (directCombat.runtime.dead) {
+        impactDeadNpc(directCombat.runtime, impact);
+      } else {
+        damageNpc(
+          directCombat.runtime,
+          config.damage * BODY_DAMAGE_MULTIPLIER[directCombat.bodyPart],
+          now,
+          impact
+        );
+      }
       spawnBloodEffect(directCombat.point, directionWorld, now);
     }
 
@@ -2835,6 +2866,7 @@ function NeighborhoodWorld({
           runtime.dead = false;
           runtime.health = NPC_MAX_HEALTH;
           runtime.ragdollImpact = undefined;
+          runtime.ragdollControllerRef.current = null;
           runtime.respawnNonce += 1;
           const angle = (runtime.seed * 0.73 + runtime.respawnNonce * 2.17) % (Math.PI * 2);
           const radius = 0.8 + ((runtime.seed + runtime.respawnNonce * 17) % 24) / 10;
@@ -3292,8 +3324,9 @@ function NeighborhoodWorld({
               combatUsername={runtime.username}
               combatDead={runtime.dead}
               ragdollImpact={runtime.ragdollImpact}
+              ragdollControllerRef={runtime.ragdollControllerRef}
               onCombatHit={(event) => {
-                if (cameraModeRef.current === "thirdPerson" || !keys.current.has("q") || runtime.dead || !isPrimarySceneClick(event)) return;
+                if (cameraModeRef.current === "thirdPerson" || !keys.current.has("q") || !isPrimarySceneClick(event)) return;
                 event.stopPropagation();
                 if (!worldGroupRef.current) return;
                 shootAt(worldGroupRef.current.worldToLocal(event.point.clone()));
