@@ -3,6 +3,12 @@ import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber"
 import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import type { CatalogItem, HomeState, NeighborhoodResident, PublicUser, RemotePlayer } from "../types";
+import {
+  MuzzleFlashEffect,
+  SurfaceImpactEffectView,
+  type ImpactSurface,
+  type SurfaceImpactEffect
+} from "./CombatEffects";
 import { HomePlacedObject, Player } from "./GameScene";
 import {
   TOWN_CAR_MODEL_URL,
@@ -138,9 +144,12 @@ type ShotEffect = {
   start: THREE.Vector3;
   end: THREE.Vector3;
   color: string;
+  weapon: WeaponKind;
   width: number;
   createdAt: number;
   duration: number;
+  tracerDuration: number;
+  blastDuration: number;
   blastRadius?: number;
 };
 
@@ -175,6 +184,7 @@ const DEFAULT_BODY_PART: BodyPart = "chest";
 const DEFAULT_BODY_BONE = "spine_03";
 const AIM_CENTER = new THREE.Vector2(0, 0);
 const BLOOD_EFFECT_DURATION = 7200;
+const SURFACE_IMPACT_DURATION = 1350;
 
 function objectActorUsername(object: THREE.Object3D | null) {
   let cursor = object;
@@ -189,6 +199,41 @@ function materialIsInvisible(object: THREE.Object3D) {
   if (!(object instanceof THREE.Mesh)) return false;
   const materials = Array.isArray(object.material) ? object.material : [object.material];
   return materials.length > 0 && materials.every((material) => !material.visible || (material.transparent && material.opacity <= 0.001));
+}
+
+function explicitImpactSurface(object: THREE.Object3D | null) {
+  let cursor = object;
+  while (cursor) {
+    const surface = cursor.userData.impactSurface;
+    if (surface === "dirt" || surface === "asphalt" || surface === "concrete" || surface === "wood"
+      || surface === "metal" || surface === "glass" || surface === "generic") {
+      return surface as ImpactSurface;
+    }
+    cursor = cursor.parent;
+  }
+  return undefined;
+}
+
+function resolveImpactSurface(object: THREE.Object3D): ImpactSurface {
+  const explicit = explicitImpactSurface(object);
+  if (explicit) return explicit;
+
+  const objectName = object.name.toLowerCase();
+  if (objectName.includes("glass") || objectName.includes("window") || objectName.includes("windshield")) return "glass";
+  if (objectName.includes("wood") || objectName.includes("plank") || objectName.includes("fence") || objectName.includes("trunk")) return "wood";
+  if (objectName.includes("metal") || objectName.includes("chrome") || objectName.includes("carpaint") || objectName.includes("wheel")) return "metal";
+
+  if (object instanceof THREE.Mesh) {
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      const materialName = material.name.toLowerCase();
+      if (materialName.includes("glass") || materialName.includes("window")) return "glass";
+      if (materialName.includes("wood") || materialName.includes("plank")) return "wood";
+      if (materialName.includes("metal") || materialName.includes("chrome") || materialName.includes("carpaint")) return "metal";
+      if (material instanceof THREE.MeshStandardMaterial && material.metalness >= 0.38) return "metal";
+    }
+  }
+  return "generic";
 }
 
 function objectIsWorldVisible(object: THREE.Object3D) {
@@ -1010,7 +1055,7 @@ function StreetCamera({
 
 function Tree({ position, scale = 1, autumn = false }: { position: [number, number, number]; scale?: number; autumn?: boolean }) {
   return (
-    <group position={position} scale={scale}>
+    <group position={position} scale={scale} userData={{ impactSurface: "wood" }}>
       <mesh castShadow position={[0, 1.25, 0]}>
         <cylinderGeometry args={[0.22, 0.32, 2.5, 8]} />
         <meshStandardMaterial color="#6b4423" roughness={0.95} />
@@ -1033,7 +1078,7 @@ function Tree({ position, scale = 1, autumn = false }: { position: [number, numb
 
 function StreetLamp({ position }: { position: [number, number, number] }) {
   return (
-    <group position={position}>
+    <group position={position} userData={{ impactSurface: "metal" }}>
       <mesh castShadow position={[0, 2.25, 0]}>
         <cylinderGeometry args={[0.07, 0.1, 4.5, 10]} />
         <meshStandardMaterial color="#313947" metalness={0.55} roughness={0.42} />
@@ -1049,7 +1094,7 @@ function StreetLamp({ position }: { position: [number, number, number] }) {
 function Fence({ length = 8 }: { length?: number }) {
   const posts = Math.max(3, Math.round(length / 1.25));
   return (
-    <group>
+    <group userData={{ impactSurface: "wood" }}>
       {Array.from({ length: posts }, (_, index) => {
         const x = -length / 2 + (index / (posts - 1)) * length;
         return (
@@ -1101,7 +1146,7 @@ function OwnLotHighlight({ resident }: { resident: NeighborhoodResident }) {
 
 function Window({ x, y, z, rotation = 0 }: { x: number; y: number; z: number; rotation?: number }) {
   return (
-    <group position={[x, y, z]} rotation={[0, rotation, 0]}>
+    <group position={[x, y, z]} rotation={[0, rotation, 0]} userData={{ impactSurface: "glass" }}>
       <mesh castShadow>
         <boxGeometry args={[1.05, 1.05, 0.09]} />
         <meshStandardMaterial color="#e9f8ff" emissive="#91d6f5" emissiveIntensity={0.16} roughness={0.22} />
@@ -1123,7 +1168,7 @@ function Scaffolding({ width, depth, height }: { width: number; depth: number; h
     [-width / 2, -depth / 2], [width / 2, -depth / 2], [-width / 2, depth / 2], [width / 2, depth / 2]
   ];
   return (
-    <group>
+    <group userData={{ impactSurface: "wood" }}>
       {corners.map(([x, z], index) => (
         <mesh key={index} castShadow position={[x, height / 2, z]}>
           <cylinderGeometry args={[0.055, 0.055, height, 8]} />
@@ -1162,6 +1207,7 @@ function House({ resident, isOwn, onEnter }: { resident: NeighborhoodResident; i
     <group
       position={[resident.lot.x, 0, resident.lot.z]}
       rotation={[0, resident.lot.rotation, 0]}
+      userData={{ impactSurface: "concrete" }}
       onPointerEnter={(event) => {
         event.stopPropagation();
         setHovered(true);
@@ -1353,6 +1399,7 @@ function SeamlessHouse({
     <group
       position={[resident.lot.x, 0, resident.lot.z]}
       rotation={[0, resident.lot.rotation, 0]}
+      userData={{ impactSurface: "concrete" }}
       onPointerEnter={() => {
         setHovered(true);
         document.body.style.cursor = "pointer";
@@ -1582,41 +1629,54 @@ function createNpcRuntime(resident: NeighborhoodResident): NpcRuntime {
 
 function ShotEffectView({ effect }: { effect: ShotEffect }) {
   const group = useRef<THREE.Group>(null);
+  const tracerRef = useRef<THREE.Mesh>(null);
   const tracerMaterial = useRef<THREE.MeshBasicMaterial>(null);
   const blastMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const blastRef = useRef<THREE.Mesh>(null);
   const transform = useMemo(() => {
     const direction = effect.end.clone().sub(effect.start);
     const length = Math.max(0.01, direction.length());
     const midpoint = effect.start.clone().add(effect.end).multiplyScalar(0.5);
-    const quaternion = new THREE.Quaternion().setFromUnitVectors(UP, direction.normalize());
-    return { length, midpoint, quaternion };
+    direction.normalize();
+    const quaternion = new THREE.Quaternion().setFromUnitVectors(UP, direction);
+    return { direction, length, midpoint, quaternion };
   }, [effect.end, effect.start]);
 
   useFrame(() => {
     const elapsed = performance.now() - effect.createdAt;
-    const progress = THREE.MathUtils.clamp(elapsed / effect.duration, 0, 1);
-    if (group.current) group.current.visible = progress < 1;
-    if (tracerMaterial.current) tracerMaterial.current.opacity = (1 - progress) * 0.9;
-    if (blastMaterial.current) blastMaterial.current.opacity = (1 - progress) * 0.48;
-    const blast = group.current?.getObjectByName("blast");
-    if (blast) {
-      const radius = (effect.blastRadius ?? 0.45) * (0.22 + progress * 0.78);
-      blast.scale.setScalar(radius);
+    const tracerProgress = THREE.MathUtils.clamp(elapsed / effect.tracerDuration, 0, 1);
+    const blastProgress = THREE.MathUtils.clamp(elapsed / effect.blastDuration, 0, 1);
+    if (group.current) group.current.visible = elapsed < effect.duration;
+    if (tracerRef.current) tracerRef.current.visible = tracerProgress < 1;
+    if (tracerMaterial.current) tracerMaterial.current.opacity = (1 - tracerProgress) * 0.9;
+    if (blastMaterial.current) blastMaterial.current.opacity = (1 - blastProgress) * 0.48;
+    if (blastRef.current) {
+      blastRef.current.visible = blastProgress < 1;
+      const radius = (effect.blastRadius ?? 0.45) * (0.22 + blastProgress * 0.78);
+      blastRef.current.scale.setScalar(radius);
     }
   });
 
   return (
     <group ref={group}>
-      <mesh name={`shot-tracer:${effect.id}`} position={transform.midpoint} quaternion={transform.quaternion} raycast={() => null}>
+      <mesh ref={tracerRef} name={`shot-tracer:${effect.id}`} position={transform.midpoint} quaternion={transform.quaternion} raycast={() => null}>
         <cylinderGeometry args={[effect.width, effect.width, transform.length, 8]} />
         <meshBasicMaterial ref={tracerMaterial} color={effect.color} transparent opacity={0.9} depthWrite={false} toneMapped={false} />
       </mesh>
       {effect.blastRadius ? (
-        <mesh name="blast" position={effect.end} raycast={() => null}>
+        <mesh ref={blastRef} name="blast" position={effect.end} raycast={() => null}>
           <sphereGeometry args={[1, 18, 12]} />
           <meshBasicMaterial ref={blastMaterial} color={effect.color} transparent opacity={0.48} depthWrite={false} toneMapped={false} />
         </mesh>
       ) : null}
+      <MuzzleFlashEffect
+        id={effect.id}
+        point={effect.start}
+        direction={transform.direction}
+        weapon={effect.weapon}
+        color={effect.color}
+        createdAt={effect.createdAt}
+      />
     </group>
   );
 }
@@ -1772,6 +1832,10 @@ function TownCar({ color, active = false }: { color: string; active?: boolean })
       object.castShadow = true;
       object.receiveShadow = true;
       const materials = Array.isArray(object.material) ? object.material : [object.material];
+      const surfaceName = `${object.name} ${materials.map((material) => material.name).join(" ")}`.toLowerCase();
+      object.userData.impactSurface = surfaceName.includes("glass") || surfaceName.includes("window")
+        ? "glass"
+        : "metal";
       const nextMaterials = materials.map((material) => {
         const next = material.clone();
         if (next.name.toLowerCase().includes("carpaint")) {
@@ -1786,9 +1850,9 @@ function TownCar({ color, active = false }: { color: string; active?: boolean })
   }, [gltf.scene, color]);
 
   return (
-    <group>
+    <group userData={{ impactSurface: "metal" }}>
       {active ? (
-        <mesh position={[0, 0.035, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh position={[0, 0.035, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
           <ringGeometry args={[1.7, 2.05, 36]} />
           <meshBasicMaterial color="#5eead4" transparent opacity={0.7} side={THREE.DoubleSide} />
         </mesh>
@@ -1800,7 +1864,7 @@ function TownCar({ color, active = false }: { color: string; active?: boolean })
 
 function CarFallback({ color }: { color: string }) {
   return (
-    <group position={[0, 0.42, 0]}>
+    <group position={[0, 0.42, 0]} userData={{ impactSurface: "metal" }}>
       <mesh castShadow>
         <boxGeometry args={[1.75, 0.55, 3.35]} />
         <meshStandardMaterial color={color} roughness={0.45} metalness={0.12} />
@@ -1815,7 +1879,7 @@ function CarFallback({ color }: { color: string }) {
 
 function Car({ transform, color, active = false }: { transform: CarTransform; color: string; active?: boolean }) {
   return (
-    <group position={transform.position} rotation={[0, transform.rotation, 0]}>
+    <group position={transform.position} rotation={[0, transform.rotation, 0]} userData={{ impactSurface: "metal" }}>
       <Suspense fallback={<CarFallback color={color} />}>
         <TownCar color={color} active={active} />
       </Suspense>
@@ -1836,38 +1900,38 @@ function DistrictGeometry({ residents }: { residents: NeighborhoodResident[] }) 
 
   return (
     <>
-      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.08, 0]}>
+      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.08, 0]} userData={{ impactSurface: "dirt" }}>
         <planeGeometry args={[116, 170]} />
         <meshStandardMaterial color="#78ad68" roughness={1} />
       </mesh>
-      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.035, 0]}>
+      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.035, 0]} userData={{ impactSurface: "asphalt" }}>
         <planeGeometry args={[12.4, 164]} />
         <meshStandardMaterial color="#343942" roughness={0.96} />
       </mesh>
-      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.026, 0]}>
+      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.026, 0]} userData={{ impactSurface: "asphalt" }}>
         <planeGeometry args={[90, 11.2]} />
         <meshStandardMaterial color="#343942" roughness={0.96} />
       </mesh>
       {[-7.35, 7.35].map((x) => (
-        <mesh key={x} receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[x, 0, 0]}>
+        <mesh key={x} receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[x, 0, 0]} userData={{ impactSurface: "concrete" }}>
           <planeGeometry args={[2.2, 164]} />
           <meshStandardMaterial color="#d5d2ca" roughness={0.97} />
         </mesh>
       ))}
       {[-6.25, 6.25].map((x) => (
-        <mesh key={`curb-${x}`} castShadow receiveShadow position={[x, 0.09, 0]}>
+        <mesh key={`curb-${x}`} castShadow receiveShadow position={[x, 0.09, 0]} userData={{ impactSurface: "concrete" }}>
           <boxGeometry args={[0.18, 0.18, 164]} />
           <meshStandardMaterial color="#b8b6b0" roughness={0.96} />
         </mesh>
       ))}
       {Array.from({ length: 27 }, (_, index) => (
-        <mesh key={`line-${index}`} position={[0, 0.005, -78 + index * 6]}>
+        <mesh key={`line-${index}`} position={[0, 0.005, -78 + index * 6]} userData={{ impactSurface: "asphalt" }}>
           <boxGeometry args={[0.16, 0.025, 3.2]} />
           <meshStandardMaterial color="#f7e7a0" roughness={0.8} />
         </mesh>
       ))}
       {Array.from({ length: 15 }, (_, index) => (
-        <mesh key={`cross-${index}`} position={[-42 + index * 6, 0.007, 0]}>
+        <mesh key={`cross-${index}`} position={[-42 + index * 6, 0.007, 0]} userData={{ impactSurface: "asphalt" }}>
           <boxGeometry args={[3.2, 0.025, 0.16]} />
           <meshStandardMaterial color="#f7e7a0" roughness={0.8} />
         </mesh>
@@ -1880,7 +1944,7 @@ function DistrictGeometry({ residents }: { residents: NeighborhoodResident[] }) 
         const fencePosition = base.clone().addScaledVector(front, halfDepth + 4.15);
         return (
           <group key={`yard-${resident.plotId}`}>
-            <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[resident.lot.x, -0.005, resident.lot.z]}>
+            <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[resident.lot.x, -0.005, resident.lot.z]} userData={{ impactSurface: "dirt" }}>
               <planeGeometry args={[27, 19.5]} />
               <meshStandardMaterial color={resident.plotId % 3 === 0 ? "#82b96d" : "#8ec578"} roughness={1} />
             </mesh>
@@ -1888,11 +1952,11 @@ function DistrictGeometry({ residents }: { residents: NeighborhoodResident[] }) 
               <group position={[-5.95, 0, 0]}><Fence length={7.05} /></group>
               <group position={[5.95, 0, 0]}><Fence length={7.05} /></group>
             </group>
-            <mesh receiveShadow position={base.clone().addScaledVector(front, halfDepth + 2.05)} rotation={[0, resident.lot.rotation, 0]}>
+            <mesh receiveShadow position={base.clone().addScaledVector(front, halfDepth + 2.05)} rotation={[0, resident.lot.rotation, 0]} userData={{ impactSurface: "concrete" }}>
               <boxGeometry args={[1.55, 0.055, 4.2]} />
               <meshStandardMaterial color="#d7c7a8" roughness={1} />
             </mesh>
-            <mesh castShadow position={base.clone().addScaledVector(front, halfDepth + 4.45).addScaledVector(right, -2.25)}>
+            <mesh castShadow position={base.clone().addScaledVector(front, halfDepth + 4.45).addScaledVector(right, -2.25)} userData={{ impactSurface: "metal" }}>
               <boxGeometry args={[0.52, 1.05, 0.42]} />
               <meshStandardMaterial color={resident.colors.roof} roughness={0.62} />
             </mesh>
@@ -1911,7 +1975,7 @@ function DistrictGeometry({ residents }: { residents: NeighborhoodResident[] }) 
         const z = -70 + (index % 7) * 23;
         const height = 8 + (index % 4) * 3.2;
         return (
-          <mesh key={`city-${index}`} castShadow position={[side * (50 + (index % 3) * 3.5), height / 2 - 0.1, z]}>
+          <mesh key={`city-${index}`} castShadow position={[side * (50 + (index % 3) * 3.5), height / 2 - 0.1, z]} userData={{ impactSurface: "concrete" }}>
             <boxGeometry args={[8, height, 8]} />
             <meshStandardMaterial color={index % 3 === 0 ? "#9faec1" : "#b8b0c4"} roughness={0.92} />
           </mesh>
@@ -2002,6 +2066,7 @@ function NeighborhoodWorld({
   const nextShotAt = useRef(0);
   const shotId = useRef(0);
   const bloodId = useRef(0);
+  const impactId = useRef(0);
   const shotNonceRef = useRef(0);
   const worldGroupRef = useRef<THREE.Group>(null);
   const playerMuzzleRef = useRef<THREE.Object3D | null>(null);
@@ -2037,6 +2102,7 @@ function NeighborhoodWorld({
   const [playerMotion, setPlayerMotion] = useState<CharacterMotion>("idle");
   const [shotEffects, setShotEffects] = useState<ShotEffect[]>([]);
   const [bloodEffects, setBloodEffects] = useState<BloodEffect[]>([]);
+  const [impactEffects, setImpactEffects] = useState<SurfaceImpactEffect[]>([]);
   const [, setNpcUiVersion] = useState(0);
   const [driving, setDriving] = useState(false);
   const [introView, setIntroView] = useState(!initialPosition);
@@ -2245,13 +2311,14 @@ function NeighborhoodWorld({
     for (const intersection of intersections) {
       const object = intersection.object;
       if (object.name.startsWith("shot-tracer:")) continue;
+      if (object.userData.aimSurface) continue;
       if (!objectIsWorldVisible(object)) continue;
       const actorUsername = objectActorUsername(object);
       if (actorUsername === user.username) continue;
       const combat = combatMetadata(object);
       if (combat) return { intersection, combat };
       if (object.userData.combatHitbox || actorUsername) continue;
-      if (materialIsInvisible(object) && !object.userData.aimSurface) continue;
+      if (materialIsInvisible(object)) continue;
       return { intersection, combat: null };
     }
     return null;
@@ -2403,6 +2470,36 @@ function NeighborhoodWorld({
     ].slice(-12));
   }
 
+  function spawnSurfaceImpact(
+    impactWorld: THREE.Vector3,
+    normalWorld: THREE.Vector3,
+    incomingWorld: THREE.Vector3,
+    object: THREE.Object3D,
+    weapon: WeaponKind,
+    now: number
+  ) {
+    const group = worldGroupRef.current;
+    if (!group) return;
+    const point = group.worldToLocal(impactWorld.clone());
+    const normal = group.worldToLocal(impactWorld.clone().add(normalWorld)).sub(point).normalize();
+    const incoming = group.worldToLocal(impactWorld.clone().add(incomingWorld)).sub(point).normalize();
+    impactId.current += 1;
+    const effect: SurfaceImpactEffect = {
+      id: impactId.current,
+      point,
+      normal,
+      incoming,
+      surface: resolveImpactSurface(object),
+      weapon,
+      createdAt: now,
+      duration: weapon === "rocket" ? 1500 : SURFACE_IMPACT_DURATION
+    };
+    setImpactEffects((effects) => [
+      ...effects.filter((current) => now < current.createdAt + current.duration),
+      effect
+    ].slice(-14));
+  }
+
   function applyWeaponRecoil(config: (typeof WEAPONS)[WeaponKind]) {
     const recoil = recoilRef.current;
     recoil.kick = Math.min(config.recoilKick * 1.65, recoil.kick + config.recoilKick);
@@ -2465,11 +2562,23 @@ function NeighborhoodWorld({
       point: impactWorld.clone(),
       distance: valid.intersection.distance
     } : null;
-    const impactSurfaceNormal = !valid?.combat && valid?.intersection.face
-      ? valid.intersection.face.normal.clone().applyNormalMatrix(
-          new THREE.Matrix3().getNormalMatrix(valid.intersection.object.matrixWorld)
-        )
-      : null;
+    let impactSurfaceNormal: THREE.Vector3 | null = null;
+    if (valid && !valid.combat) {
+      impactSurfaceNormal = valid.intersection.face
+        ? valid.intersection.face.normal.clone().applyNormalMatrix(
+            new THREE.Matrix3().getNormalMatrix(valid.intersection.object.matrixWorld)
+          ).normalize()
+        : directionWorld.clone().negate();
+      if (impactSurfaceNormal.dot(directionWorld) > 0) impactSurfaceNormal.negate();
+      spawnSurfaceImpact(
+        impactWorld,
+        impactSurfaceNormal,
+        directionWorld,
+        valid.intersection.object,
+        weapon,
+        now
+      );
+    }
     const combatRuntimes = npcActors.map(({ runtime }) => runtime);
 
     if (config.blastRadius) {
@@ -2534,9 +2643,12 @@ function NeighborhoodWorld({
         start: shotStart,
         end: impact,
         color: config.color,
+        weapon,
         width: config.tracerWidth,
         createdAt: now,
-        duration: weapon === "rocket" ? 560 : weapon === "laser" ? 360 : 240,
+        duration: weapon === "rocket" ? 900 : weapon === "laser" ? 620 : 520,
+        tracerDuration: weapon === "rocket" ? 560 : weapon === "laser" ? 360 : 240,
+        blastDuration: weapon === "rocket" ? 620 : 360,
         blastRadius: config.blastRadius
       }
     ].slice(-16));
@@ -2794,6 +2906,16 @@ function NeighborhoodWorld({
     }, Math.max(32, nextExpiry - performance.now() + 32));
     return () => window.clearTimeout(timeout);
   }, [bloodEffects]);
+
+  useEffect(() => {
+    if (impactEffects.length === 0) return;
+    const nextExpiry = Math.min(...impactEffects.map((effect) => effect.createdAt + effect.duration));
+    const timeout = window.setTimeout(() => {
+      const now = performance.now();
+      setImpactEffects((effects) => effects.filter((effect) => now < effect.createdAt + effect.duration));
+    }, Math.max(24, nextExpiry - performance.now() + 24));
+    return () => window.clearTimeout(timeout);
+  }, [impactEffects]);
 
   useEffect(() => {
     const announcePosition = () => onMove({
@@ -3156,7 +3278,7 @@ function NeighborhoodWorld({
     if (drivingRef.current || cameraModeRef.current === "thirdPerson" || !isPrimarySceneClick(event)) return;
     const worldPoint = event.point.clone().add(viewOrigin).setY(0);
     if (keys.current.has("q") && !buildMode) {
-      shootAt(worldPoint);
+      shootAt(worldPoint.clone().setY(-0.12));
       return;
     }
     clickTarget.current = null;
@@ -3367,6 +3489,7 @@ function NeighborhoodWorld({
           />
         ) : null}
         {shotEffects.map((effect) => <ShotEffectView key={effect.id} effect={effect} />)}
+        {impactEffects.map((effect) => <SurfaceImpactEffectView key={effect.id} effect={effect} />)}
         {bloodEffects.map((effect) => <BloodHitEffect key={effect.id} effect={effect} />)}
         {remoteVectors.map((player) => player.position.vehicle ? (
           <Car
