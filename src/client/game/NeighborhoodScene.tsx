@@ -4,7 +4,14 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { CatalogItem, HomeState, NeighborhoodResident, PublicUser, RemotePlayer } from "../types";
 import { HomePlacedObject, Player } from "./GameScene";
-import { WEAPONS, WEAPON_ORDER, type CharacterMotion, type WeaponKind } from "./combat";
+import {
+  WEAPONS,
+  WEAPON_ORDER,
+  type BodyPart,
+  type CharacterMotion,
+  type RagdollImpact,
+  type WeaponKind
+} from "./combat";
 
 type WorldPosition = { x: number; y: number; z: number; rotation?: number; vehicle?: boolean };
 
@@ -87,6 +94,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 const CAR_COLORS = ["#f472b6", "#38bdf8", "#f59e0b", "#34d399", "#a78bfa", "#fb7185"];
 
 type TravelMode = "walk" | "run";
+type CameraMode = "strategy" | "thirdPerson";
 
 type NpcRuntime = {
   username: string;
@@ -101,6 +109,18 @@ type NpcRuntime = {
   speed: number;
   seed: number;
   respawnNonce: number;
+  deathNonce: number;
+  ragdollImpact?: RagdollImpact;
+};
+
+type PendingRagdollImpact = Omit<RagdollImpact, "nonce">;
+
+type CombatHit = {
+  runtime: NpcRuntime;
+  bodyPart: BodyPart;
+  boneName: string;
+  point: THREE.Vector3;
+  distance: number;
 };
 
 type ShotEffect = {
@@ -113,6 +133,53 @@ type ShotEffect = {
   duration: number;
   blastRadius?: number;
 };
+
+const BODY_DAMAGE_MULTIPLIER: Record<BodyPart, number> = {
+  head: 1.8,
+  chest: 1,
+  abdomen: 0.95,
+  pelvis: 0.9,
+  leftUpperArm: 0.76,
+  leftLowerArm: 0.72,
+  leftHand: 0.64,
+  rightUpperArm: 0.76,
+  rightLowerArm: 0.72,
+  rightHand: 0.64,
+  leftThigh: 0.82,
+  leftCalf: 0.74,
+  leftFoot: 0.64,
+  rightThigh: 0.82,
+  rightCalf: 0.74,
+  rightFoot: 0.64
+};
+
+const DEFAULT_BODY_PART: BodyPart = "chest";
+const DEFAULT_BODY_BONE = "spine_03";
+const AIM_CENTER = new THREE.Vector2(0, 0);
+
+function objectActorUsername(object: THREE.Object3D | null) {
+  let cursor = object;
+  while (cursor) {
+    if (typeof cursor.userData.playerUsername === "string") return cursor.userData.playerUsername as string;
+    cursor = cursor.parent;
+  }
+  return undefined;
+}
+
+function materialIsInvisible(object: THREE.Object3D) {
+  if (!(object instanceof THREE.Mesh)) return false;
+  const materials = Array.isArray(object.material) ? object.material : [object.material];
+  return materials.length > 0 && materials.every((material) => !material.visible || (material.transparent && material.opacity <= 0.001));
+}
+
+function objectIsWorldVisible(object: THREE.Object3D) {
+  let cursor: THREE.Object3D | null = object;
+  while (cursor) {
+    if (!cursor.visible) return false;
+    cursor = cursor.parent;
+  }
+  return true;
+}
 
 function isPrimarySceneClick(event: ThreeEvent<MouseEvent>) {
   return event.nativeEvent.button === 0 && event.delta <= 6;
@@ -582,6 +649,11 @@ function StreetCamera({
   position,
   rotation,
   driving,
+  cameraMode,
+  cameraYaw,
+  cameraPitch,
+  aiming,
+  worldRoot,
   homePosition,
   homeFront,
   neighborDirection,
@@ -593,6 +665,11 @@ function StreetCamera({
   position: THREE.Vector3;
   rotation: number;
   driving: boolean;
+  cameraMode: CameraMode;
+  cameraYaw: { current: number };
+  cameraPitch: { current: number };
+  aiming: boolean;
+  worldRoot: { current: THREE.Group | null };
   homePosition: THREE.Vector3;
   homeFront: THREE.Vector3;
   neighborDirection: THREE.Vector3;
@@ -607,11 +684,14 @@ function StreetCamera({
   const wasDriving = useRef(driving);
   const wasInside = useRef(inside);
   const drivingState = useRef(driving);
+  const cameraModeState = useRef(cameraMode);
   const lookTarget = useRef(new THREE.Vector3());
   const dragRef = useRef<{ x: number; y: number } | null>(null);
   const touchPointers = useRef(new Map<number, { x: number; y: number }>());
   const touchPanRef = useRef<{ x: number; y: number } | null>(null);
+  const cameraCollisionRaycaster = useRef(new THREE.Raycaster());
   drivingState.current = driving;
+  cameraModeState.current = cameraMode;
 
   function getFlatAxes() {
     const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
@@ -657,7 +737,7 @@ function StreetCamera({
     }
 
     function panByScreenDelta(dx: number, dy: number, mode: "drag" | "touch") {
-      if (drivingState.current) return;
+      if (drivingState.current || cameraModeState.current === "thirdPerson") return;
       const controls = controlsRef.current;
       if (!controls) return;
       const { right, forward } = getFlatAxes();
@@ -670,7 +750,7 @@ function StreetCamera({
     }
 
     function handlePointerDown(event: PointerEvent) {
-      if (drivingState.current) return;
+      if (drivingState.current || cameraModeState.current === "thirdPerson") return;
       if (event.pointerType === "touch") {
         touchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
         if (touchPointers.current.size >= 2) {
@@ -688,7 +768,7 @@ function StreetCamera({
     }
 
     function handlePointerMove(event: PointerEvent) {
-      if (drivingState.current) return;
+      if (drivingState.current || cameraModeState.current === "thirdPerson") return;
       if (event.pointerType === "touch") {
         if (!touchPointers.current.has(event.pointerId)) return;
         touchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -741,6 +821,21 @@ function StreetCamera({
     };
   }, [camera, gl, bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ]);
 
+  useEffect(() => {
+    const element = gl.domElement;
+    const handleMouseMove = (event: MouseEvent) => {
+      if (cameraModeState.current !== "thirdPerson" || document.pointerLockElement !== element) return;
+      cameraYaw.current += event.movementX * 0.00235;
+      cameraPitch.current = THREE.MathUtils.clamp(cameraPitch.current - event.movementY * 0.0019, -0.72, 0.58);
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    return () => document.removeEventListener("mousemove", handleMouseMove);
+  }, [cameraPitch, cameraYaw, gl]);
+
+  useEffect(() => {
+    if (cameraMode === "strategy") initialized.current = false;
+  }, [cameraMode]);
+
   useFrame((_, delta) => {
     const controls = controlsRef.current;
     if (!controls) return;
@@ -756,8 +851,65 @@ function StreetCamera({
       camera.position.lerp(desired, damping);
       lookTarget.current.lerp(target, damping);
       camera.lookAt(lookTarget.current);
+      if (camera instanceof THREE.PerspectiveCamera && Math.abs(camera.fov - 48) > 0.01) {
+        camera.fov = THREE.MathUtils.lerp(camera.fov, 48, damping);
+        camera.updateProjectionMatrix();
+      }
       wasDriving.current = true;
       return;
+    }
+
+    if (cameraMode === "thirdPerson") {
+      const forward = frontVector(cameraYaw.current);
+      const right = rightVector(cameraYaw.current);
+      const followDistance = inside ? 1.85 : aiming ? 2.2 : 2.85;
+      const shoulderOffset = aiming ? 0.58 : 0.72;
+      const pivot = position.clone().add(new THREE.Vector3(0, aiming ? 1.32 : 1.45, 0));
+      const desired = position.clone()
+        .addScaledVector(forward, -followDistance)
+        .addScaledVector(right, shoulderOffset)
+        .add(new THREE.Vector3(0, aiming ? 1.48 : 1.62, 0));
+      const boom = desired.clone().sub(pivot);
+      const boomLength = boom.length();
+      let snapAroundObstruction = false;
+      if (worldRoot.current && boomLength > 0.01) {
+        const collisionRay = cameraCollisionRaycaster.current;
+        collisionRay.set(pivot, boom.normalize());
+        collisionRay.far = boomLength;
+        const obstruction = collisionRay.intersectObject(worldRoot.current, true).find(({ object }) => (
+          !objectActorUsername(object)
+          && !object.userData.aimSurface
+          && objectIsWorldVisible(object)
+          && !materialIsInvisible(object)
+        ));
+        if (obstruction) {
+          const safeDistance = Math.max(0, obstruction.distance - Math.min(0.12, obstruction.distance * 0.5));
+          snapAroundObstruction = camera.position.distanceTo(pivot) > safeDistance + 0.025;
+          desired.copy(pivot).addScaledVector(collisionRay.ray.direction, safeDistance);
+        }
+      }
+      const damping = 1 - Math.exp(-delta * 13);
+      if (snapAroundObstruction) camera.position.copy(desired);
+      else camera.position.lerp(desired, damping);
+      const cosPitch = Math.cos(cameraPitch.current);
+      const lookDirection = new THREE.Vector3(
+        Math.sin(cameraYaw.current) * cosPitch,
+        Math.sin(cameraPitch.current),
+        Math.cos(cameraYaw.current) * cosPitch
+      );
+      camera.lookAt(camera.position.clone().addScaledVector(lookDirection, 24));
+      const targetFov = aiming ? 42 : 50;
+      if (camera instanceof THREE.PerspectiveCamera && Math.abs(camera.fov - targetFov) > 0.01) {
+        camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, damping);
+        camera.updateProjectionMatrix();
+      }
+      wasDriving.current = false;
+      return;
+    }
+
+    if (camera instanceof THREE.PerspectiveCamera && Math.abs(camera.fov - 48) > 0.01) {
+      camera.fov = THREE.MathUtils.lerp(camera.fov, 48, 1 - Math.exp(-delta * 8));
+      camera.updateProjectionMatrix();
     }
 
     const changedArea = wasInside.current !== inside;
@@ -818,7 +970,7 @@ function StreetCamera({
     <OrbitControls
       ref={controlsRef}
       makeDefault
-      enabled={!driving}
+      enabled={!driving && cameraMode === "strategy"}
       enableDamping
       dampingFactor={0.08}
       enablePan={false}
@@ -1401,7 +1553,8 @@ function createNpcRuntime(resident: NeighborhoodResident): NpcRuntime {
     idleUntil: performance.now() + (seed % 2200),
     speed: 0.92 + (seed % 36) / 100,
     seed,
-    respawnNonce: 0
+    respawnNonce: 0,
+    deathNonce: 0
   };
 }
 
@@ -1432,7 +1585,7 @@ function ShotEffectView({ effect }: { effect: ShotEffect }) {
 
   return (
     <group ref={group}>
-      <mesh position={transform.midpoint} quaternion={transform.quaternion} raycast={() => null}>
+      <mesh name={`shot-tracer:${effect.id}`} position={transform.midpoint} quaternion={transform.quaternion} raycast={() => null}>
         <cylinderGeometry args={[effect.width, effect.width, transform.length, 8]} />
         <meshBasicMaterial ref={tracerMaterial} color={effect.color} transparent opacity={0.9} depthWrite={false} toneMapped={false} />
       </mesh>
@@ -1623,15 +1776,24 @@ function NeighborhoodWorld({
   onDrivingChange,
   selectedWeapon,
   onWeaponChange,
+  aiming,
   onAimingChange,
-  onInsideChange
+  onInsideChange,
+  cameraMode,
+  onCameraModeChange,
+  onPointerLockChange
 }: NeighborhoodSceneProps & {
   onDrivingChange: (driving: boolean) => void;
   selectedWeapon: WeaponKind;
   onWeaponChange: (weapon: WeaponKind) => void;
+  aiming: boolean;
   onAimingChange: (aiming: boolean) => void;
   onInsideChange: (inside: boolean) => void;
+  cameraMode: CameraMode;
+  onCameraModeChange: (mode: CameraMode) => void;
+  onPointerLockChange: (locked: boolean) => void;
 }) {
+  const { camera, gl } = useThree();
   const worldResidents = useMemo(() => residents.map((resident) => resident.username === user.username ? {
     ...resident,
     avatar: home.avatar,
@@ -1673,12 +1835,25 @@ function NeighborhoodWorld({
   const shootingUntil = useRef(0);
   const nextShotAt = useRef(0);
   const shotId = useRef(0);
+  const worldGroupRef = useRef<THREE.Group>(null);
+  const playerMuzzleRef = useRef<THREE.Object3D | null>(null);
+  const cameraModeRef = useRef<CameraMode>(cameraMode);
+  const cameraYaw = useRef(initialPosition?.rotation ?? ownResident.lot.rotation);
+  const cameraPitch = useRef(-0.08);
+  const aimingRef = useRef(aiming);
+  const thirdPersonFireHeld = useRef(false);
+  const lastPointerLockErrorAt = useRef(0);
+  const selectedWeaponRef = useRef(selectedWeapon);
+  const shootAtRef = useRef<(target: THREE.Vector3) => void>(() => undefined);
+  const shotRaycaster = useRef(new THREE.Raycaster());
+  const aimRaycaster = useRef(new THREE.Raycaster());
   const playerMotionRef = useRef<CharacterMotion>("idle");
   const pendingVisit = useRef<NeighborhoodResident | null>(null);
   const pendingInteraction = useRef<PendingInteriorInteraction>(null);
   const handledVisitRequest = useRef<number | null>(null);
   const drivingRef = useRef(false);
   const lastMoveSent = useRef(0);
+  const lastRotationSent = useRef(playerRotation.current);
   const introViewRef = useRef(!initialPosition);
   const activeInteriorRef = useRef<NeighborhoodResident | null>(initialPosition ? residentAtPosition(playerPosition.current, worldResidents) ?? null : ownResident);
   const [renderPlayerPosition, setRenderPlayerPosition] = useState(() => playerPosition.current.clone());
@@ -1698,15 +1873,26 @@ function NeighborhoodWorld({
   const ownCharacter = getCatalogItem(catalog, user.avatar.character);
   const ownPet = getCatalogItem(catalog, user.avatar.pet);
   const onToastRef = useRef(onToast);
+  const onMoveRef = useRef(onMove);
+
+  cameraModeRef.current = cameraMode;
+  aimingRef.current = aiming;
+  selectedWeaponRef.current = selectedWeapon;
 
   useEffect(() => {
     onToastRef.current = onToast;
   }, [onToast]);
 
   useEffect(() => {
+    onMoveRef.current = onMove;
+  }, [onMove]);
+
+  useEffect(() => {
     onInsideChange(Boolean(activeInterior));
     if (activeInterior) {
       keys.current.delete("q");
+      thirdPersonFireHeld.current = false;
+      aimingRef.current = false;
       onAimingChange(false);
       document.body.style.cursor = "default";
     }
@@ -1823,94 +2009,267 @@ function NeighborhoodWorld({
     setPlayerMotion(next);
   }
 
-  function damageNpc(runtime: NpcRuntime, damage: number, now: number) {
-    if (runtime.dead || damage <= 0) return;
+  function setAiming(next: boolean) {
+    aimingRef.current = next;
+    onAimingChange(next);
+  }
+
+  function requestThirdPersonPointerLock() {
+    const reportError = () => {
+      const now = performance.now();
+      if (now - lastPointerLockErrorAt.current < 800) return;
+      lastPointerLockErrorAt.current = now;
+      onToastRef.current("Не удалось захватить мышь — кликните по сцене ещё раз");
+    };
+    try {
+      if (!gl.domElement.requestPointerLock) {
+        reportError();
+        return;
+      }
+      const request = gl.domElement.requestPointerLock();
+      if (request && typeof request.catch === "function") {
+        request.catch(reportError);
+      }
+    } catch {
+      reportError();
+    }
+  }
+
+  function setCameraMode(next: CameraMode) {
+    cameraModeRef.current = next;
+    onCameraModeChange(next);
+    clickTarget.current = null;
+    clickPath.current = [];
+    pendingVisit.current = null;
+    pendingInteraction.current = null;
+    keys.current.delete("q");
+    thirdPersonFireHeld.current = false;
+    setAiming(false);
+    if (next === "thirdPerson") {
+      cameraYaw.current = playerRotation.current;
+      cameraPitch.current = -0.08;
+      lastRotationSent.current = playerRotation.current;
+      requestThirdPersonPointerLock();
+    } else if (document.pointerLockElement === gl.domElement) {
+      document.exitPointerLock?.();
+    }
+  }
+
+  function combatMetadata(object: THREE.Object3D) {
+    if (!object.userData.combatHitbox) return null;
+    const username = object.userData.combatUsername ?? object.userData.username;
+    const runtime = typeof username === "string" ? npcRuntimeMap.current.get(username) : undefined;
+    if (!runtime || runtime.dead || object.userData.combatDead) return null;
+    return {
+      runtime,
+      bodyPart: (object.userData.bodyPart ?? DEFAULT_BODY_PART) as BodyPart,
+      boneName: String(object.userData.boneName ?? DEFAULT_BODY_BONE)
+    };
+  }
+
+  function validRayIntersection(intersections: THREE.Intersection[]) {
+    for (const intersection of intersections) {
+      const object = intersection.object;
+      if (object.name.startsWith("shot-tracer:")) continue;
+      if (!objectIsWorldVisible(object)) continue;
+      const actorUsername = objectActorUsername(object);
+      if (actorUsername === user.username) continue;
+      const combat = combatMetadata(object);
+      if (combat) return { intersection, combat };
+      if (object.userData.combatHitbox || actorUsername) continue;
+      if (materialIsInvisible(object) && !object.userData.aimSurface) continue;
+      return { intersection, combat: null };
+    }
+    return null;
+  }
+
+  function closestCombatZone(runtime: NpcRuntime, referencePoint: THREE.Vector3) {
+    const group = worldGroupRef.current;
+    if (!group) return null;
+    let best: { bodyPart: BodyPart; boneName: string; point: THREE.Vector3 } | null = null;
+    let bestDistance = Infinity;
+    group.traverse((object) => {
+      const metadata = combatMetadata(object);
+      if (!metadata || metadata.runtime !== runtime) return;
+      const point = object.getWorldPosition(new THREE.Vector3());
+      const distance = point.distanceToSquared(referencePoint);
+      if (distance >= bestDistance) return;
+      bestDistance = distance;
+      best = { bodyPart: metadata.bodyPart, boneName: metadata.boneName, point };
+    });
+    return best;
+  }
+
+  function blastReachesTarget(origin: THREE.Vector3, target: THREE.Vector3) {
+    const group = worldGroupRef.current;
+    if (!group) return false;
+    const direction = target.clone().sub(origin);
+    const distance = direction.length();
+    if (distance <= 0.12) return true;
+    direction.normalize();
+    const raycaster = shotRaycaster.current;
+    const hasEnvironmentBlock = (intersections: THREE.Intersection[]) => intersections.some(({ object, distance: hitDistance }) => (
+      hitDistance < distance - 0.025
+      && !object.name.startsWith("shot-tracer:")
+      && !objectActorUsername(object)
+      && !object.userData.combatHitbox
+      && !object.userData.aimSurface
+      && objectIsWorldVisible(object)
+      && !materialIsInvisible(object)
+    ));
+
+    raycaster.set(origin.clone().addScaledVector(direction, 0.006), direction);
+    raycaster.far = Math.max(0.01, distance - 0.012);
+    if (hasEnvironmentBlock(raycaster.intersectObject(group, true))) return false;
+
+    const reverse = direction.clone().multiplyScalar(-1);
+    raycaster.set(target.clone().addScaledVector(reverse, 0.006), reverse);
+    raycaster.far = Math.max(0.01, distance - 0.012);
+    return !hasEnvironmentBlock(raycaster.intersectObject(group, true));
+  }
+
+  function damageNpc(runtime: NpcRuntime, damage: number, now: number, impact: PendingRagdollImpact) {
+    if (runtime.dead || damage <= 0) return false;
     runtime.health = Math.max(0, runtime.health - Math.round(damage));
     if (runtime.health === 0) {
       runtime.dead = true;
       runtime.respawnAt = now + NPC_RESPAWN_MS;
       runtime.motionRef.current = "death";
+      runtime.deathNonce += 1;
+      runtime.ragdollImpact = { ...impact, nonce: runtime.deathNonce };
       onToast(`${runtime.username} повержен — вернётся в центре города`);
     }
     setNpcUiVersion((version) => version + 1);
+    return runtime.dead;
   }
 
-  function shootAt(target: THREE.Vector3, preferredUsername?: string) {
-    if (drivingRef.current) return;
-    if (jumpStartedAt.current !== null) return;
+  function getThirdPersonAimPoint() {
+    const group = worldGroupRef.current;
+    const config = WEAPONS[selectedWeaponRef.current];
+    const raycaster = aimRaycaster.current;
+    raycaster.setFromCamera(AIM_CENTER, camera);
+    raycaster.far = config.range;
+    if (group) {
+      const valid = validRayIntersection(raycaster.intersectObject(group, true));
+      if (valid) return group.worldToLocal(valid.intersection.point.clone());
+      return group.worldToLocal(raycaster.ray.at(config.range, new THREE.Vector3()));
+    }
+    return raycaster.ray.at(config.range, new THREE.Vector3()).add(viewOrigin);
+  }
+
+  function shootAt(target: THREE.Vector3) {
+    if (drivingRef.current || jumpStartedAt.current !== null) return;
     if (activeInteriorRef.current) {
       onToast("Чтобы стрелять, сначала выйдите на улицу");
       return;
     }
 
-    const config = WEAPONS[selectedWeapon];
+    const weapon = selectedWeaponRef.current;
+    const config = WEAPONS[weapon];
     const now = performance.now();
     if (now < nextShotAt.current) return;
+    const group = worldGroupRef.current;
+    if (!group) return;
     nextShotAt.current = now + config.cooldownMs;
     clickTarget.current = null;
     clickPath.current = [];
     pendingVisit.current = null;
     pendingInteraction.current = null;
 
-    const origin = playerPosition.current.clone();
-    const direction = target.clone().sub(origin).setY(0);
-    if (direction.lengthSq() < 0.01) direction.copy(frontVector(playerRotation.current));
-    const targetDistance = Math.max(0.1, direction.length());
-    direction.normalize();
-    playerRotation.current = Math.atan2(direction.x, direction.z);
-    setRenderPlayerRotation(playerRotation.current);
+    const shotStartWorld = group.localToWorld(playerPosition.current.clone().setY(1.15));
+    const muzzle = playerMuzzleRef.current;
+    if (muzzle?.userData.weapon === weapon) muzzle.getWorldPosition(shotStartWorld);
+    const targetWorld = group.localToWorld(target.clone());
+    const directionWorld = targetWorld.clone().sub(shotStartWorld);
+    if (directionWorld.lengthSq() < 0.001) directionWorld.copy(frontVector(playerRotation.current));
+    const targetDistance = Math.max(0.1, directionWorld.length());
+    directionWorld.normalize();
 
-    const shotDistance = Math.min(config.range, targetDistance);
-    const flatEnd = origin.clone().addScaledVector(direction, shotDistance);
+    const flatDirection = directionWorld.clone().setY(0);
+    if (flatDirection.lengthSq() > 0.001) {
+      flatDirection.normalize();
+      playerRotation.current = Math.atan2(flatDirection.x, flatDirection.z);
+      setRenderPlayerRotation(playerRotation.current);
+    }
+
+    const shotDistance = Math.min(config.range, targetDistance + 0.35);
+    const raycaster = shotRaycaster.current;
+    raycaster.set(shotStartWorld, directionWorld);
+    raycaster.far = shotDistance;
+    const valid = validRayIntersection(raycaster.intersectObject(group, true));
+    const impactWorld = valid?.intersection.point.clone()
+      ?? shotStartWorld.clone().addScaledVector(directionWorld, Math.min(config.range, targetDistance));
+    const directCombat: CombatHit | null = valid?.combat ? {
+      ...valid.combat,
+      point: impactWorld.clone(),
+      distance: valid.intersection.distance
+    } : null;
+    const impactSurfaceNormal = !valid?.combat && valid?.intersection.face
+      ? valid.intersection.face.normal.clone().applyNormalMatrix(
+          new THREE.Matrix3().getNormalMatrix(valid.intersection.object.matrixWorld)
+        )
+      : null;
     const aliveRuntimes = npcActors.map(({ runtime }) => runtime).filter((runtime) => !runtime.dead);
-    let hitRuntime: NpcRuntime | undefined;
-    let bestProjection = Infinity;
 
-    for (const runtime of aliveRuntimes) {
-      const toNpc = runtime.position.clone().sub(origin).setY(0);
-      const projection = toNpc.dot(direction);
-      if (projection < 0 || projection > shotDistance + 0.8) continue;
-      const lateralDistance = toNpc.addScaledVector(direction, -projection).length();
-      const isPreferred = runtime.username === preferredUsername;
-      if ((isPreferred || lateralDistance <= 0.82) && projection < bestProjection) {
-        bestProjection = projection;
-        hitRuntime = runtime;
-      }
-    }
-
-    if (preferredUsername && !hitRuntime) {
-      const preferred = aliveRuntimes.find((runtime) => runtime.username === preferredUsername);
-      if (preferred && preferred.position.distanceTo(origin) <= config.range + 0.8) hitRuntime = preferred;
-    }
-
-    const impact = hitRuntime ? hitRuntime.position.clone() : flatEnd;
     if (config.blastRadius) {
       for (const runtime of aliveRuntimes) {
-        const distance = runtime.position.distanceTo(impact);
+        const exactZone = directCombat?.runtime === runtime ? directCombat : closestCombatZone(runtime, impactWorld);
+        const bodyPoint = exactZone?.point
+          ?? group.localToWorld(runtime.position.clone().setY(0.92));
+        const distance = bodyPoint.distanceTo(impactWorld);
         if (distance > config.blastRadius) continue;
-        const falloff = THREE.MathUtils.clamp(1 - distance / (config.blastRadius * 1.35), 0.35, 1);
-        damageNpc(runtime, config.damage * falloff, now);
+        if (impactSurfaceNormal && bodyPoint.clone().sub(impactWorld).dot(impactSurfaceNormal) < -0.015) continue;
+        if (!blastReachesTarget(impactWorld, bodyPoint)) continue;
+        const falloff = THREE.MathUtils.clamp(1 - distance / (config.blastRadius * 1.25), 0.28, 1);
+        const impulseDirection = bodyPoint.clone().sub(impactWorld);
+        if (impulseDirection.lengthSq() < 0.002) impulseDirection.copy(directionWorld);
+        impulseDirection.y += 0.32;
+        impulseDirection.normalize();
+        damageNpc(runtime, config.damage * falloff, now, {
+          kind: "explosion",
+          bodyPart: exactZone?.bodyPart ?? DEFAULT_BODY_PART,
+          boneName: exactZone?.boneName ?? DEFAULT_BODY_BONE,
+          point: bodyPoint.toArray(),
+          velocity: impulseDirection.multiplyScalar((config.blastImpulse ?? config.impactImpulse) * falloff).toArray()
+        });
       }
-    } else if (hitRuntime) {
-      damageNpc(hitRuntime, config.damage, now);
+    } else if (directCombat) {
+      const impulse = directionWorld.clone().multiplyScalar(config.impactImpulse);
+      impulse.y += 0.24;
+      damageNpc(
+        directCombat.runtime,
+        config.damage * BODY_DAMAGE_MULTIPLIER[directCombat.bodyPart],
+        now,
+        {
+          kind: "bullet",
+          bodyPart: directCombat.bodyPart,
+          boneName: directCombat.boneName,
+          point: directCombat.point.toArray(),
+          velocity: impulse.toArray()
+        }
+      );
     }
 
+    const shotStart = group.worldToLocal(shotStartWorld.clone());
+    const impact = group.worldToLocal(impactWorld.clone());
     shotId.current += 1;
     setShotEffects((effects) => [
       ...effects.filter((effect) => now - effect.createdAt < effect.duration),
       {
         id: shotId.current,
-        start: origin.clone().setY(1.15),
-        end: impact.clone().setY(hitRuntime ? 1.05 : selectedWeapon === "rocket" ? 0.2 : 0.78),
+        start: shotStart,
+        end: impact,
         color: config.color,
         width: config.tracerWidth,
         createdAt: now,
-        duration: selectedWeapon === "rocket" ? 560 : selectedWeapon === "laser" ? 360 : 240,
+        duration: weapon === "rocket" ? 560 : weapon === "laser" ? 360 : 240,
         blastRadius: config.blastRadius
       }
     ].slice(-16));
     shootingUntil.current = now + 370;
     setShotNonce((nonce) => nonce + 1);
+    lastRotationSent.current = playerRotation.current;
+    lastMoveSent.current = now;
     onMove({
       x: playerPosition.current.x,
       y: 0,
@@ -1919,6 +2278,8 @@ function NeighborhoodWorld({
       vehicle: false
     });
   }
+
+  shootAtRef.current = shootAt;
 
   useEffect(() => {
     const controlKey = (event: KeyboardEvent) => {
@@ -1930,6 +2291,7 @@ function NeighborhoodWorld({
         KeyE: "e",
         KeyF: "f",
         KeyQ: "q",
+        KeyV: "v",
         ShiftLeft: "shift",
         ShiftRight: "shift",
         ControlLeft: "control",
@@ -1950,7 +2312,8 @@ function NeighborhoodWorld({
       if (next) {
         jumpStartedAt.current = null;
         keys.current.delete("q");
-        onAimingChange(false);
+        setAiming(false);
+        if (cameraModeRef.current === "thirdPerson") setCameraMode("strategy");
         document.body.style.cursor = "default";
       }
     };
@@ -1959,7 +2322,17 @@ function NeighborhoodWorld({
       const target = event.target as HTMLElement | null;
       if (target && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable)) return;
       const key = controlKey(event);
-      if (key === "q" && (drivingRef.current || activeInteriorRef.current)) {
+      if (key === "v") {
+        event.preventDefault();
+        if (event.repeat) return;
+        if (drivingRef.current || buildMode) {
+          onToastRef.current(buildMode ? "Сначала выйдите из режима обустройства" : "Вид от третьего лица недоступен в машине");
+          return;
+        }
+        setCameraMode(cameraModeRef.current === "thirdPerson" ? "strategy" : "thirdPerson");
+        return;
+      }
+      if (key === "q" && (drivingRef.current || activeInteriorRef.current || cameraModeRef.current === "thirdPerson")) {
         event.preventDefault();
         return;
       }
@@ -1978,7 +2351,7 @@ function NeighborhoodWorld({
         clickPath.current = [];
         pendingVisit.current = null;
         pendingInteraction.current = null;
-        onAimingChange(true);
+        setAiming(true);
         document.body.style.cursor = "crosshair";
       }
 
@@ -2015,14 +2388,25 @@ function NeighborhoodWorld({
     const onKeyUp = (event: KeyboardEvent) => {
       const key = controlKey(event);
       keys.current.delete(key);
+      if (cameraModeRef.current === "thirdPerson" && ["w", "a", "s", "d"].includes(key)) {
+        lastRotationSent.current = playerRotation.current;
+        onMoveRef.current({
+          x: playerPosition.current.x,
+          y: 0,
+          z: playerPosition.current.z,
+          rotation: playerRotation.current,
+          vehicle: false
+        });
+      }
       if (key === "q") {
-        onAimingChange(false);
+        setAiming(false);
         document.body.style.cursor = "default";
       }
     };
     const clearKeys = () => {
       keys.current.clear();
-      onAimingChange(false);
+      thirdPersonFireHeld.current = false;
+      setAiming(false);
       document.body.style.cursor = "default";
     };
     const onVisibilityChange = () => {
@@ -2040,7 +2424,66 @@ function NeighborhoodWorld({
       clearKeys();
       document.body.style.cursor = "default";
     };
-  }, [onAimingChange, onDrivingChange, onWeaponChange]);
+  }, [buildMode, gl, onAimingChange, onCameraModeChange, onDrivingChange, onWeaponChange]);
+
+  useEffect(() => {
+    const element = gl.domElement;
+
+    const handlePointerLockChange = () => {
+      const locked = document.pointerLockElement === element;
+      onPointerLockChange(locked);
+      if (!locked) {
+        thirdPersonFireHeld.current = false;
+        if (cameraModeRef.current === "thirdPerson") setAiming(false);
+      }
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      if (cameraModeRef.current !== "thirdPerson" || event.pointerType === "touch") return;
+      event.preventDefault();
+      if (document.pointerLockElement !== element) {
+        requestThirdPersonPointerLock();
+        return;
+      }
+      if (event.button === 2) {
+        setAiming(true);
+      } else if (event.button === 0) {
+        if (activeInteriorRef.current) {
+          onToastRef.current("Чтобы стрелять, сначала выйдите на улицу");
+          return;
+        }
+        thirdPersonFireHeld.current = true;
+        if (performance.now() >= nextShotAt.current) shootAtRef.current(getThirdPersonAimPoint());
+      }
+    };
+    const handlePointerUp = (event: PointerEvent) => {
+      if (cameraModeRef.current === "thirdPerson" && event.button === 2) setAiming(false);
+      if (event.button === 0) thirdPersonFireHeld.current = false;
+    };
+    const handlePointerLockError = () => {
+      const now = performance.now();
+      if (now - lastPointerLockErrorAt.current < 800) return;
+      lastPointerLockErrorAt.current = now;
+      onToastRef.current("Не удалось захватить мышь — кликните по сцене ещё раз");
+    };
+
+    document.addEventListener("pointerlockchange", handlePointerLockChange);
+    document.addEventListener("pointerlockerror", handlePointerLockError);
+    element.addEventListener("pointerdown", handlePointerDown, { passive: false });
+    window.addEventListener("pointerup", handlePointerUp);
+    handlePointerLockChange();
+    return () => {
+      document.removeEventListener("pointerlockchange", handlePointerLockChange);
+      document.removeEventListener("pointerlockerror", handlePointerLockError);
+      element.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("pointerup", handlePointerUp);
+      if (document.pointerLockElement === element) document.exitPointerLock?.();
+      onPointerLockChange(false);
+    };
+  }, [gl, onAimingChange, onPointerLockChange]);
+
+  useEffect(() => {
+    if (buildMode && cameraModeRef.current === "thirdPerson") setCameraMode("strategy");
+  }, [buildMode]);
 
   useEffect(() => {
     if (shotEffects.length === 0) return;
@@ -2087,6 +2530,7 @@ function NeighborhoodWorld({
       onToast("Сначала выйдите из машины");
       return;
     }
+    if (cameraModeRef.current === "thirdPerson") setCameraMode("strategy");
     if (routeToResident(resident)) {
       onToast(resident.username === user.username ? "Идём домой" : `Идём в гости к ${resident.username}`);
     }
@@ -2094,11 +2538,18 @@ function NeighborhoodWorld({
 
   useFrame((_, delta) => {
     const now = performance.now();
+    if (cameraModeRef.current === "thirdPerson"
+      && thirdPersonFireHeld.current
+      && now >= nextShotAt.current
+      && document.pointerLockElement === gl.domElement) {
+      shootAtRef.current(getThirdPersonAimPoint());
+    }
     for (const { runtime } of npcActors) {
       if (runtime.dead) {
         if (now >= runtime.respawnAt) {
           runtime.dead = false;
           runtime.health = NPC_MAX_HEALTH;
+          runtime.ragdollImpact = undefined;
           runtime.respawnNonce += 1;
           const angle = (runtime.seed * 0.73 + runtime.respawnNonce * 2.17) % (Math.PI * 2);
           const radius = 0.8 + ((runtime.seed + runtime.respawnNonce * 17) % 24) / 10;
@@ -2160,6 +2611,28 @@ function NeighborhoodWorld({
       }
       playerPosition.current.copy(carPosition.current);
       playerRotation.current = carRotation.current;
+    } else if (cameraModeRef.current === "thirdPerson") {
+      const inputX = (keys.current.has("d") ? 1 : 0) - (keys.current.has("a") ? 1 : 0);
+      const inputZ = (keys.current.has("w") ? 1 : 0) - (keys.current.has("s") ? 1 : 0);
+      if (aimingRef.current) playerRotation.current = cameraYaw.current;
+      if (inputX !== 0 || inputZ !== 0) {
+        const movement = frontVector(cameraYaw.current).multiplyScalar(inputZ)
+          .addScaledVector(rightVector(cameraYaw.current), inputX)
+          .normalize();
+        const crouching = keys.current.has("control");
+        const running = keys.current.has("shift") && !crouching;
+        travelMode.current = running ? "run" : "walk";
+        const movementSpeed = crouching ? CROUCH_SPEED : running ? RUN_SPEED : WALK_SPEED;
+        const currentPosition = playerPosition.current.clone();
+        const nextPosition = currentPosition.clone().addScaledVector(movement, movementSpeed * Math.min(delta, WALK_DELTA_CAP));
+        const shellResolved = resolveWalkPosition(currentPosition, nextPosition, worldResidents);
+        const itemResolved = resolveInteriorItemCollisions(currentPosition, shellResolved, worldResidents, catalog);
+        if (currentPosition.distanceToSquared(itemResolved) > 0.00000025) {
+          playerPosition.current.copy(itemResolved);
+          didMove = true;
+          if (!aimingRef.current) playerRotation.current = Math.atan2(movement.x, movement.z);
+        }
+      }
     } else {
       if (clickTarget.current) {
         const direction = clickTarget.current.clone().sub(playerPosition.current);
@@ -2231,15 +2704,16 @@ function NeighborhoodWorld({
       }
     }
 
+    const currentlyAiming = cameraModeRef.current === "thirdPerson" ? aimingRef.current : keys.current.has("q");
     const nextMotion: CharacterMotion = jumpMotion
       ?? (now < shootingUntil.current
         ? "shoot"
-        : keys.current.has("q")
-          ? "aim"
-          : keys.current.has("control")
-            ? locomoting ? "crouchWalk" : "crouchIdle"
-            : locomoting
-              ? travelMode.current === "run" ? "run" : "walk"
+        : keys.current.has("control")
+          ? locomoting ? "crouchWalk" : "crouchIdle"
+          : locomoting
+            ? travelMode.current === "run" ? "run" : "walk"
+            : currentlyAiming
+              ? "aim"
               : activeInteriorRef.current ? "idle" : "armedIdle");
     updatePlayerMotion(nextMotion);
 
@@ -2250,8 +2724,19 @@ function NeighborhoodWorld({
     setRenderCarPosition(carPosition.current.clone());
     setRenderCarRotation(carRotation.current);
 
-    if (didMove && (completedClickRoute || now - lastMoveSent.current > 120)) {
+    const rotationDelta = Math.abs(Math.atan2(
+      Math.sin(playerRotation.current - lastRotationSent.current),
+      Math.cos(playerRotation.current - lastRotationSent.current)
+    ));
+    const shouldSendMovement = didMove && (completedClickRoute || now - lastMoveSent.current > 120);
+    const shouldSendAimRotation = !didMove
+      && cameraModeRef.current === "thirdPerson"
+      && aimingRef.current
+      && rotationDelta > 0.035
+      && now - lastMoveSent.current > 120;
+    if (shouldSendMovement || shouldSendAimRotation) {
       lastMoveSent.current = now;
+      lastRotationSent.current = playerRotation.current;
       onMove({
         x: playerPosition.current.x,
         y: 0,
@@ -2270,7 +2755,7 @@ function NeighborhoodWorld({
     rotation: number,
     size: [number, number, number]
   ) {
-    if (drivingRef.current) return;
+    if (drivingRef.current || cameraModeRef.current === "thirdPerson") return;
     if (keys.current.has("q")) {
       shootAt(houseLocalToWorld(new THREE.Vector3(x, 0, z), resident));
       return;
@@ -2340,7 +2825,7 @@ function NeighborhoodWorld({
   }
 
   function handleGroundClick(event: ThreeEvent<MouseEvent>) {
-    if (drivingRef.current || !isPrimarySceneClick(event)) return;
+    if (drivingRef.current || cameraModeRef.current === "thirdPerson" || !isPrimarySceneClick(event)) return;
     const worldPoint = event.point.clone().add(viewOrigin).setY(0);
     if (keys.current.has("q") && !buildMode) {
       shootAt(worldPoint);
@@ -2391,7 +2876,7 @@ function NeighborhoodWorld({
   }
 
   function handleInteriorFloorClick(event: ThreeEvent<MouseEvent>, resident: NeighborhoodResident) {
-    if (drivingRef.current || !isPrimarySceneClick(event)) return;
+    if (drivingRef.current || cameraModeRef.current === "thirdPerson" || !isPrimarySceneClick(event)) return;
     clickTarget.current = null;
     clickPath.current = [];
     pendingVisit.current = null;
@@ -2418,6 +2903,7 @@ function NeighborhoodWorld({
   }
 
   function handleHouseEnter(resident: NeighborhoodResident) {
+    if (cameraModeRef.current === "thirdPerson") return;
     if (drivingRef.current) {
       onToast("Сначала выйдите из машины возле дома");
       return;
@@ -2461,10 +2947,11 @@ function NeighborhoodWorld({
         shadow-bias={-0.00012}
       />
       <Sparkles count={100} scale={[78, 10, 128]} size={1.35} speed={0.18} color="#fff2fb" opacity={0.52} />
-      <group position={viewOffset}>
+      <group ref={worldGroupRef} position={viewOffset}>
         <DistrictGeometry residents={worldResidents} />
         <mesh
           receiveShadow
+          userData={{ aimSurface: true }}
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, 0.012, 0]}
           onClick={handleGroundClick}
@@ -2508,10 +2995,14 @@ function NeighborhoodWorld({
               teleportNonce={runtime.respawnNonce}
               health={runtime.health}
               maxHealth={NPC_MAX_HEALTH}
-              onClick={(event) => {
-                if (!keys.current.has("q") || runtime.dead || !isPrimarySceneClick(event)) return;
+              combatUsername={runtime.username}
+              combatDead={runtime.dead}
+              ragdollImpact={runtime.ragdollImpact}
+              onCombatHit={(event) => {
+                if (cameraModeRef.current === "thirdPerson" || !keys.current.has("q") || runtime.dead || !isPrimarySceneClick(event)) return;
                 event.stopPropagation();
-                shootAt(runtime.position.clone(), runtime.username);
+                if (!worldGroupRef.current) return;
+                shootAt(worldGroupRef.current.worldToLocal(event.point.clone()));
               }}
             />
           );
@@ -2537,6 +3028,7 @@ function NeighborhoodWorld({
             moving={moving}
             motion={playerMotion}
             weapon={activeInterior ? undefined : selectedWeapon}
+            muzzleRef={playerMuzzleRef}
             actionNonce={shotNonce}
             rotation={renderPlayerRotation}
           />
@@ -2565,6 +3057,11 @@ function NeighborhoodWorld({
         position={cameraPosition}
         rotation={driving ? renderCarRotation : renderPlayerRotation}
         driving={driving}
+        cameraMode={cameraMode}
+        cameraYaw={cameraYaw}
+        cameraPitch={cameraPitch}
+        aiming={aiming}
+        worldRoot={worldGroupRef}
         homePosition={displayHomePosition}
         homeFront={activeInterior ? cameraHomeFront : homeFront}
         neighborDirection={neighborDirection}
@@ -2586,6 +3083,8 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
   });
   const [selectedWeapon, setSelectedWeapon] = useState<WeaponKind>("pistol");
   const [aiming, setAiming] = useState(false);
+  const [cameraMode, setCameraMode] = useState<CameraMode>("strategy");
+  const [pointerLocked, setPointerLocked] = useState(false);
 
   return (
     <>
@@ -2600,15 +3099,29 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
           onDrivingChange={setDriving}
           selectedWeapon={selectedWeapon}
           onWeaponChange={setSelectedWeapon}
+          aiming={aiming}
           onAimingChange={setAiming}
           onInsideChange={setInside}
+          cameraMode={cameraMode}
+          onCameraModeChange={setCameraMode}
+          onPointerLockChange={setPointerLocked}
         />
       </Canvas>
+      {cameraMode === "thirdPerson" ? (
+        <>
+          <div className={aiming ? "third-person-reticle aiming" : "third-person-reticle"} aria-hidden="true">
+            <span />
+          </div>
+          {!pointerLocked ? (
+            <div className="pointer-lock-hint">Кликните по сцене, чтобы вернуть управление мышью</div>
+          ) : null}
+        </>
+      ) : null}
       {!driving && !inside ? (
         <div className={aiming ? "weapon-hud aiming" : "weapon-hud"}>
           <div className="weapon-hud-title">
             <b>{aiming ? "Режим прицеливания" : WEAPONS[selectedWeapon].label}</b>
-            <span>{aiming ? "кликните по точке или соседу" : "1–5 — сменить оружие"}</span>
+            <span>{aiming ? cameraMode === "thirdPerson" ? "ЛКМ — огонь по центру прицела" : "кликните по точке или соседу" : "1–5 — сменить оружие"}</span>
           </div>
           <div className="weapon-hotbar">
             {WEAPON_ORDER.map((weapon, index) => (
@@ -2626,16 +3139,27 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
           </div>
         </div>
       ) : null}
-      <div className={driving ? "street-controls driving" : "street-controls"}>
+      <div className={driving ? "street-controls driving" : cameraMode === "thirdPerson" ? "street-controls third-person" : "street-controls"}>
         <span className="control-key">WASD</span>
-        <span>{driving ? "ехать и рулить" : "камера"}</span>
-        {!driving ? (
+        <span>{driving ? "ехать и рулить" : cameraMode === "thirdPerson" ? "движение" : "камера"}</span>
+        {!driving && cameraMode === "thirdPerson" ? (
+          <>
+            <span className="control-dot">·</span><span>мышь — обзор</span>
+            <span className="control-dot">·</span><span><b>ПКМ</b> — прицел</span>
+            {!inside ? <><span className="control-dot">·</span><span><b>ЛКМ</b> — огонь</span></> : null}
+            <span className="control-dot">·</span><span><b>Shift</b> — бег</span>
+            <span className="control-dot">·</span><span><b>Space</b> — прыжок</span>
+            <span className="control-dot">·</span><span><b>Ctrl</b> — присесть</span>
+            <span className="control-dot">·</span><span><b>V</b> — обычная камера</span>
+          </>
+        ) : !driving ? (
           <>
             <span className="control-dot">·</span><span>клик — идти</span>
             <span className="control-dot">·</span><span><b>Shift</b> + клик — бег</span>
             <span className="control-dot">·</span><span><b>Space</b> — прыжок</span>
             <span className="control-dot">·</span><span><b>Ctrl</b> — присесть</span>
             {!inside ? <><span className="control-dot">·</span><span><b>Q</b> + клик — огонь</span></> : null}
+            <span className="control-dot">·</span><span><b>V</b> — от третьего лица</span>
           </>
         ) : null}
         <span className="control-dot">·</span>
