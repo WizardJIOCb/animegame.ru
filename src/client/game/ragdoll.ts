@@ -21,6 +21,8 @@ const SLEEP_SPEED = 0.045;
 const SLEEP_DELAY = 0.8;
 const MAX_IMPACT_SPEED = 14;
 const MAX_PARTICLE_SPEED = 12;
+const LOCAL_IMPACT_SHARE = 1.15;
+const CONNECTED_BULLET_SHARE = 0.12;
 const SELF_COLLISION_SCALE = 0.96;
 const REST_SEPARATION_RATIO = 0.9;
 const TORSO_SHAPE_STIFFNESS = 0.34;
@@ -606,8 +608,9 @@ export class SkeletonRagdoll {
   private applyImpact(impact: RagdollImpact) {
     if (this.particles.length === 0) return;
     const point = new THREE.Vector3().fromArray(impact.point);
+    const pointIsFinite = point.toArray().every(Number.isFinite);
     let hit = this.particleByName.get(impact.boneName);
-    if (!hit && point.toArray().every(Number.isFinite)) {
+    if (!hit && pointIsFinite) {
       let nearestDistance = Infinity;
       for (const particle of this.particles) {
         const distance = particle.position.distanceToSquared(point);
@@ -623,14 +626,34 @@ export class SkeletonRagdoll {
     if (!Number.isFinite(velocity.lengthSq()) || velocity.lengthSq() < EPSILON) return;
     velocity.clampLength(0, MAX_IMPACT_SPEED);
 
+    const localShares = new Map<Particle, number>([[hit, LOCAL_IMPACT_SHARE]]);
+    const hitChild = hit.spec.aimChild ? this.particleByName.get(hit.spec.aimChild) : undefined;
+    if (hitChild && pointIsFinite) {
+      const segment = tempVectorA.copy(hitChild.position).sub(hit.position);
+      const segmentLengthSq = segment.lengthSq();
+      if (segmentLengthSq > EPSILON) {
+        const hitT = THREE.MathUtils.clamp(
+          tempVectorB.copy(point).sub(hit.position).dot(segment) / segmentLengthSq,
+          0,
+          1
+        );
+        localShares.set(hit, LOCAL_IMPACT_SHARE * (1 - hitT));
+        localShares.set(hitChild, LOCAL_IMPACT_SHARE * hitT);
+      }
+    }
+    const localParticles = [...localShares.keys()];
+
     for (const particle of this.particles) {
-      let share = particle === hit ? 1 : 0;
-      if (impact.kind === "explosion" && particle !== hit) {
+      let share = localShares.get(particle) ?? 0;
+      if (impact.kind === "explosion") {
         const distance = particle.position.distanceTo(point);
-        share = 0.2 * THREE.MathUtils.clamp(1 - distance / 2.4, 0.18, 1);
-      } else if (impact.kind === "bullet" && particle !== hit) {
-        const directlyConnected = particle.spec.parent === hit.spec.name || hit.spec.parent === particle.spec.name;
-        if (directlyConnected) share = 0.1;
+        share += 0.2 * THREE.MathUtils.clamp(1 - distance / 2.4, 0.18, 1);
+      } else if (!localShares.has(particle)) {
+        const directlyConnected = localParticles.some((localParticle) => (
+          particle.spec.parent === localParticle.spec.name
+          || localParticle.spec.parent === particle.spec.name
+        ));
+        if (directlyConnected) share = CONNECTED_BULLET_SHARE;
       }
       if (share > 0) particle.previous.addScaledVector(velocity, -FIXED_STEP * share);
     }
