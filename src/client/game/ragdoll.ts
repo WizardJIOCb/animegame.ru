@@ -5,27 +5,45 @@ export type { RagdollImpact } from "./combat";
 
 const FIXED_STEP = 1 / 60;
 const MAX_SUBSTEPS = 4;
-const PHYSICS_SUBSTEPS = 3;
+const PHYSICS_SUBSTEPS = 4;
 const PHYSICS_STEP = FIXED_STEP / PHYSICS_SUBSTEPS;
 const SOLVER_ITERATIONS = 4;
 const GRAVITY = -9.81;
-const AIR_DRAG = 0.985;
+const AIR_DRAG = 0.99;
 const SUBSTEP_AIR_DRAG = Math.pow(AIR_DRAG, 1 / PHYSICS_SUBSTEPS);
 // Exponential tangential damping. A literal 0.7 multiplier every 1/60 s made
 // floor contacts lose virtually all horizontal speed in a fraction of a
 // second, pinning one joint while the rest of the body folded around it.
-const FLOOR_FRICTION_PER_SECOND = 3.2;
+const FLOOR_FRICTION_PER_SECOND = 2.2;
 const FLOOR_TANGENTIAL_RETENTION = Math.exp(-FLOOR_FRICTION_PER_SECOND * PHYSICS_STEP);
 const FLOOR_RESTITUTION = 0.08;
 const SLEEP_SPEED = 0.045;
-const SLEEP_DELAY = 0.8;
-const MAX_IMPACT_SPEED = 14;
-const MAX_PARTICLE_SPEED = 12;
-const LOCAL_IMPACT_SHARE = 1.15;
-const CONNECTED_BULLET_SHARE = 0.12;
+const SLEEP_DELAY = 1.05;
+const MAX_IMPACT_SPEED = 18;
+const MAX_PARTICLE_SPEED = 15;
+const LOCAL_IMPACT_SHARE = 1.35;
+const CONNECTED_BULLET_SHARE = 0.17;
+const BULLET_BODY_SHARE = 0.42;
+const EXPLOSION_BODY_SHARE = 0.58;
 const SELF_COLLISION_SCALE = 0.96;
 const REST_SEPARATION_RATIO = 0.9;
 const TORSO_SHAPE_STIFFNESS = 0.34;
+const SELF_COLLISION_FRAME_STIFFNESS = 0.78;
+const HIP_SPREAD_FRAME_STIFFNESS = 0.55;
+const FOOT_SPREAD_FRAME_STIFFNESS = 0.45;
+const CONSTRAINT_PASSES_PER_STEP = SOLVER_ITERATIONS * PHYSICS_SUBSTEPS;
+const SELF_COLLISION_ITERATION_STIFFNESS = 1 - Math.pow(
+  1 - SELF_COLLISION_FRAME_STIFFNESS,
+  1 / CONSTRAINT_PASSES_PER_STEP
+);
+const HIP_SPREAD_ITERATION_STIFFNESS = 1 - Math.pow(
+  1 - HIP_SPREAD_FRAME_STIFFNESS,
+  1 / CONSTRAINT_PASSES_PER_STEP
+);
+const FOOT_SPREAD_ITERATION_STIFFNESS = 1 - Math.pow(
+  1 - FOOT_SPREAD_FRAME_STIFFNESS,
+  1 / CONSTRAINT_PASSES_PER_STEP
+);
 const CAPSULE_RADIUS_SCALE = 0.82;
 const CAPSULE_SEPARATION_SCALE = 0.94;
 const CAPSULE_REST_SEPARATION_RATIO = 0.9;
@@ -126,6 +144,13 @@ type MinimumDistanceConstraint = {
   fallbackDirection: THREE.Vector3;
 };
 
+type MaximumDistanceConstraint = {
+  first: Particle;
+  second: Particle;
+  maximumDistance: number;
+  stiffness: number;
+};
+
 type CapsuleSegment = {
   first: Particle;
   second: Particle;
@@ -167,6 +192,19 @@ const tempQuaternionB = new THREE.Quaternion();
 const tempQuaternionC = new THREE.Quaternion();
 const tempMatrix = new THREE.Matrix4();
 const closestSegmentResult: ClosestSegmentResult = { firstT: 0, secondT: 0 };
+
+function impactRandom(seed: number, salt: number) {
+  const value = Math.sin(seed * 12.9898 + salt * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function impactSeed(impact: RagdollImpact, point: THREE.Vector3) {
+  let seed = impact.nonce * 37.719 + point.x * 91.173 + point.y * 53.317 + point.z * 17.731;
+  for (let index = 0; index < impact.boneName.length; index += 1) {
+    seed += impact.boneName.charCodeAt(index) * (index + 1) * 0.137;
+  }
+  return seed + (impact.kind === "explosion" ? 113.17 : 29.41);
+}
 
 function findClosestSegmentParameters(
   firstStart: THREE.Vector3,
@@ -273,6 +311,7 @@ export class SkeletonRagdoll {
   private readonly particleByName = new Map<string, Particle>();
   private readonly constraints: DistanceConstraint[] = [];
   private readonly bendConstraints: MinimumDistanceConstraint[] = [];
+  private readonly maximumDistanceConstraints: MaximumDistanceConstraint[] = [];
   private readonly selfCollisionConstraints: MinimumDistanceConstraint[] = [];
   private readonly capsuleSegments: CapsuleSegment[] = [];
   private readonly segmentCollisionConstraints: SegmentCollisionConstraint[] = [];
@@ -307,6 +346,7 @@ export class SkeletonRagdoll {
     this.captureAimAxes();
     this.createConstraints();
     this.createBendConstraints();
+    this.createJointLimitConstraints();
     this.createSelfCollisionConstraints();
     this.createCapsuleCollisionConstraints();
     this.createFrameDrivers();
@@ -344,6 +384,7 @@ export class SkeletonRagdoll {
     this.particles.length = 0;
     this.constraints.length = 0;
     this.bendConstraints.length = 0;
+    this.maximumDistanceConstraints.length = 0;
     this.selfCollisionConstraints.length = 0;
     this.capsuleSegments.length = 0;
     this.segmentCollisionConstraints.length = 0;
@@ -397,6 +438,7 @@ export class SkeletonRagdoll {
         );
       }
     }
+
   }
 
   private createBendConstraints() {
@@ -425,15 +467,30 @@ export class SkeletonRagdoll {
     this.addScaledMinimumConstraint("spine_02", "hand_l", 0.46, 0.72);
     this.addScaledMinimumConstraint("spine_02", "hand_r", 0.46, 0.72);
 
-    // A standing/walking death pose should be able to fold substantially, but
-    // a foot must not travel all the way through the upper torso. Scaling from
-    // the captured pose also keeps crouched characters less restricted.
-    for (const foot of ["foot_l", "foot_r"]) {
-      this.addScaledMinimumConstraint(foot, "Head", 0.56, 0.82);
-      this.addScaledMinimumConstraint(foot, "spine_03", 0.5, 0.78);
-      this.addScaledMinimumConstraint(foot, "clavicle_l", 0.52, 0.78);
-      this.addScaledMinimumConstraint(foot, "clavicle_r", 0.52, 0.78);
-    }
+  }
+
+  private createJointLimitConstraints() {
+    // Cross-leg maximum distances act as lightweight hip and knee cone limits.
+    // They prevent both legs from opening into a flat split without freezing a
+    // valid walking, crouching or airborne pose captured at the moment of death.
+    this.addMaximumDistanceConstraint("thigh_r", "calf_l", 1.28, HIP_SPREAD_ITERATION_STIFFNESS);
+    this.addMaximumDistanceConstraint("thigh_l", "calf_r", 1.28, HIP_SPREAD_ITERATION_STIFFNESS);
+    this.addMaximumDistanceConstraint("calf_r", "foot_l", 1.36, FOOT_SPREAD_ITERATION_STIFFNESS);
+    this.addMaximumDistanceConstraint("calf_l", "foot_r", 1.36, FOOT_SPREAD_ITERATION_STIFFNESS);
+  }
+
+  private addMaximumDistanceConstraint(
+    firstName: string,
+    secondName: string,
+    capturedDistanceRatio: number,
+    stiffness: number
+  ) {
+    const first = this.particleByName.get(firstName);
+    const second = this.particleByName.get(secondName);
+    if (!first || !second) return;
+    const maximumDistance = first.position.distanceTo(second.position) * capturedDistanceRatio;
+    if (maximumDistance < EPSILON) return;
+    this.maximumDistanceConstraints.push({ first, second, maximumDistance, stiffness });
   }
 
   private addBendConstraint(
@@ -487,7 +544,7 @@ export class SkeletonRagdoll {
           first,
           second,
           minimumDistance,
-          0.72
+          SELF_COLLISION_ITERATION_STIFFNESS
         );
       }
     }
@@ -641,28 +698,77 @@ export class SkeletonRagdoll {
         localShares.set(hitChild, LOCAL_IMPACT_SHARE * hitT);
       }
     }
-    const localParticles = [...localShares.keys()];
+    const localParticles = [...localShares.entries()]
+      .filter(([, share]) => share > EPSILON)
+      .map(([particle]) => particle);
+
+    const bodyCenter = new THREE.Vector3();
+    let totalMass = 0;
+    for (const particle of this.particles) {
+      const mass = 1 / particle.inverseMass;
+      bodyCenter.addScaledVector(particle.position, mass);
+      totalMass += mass;
+    }
+    bodyCenter.multiplyScalar(1 / totalMass);
+
+    const direction = velocity.clone().normalize();
+    const bodyVelocity = velocity.clone();
+    const horizontalSpeed = Math.hypot(bodyVelocity.x, bodyVelocity.z);
+    bodyVelocity.y += horizontalSpeed * (impact.kind === "explosion" ? 0.22 : 0.16);
+    const bodyShare = impact.kind === "explosion" ? EXPLOSION_BODY_SHARE : BULLET_BODY_SHARE;
+
+    // A force away from the centre creates torque around the impact point.
+    // The small deterministic bias avoids identical falls when several actors
+    // are hit along the same line, while keeping replays stable for debugging.
+    const resolvedPoint = pointIsFinite ? point : hit.position;
+    const seed = impactSeed(impact, resolvedPoint);
+    const impactOffset = resolvedPoint.clone().sub(bodyCenter);
+    const spinAxis = new THREE.Vector3().crossVectors(impactOffset, direction);
+    const torqueMagnitude = spinAxis.length();
+    if (spinAxis.lengthSq() < EPSILON) {
+      spinAxis.crossVectors(direction, new THREE.Vector3(0, 1, 0));
+    }
+    if (spinAxis.lengthSq() < EPSILON) spinAxis.set(1, 0, 0);
+    spinAxis.normalize();
+    spinAxis.x += (impactRandom(seed, 1) - 0.5) * 0.36;
+    spinAxis.y += (impactRandom(seed, 2) - 0.5) * 0.3;
+    spinAxis.z += (impactRandom(seed, 3) - 0.5) * 0.36;
+    const spinStrength = THREE.MathUtils.clamp(velocity.length() / 8, 0.65, 1.4)
+      * THREE.MathUtils.clamp(torqueMagnitude / 0.65, 0.18, 1);
+    spinAxis.normalize().multiplyScalar(
+      THREE.MathUtils.lerp(
+        impact.kind === "explosion" ? 2 : 1.4,
+        impact.kind === "explosion" ? 3.6 : 2.6,
+        impactRandom(seed, 4)
+      ) * spinStrength
+    );
 
     for (const particle of this.particles) {
-      let share = localShares.get(particle) ?? 0;
+      let localShare = localShares.get(particle) ?? 0;
       if (impact.kind === "explosion") {
-        const distance = particle.position.distanceTo(point);
-        share += 0.2 * THREE.MathUtils.clamp(1 - distance / 2.4, 0.18, 1);
-      } else if (!localShares.has(particle)) {
+        const distance = particle.position.distanceTo(resolvedPoint);
+        localShare += 0.2 * THREE.MathUtils.clamp(1 - distance / 2.4, 0.18, 1);
+      } else if (localShare <= EPSILON) {
         const directlyConnected = localParticles.some((localParticle) => (
           particle.spec.parent === localParticle.spec.name
           || localParticle.spec.parent === particle.spec.name
         ));
-        if (directlyConnected) share = CONNECTED_BULLET_SHARE;
+        if (directlyConnected) localShare = CONNECTED_BULLET_SHARE;
       }
-      if (share > 0) particle.previous.addScaledVector(velocity, -FIXED_STEP * share);
+
+      const radius = particle.position.clone().sub(bodyCenter);
+      const launchVelocity = bodyVelocity.clone().multiplyScalar(bodyShare)
+        .addScaledVector(velocity, localShare)
+        .add(new THREE.Vector3().crossVectors(spinAxis, radius))
+        .clampLength(0, MAX_PARTICLE_SPEED);
+      particle.previous.addScaledVector(launchVelocity, -FIXED_STEP);
     }
   }
 
   private simulateFixedStep() {
     // Convert the fixed-step Verlet history to the shorter collision substep.
-    // This retains the same velocity while ensuring even a clamped 12 m/s
-    // impact advances only ~6.7 cm before capsule contacts are resolved.
+    // This retains the same velocity while ensuring even a clamped 15 m/s
+    // particle advances only ~6.3 cm before capsule contacts are resolved.
     for (const particle of this.particles) {
       particle.previous.lerp(particle.position, 1 - 1 / PHYSICS_SUBSTEPS);
     }
@@ -711,6 +817,7 @@ export class SkeletonRagdoll {
     for (let iteration = 0; iteration < SOLVER_ITERATIONS; iteration += 1) {
       for (const constraint of this.constraints) this.solveConstraint(constraint);
       for (const constraint of this.bendConstraints) this.solveMinimumDistanceConstraint(constraint);
+      for (const constraint of this.maximumDistanceConstraints) this.solveMaximumDistanceConstraint(constraint);
       for (const constraint of this.selfCollisionConstraints) this.solveMinimumDistanceConstraint(constraint);
       for (const constraint of this.segmentCollisionConstraints) this.solveSegmentCollisionConstraint(constraint);
       for (const particle of this.particles) {
@@ -772,6 +879,18 @@ export class SkeletonRagdoll {
     const correction = (constraint.minimumDistance - distance) * constraint.stiffness;
     constraint.first.position.addScaledVector(offset, -correction * constraint.first.inverseMass / weight);
     constraint.second.position.addScaledVector(offset, correction * constraint.second.inverseMass / weight);
+  }
+
+  private solveMaximumDistanceConstraint(constraint: MaximumDistanceConstraint) {
+    const offset = tempVectorA.copy(constraint.second.position).sub(constraint.first.position);
+    const distance = offset.length();
+    if (distance <= constraint.maximumDistance || distance < EPSILON) return;
+    const weight = constraint.first.inverseMass + constraint.second.inverseMass;
+    if (weight < EPSILON) return;
+    const correction = ((distance - constraint.maximumDistance) / distance) * constraint.stiffness;
+    offset.multiplyScalar(correction);
+    constraint.first.position.addScaledVector(offset, constraint.first.inverseMass / weight);
+    constraint.second.position.addScaledVector(offset, -constraint.second.inverseMass / weight);
   }
 
   private solveSegmentCollisionConstraint(constraint: SegmentCollisionConstraint) {
