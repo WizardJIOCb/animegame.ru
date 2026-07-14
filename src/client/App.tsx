@@ -2,6 +2,7 @@ import { CarFront, Coins, Crosshair, DoorOpen, Hammer, Home, LogOut, Map as MapI
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { AdminPanel } from "./components/AdminPanel";
+import { CompactExpeditionHud, HUD_PREFERENCES_STORAGE_KEY, readHudPreferences, type HudPreferences } from "./components/AegisHud";
 import { AuthScreen } from "./components/AuthScreen";
 import { ExpeditionPanel } from "./components/ExpeditionPanel";
 import type { ProgressionTabId } from "./components/ProgressionHub";
@@ -13,6 +14,7 @@ import {
   buyExpeditionAmmo,
   buyExpeditionTraderItem,
   buyExpeditionWeapon,
+  claimExpeditionQuest,
   claimNeighborhoodIncome,
   craftExpeditionItem,
   earn,
@@ -45,13 +47,15 @@ import {
   useExpeditionTactical,
   upgradeCareer,
   upgradeExpeditionSkill,
+  upgradeExpeditionGear,
+  upgradeExpeditionWeapon,
   upgradeHouse
 } from "./api";
 import { trackGoal, trackItemGoal, trackPurchase } from "./analytics";
 import { GameScene } from "./game/GameScene";
 import { NeighborhoodScene } from "./game/NeighborhoodScene";
 import type { WorldRegion } from "./game/outlands";
-import { EXPEDITION_ARTIFACT_IDS, EXPEDITION_GRENADE_IDS, EXPEDITION_ITEMS, EXPEDITION_WEAPONS } from "../shared/expedition";
+import { EXPEDITION_ARTIFACT_IDS, EXPEDITION_GEAR, EXPEDITION_GRENADE_IDS, EXPEDITION_ITEMS, EXPEDITION_WEAPONS } from "../shared/expedition";
 import type {
   ExpeditionContainerId,
   ExpeditionEnemyId,
@@ -60,12 +64,14 @@ import type {
   ExpeditionHitInput,
   ExpeditionItemId,
   ExpeditionProfile,
+  ExpeditionQuestId,
   ExpeditionRecipeId,
   ExpeditionRunSnapshot,
   ExpeditionSkillId,
   ExpeditionTacticalId,
   ExpeditionTacticalTarget,
   ExpeditionWeaponId,
+  ExpeditionWeaponUpgradeStat,
   PartyInvite,
   PartyInvitesSnapshot,
   PartySnapshot
@@ -134,7 +140,10 @@ export default function App() {
     downed: false
   });
   const [showExpeditionPanel, setShowExpeditionPanel] = useState(false);
+  const [showUtilityPanel, setShowUtilityPanel] = useState(false);
   const [requestedExpeditionTab, setRequestedExpeditionTab] = useState<ProgressionTabId>();
+  const [requestedExpeditionTabRevision, setRequestedExpeditionTabRevision] = useState(0);
+  const [hudPreferences, setHudPreferences] = useState<HudPreferences>(readHudPreferences);
   const [worldRegion, setWorldRegion] = useState<WorldRegion>("city");
   const [canExtractExpedition, setCanExtractExpedition] = useState(false);
   const [party, setParty] = useState<PartySnapshot | null>(null);
@@ -173,6 +182,58 @@ export default function App() {
   const expeditionRunRef = useRef<ExpeditionRunSnapshot | null>(null);
   const sessionVersionRef = useRef(0);
   const toastTimerRef = useRef<number | null>(null);
+
+  function openExpeditionPanel(tab: ProgressionTabId = "raid") {
+    setRequestedExpeditionTab(tab);
+    setRequestedExpeditionTabRevision((revision) => revision + 1);
+    setShowExpeditionPanel(true);
+    setShowUtilityPanel(false);
+    if (document.pointerLockElement) void document.exitPointerLock();
+  }
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(HUD_PREFERENCES_STORAGE_KEY, JSON.stringify(hudPreferences));
+    } catch {
+      // HUD preferences are non-critical when storage is unavailable.
+    }
+  }, [hudPreferences]);
+
+  useEffect(() => {
+    function handleAegisShortcut(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const editing = target?.isContentEditable
+        || target?.tagName === "INPUT"
+        || target?.tagName === "TEXTAREA"
+        || target?.tagName === "SELECT";
+      if (event.code === "Escape" && (showExpeditionPanel || showUtilityPanel)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setShowExpeditionPanel(false);
+        setShowUtilityPanel(false);
+        return;
+      }
+      if (editing) return;
+
+      if (event.code === "KeyI" && !event.ctrlKey && !event.metaKey && !event.altKey && expeditionProfile) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        openExpeditionPanel("inventory");
+      } else if (showExpeditionPanel && [
+        "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "KeyR", "KeyT",
+        "KeyZ", "KeyX", "KeyC", "KeyV", "KeyB", "KeyG", "KeyH", "Space",
+        "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Digit1", "Digit2",
+        "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
+        "Digit0", "Minus"
+      ].includes(event.code)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }
+
+    window.addEventListener("keydown", handleAegisShortcut, true);
+    return () => window.removeEventListener("keydown", handleAegisShortcut, true);
+  }, [expeditionProfile, showExpeditionPanel, showUtilityPanel]);
 
   function updateExpeditionRun(run: ExpeditionRunSnapshot | null) {
     if (run?.id !== expeditionRunRef.current?.id) {
@@ -472,7 +533,6 @@ export default function App() {
     socket.on("party:invites", ({ incoming, outgoing }: PartyInvitesSnapshot) => {
       setPartyInvites(incoming);
       setPartyOutgoingInvites(outgoing);
-      if (incoming.length > 0) setShowExpeditionPanel(true);
     });
     socket.on("party:online-players", ({ players: onlinePlayers }: {
       players: Array<{ userId: string; username: string }>;
@@ -484,7 +544,6 @@ export default function App() {
         ...current.filter((entry) => entry.id !== invite.id && entry.partyId !== invite.partyId),
         invite
       ]);
-      setShowExpeditionPanel(true);
       showToast(`${invite.fromUsername} приглашает вас в группу`);
     });
     socket.on("party:invite-sent", (invite: PartyInvite) => {
@@ -511,7 +570,7 @@ export default function App() {
       setExpeditionProfile(profile);
       updateExpeditionRun(run);
       setCanExtractExpedition(false);
-      setShowExpeditionPanel(true);
+      setShowExpeditionPanel(false);
       showToast(partySize > 1
         ? `${leaderUsername} начал групповую экспедицию · участников: ${partySize}`
         : "Экспедиция начата");
@@ -1099,7 +1158,7 @@ export default function App() {
       setExpeditionProfile(response.profile);
       updateExpeditionRun(response.run);
       setCanExtractExpedition(false);
-      setShowExpeditionPanel(true);
+      setShowExpeditionPanel(false);
       if (sceneModeRef.current !== "street") {
         await openNeighborhood();
       }
@@ -1284,6 +1343,72 @@ export default function App() {
     }
   }
 
+  async function handleUpgradeExpeditionWeapon(weaponId: ExpeditionWeaponId, stat: ExpeditionWeaponUpgradeStat) {
+    if (expeditionBusy || expeditionRun) return;
+    const session = captureSession();
+    if (!session) return;
+    setExpeditionBusy(`weapon-upgrade:${weaponId}:${stat}`);
+    try {
+      const response = await upgradeExpeditionWeapon(weaponId, stat);
+      if (!isCurrentSession(session) || expeditionRunRef.current) return;
+      userRef.current = response.user;
+      setUser(response.user);
+      setExpeditionProfile(response.profile);
+      showToast(`${EXPEDITION_WEAPONS[weaponId].name}: модификация установлена · ур. ${response.level}`);
+      trackGoal("expedition_weapon_upgrade", { weapon: weaponId, stat, level: response.level, spent: response.spent.coins });
+    } catch (expeditionError) {
+      if (isCurrentSession(session) && !expeditionRunRef.current) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось улучшить оружие");
+      }
+    } finally {
+      if (isCurrentSession(session)) setExpeditionBusy("");
+    }
+  }
+
+  async function handleUpgradeExpeditionGear(gearId: ExpeditionGearId) {
+    if (expeditionBusy || expeditionRun) return;
+    const session = captureSession();
+    if (!session) return;
+    setExpeditionBusy(`gear-upgrade:${gearId}`);
+    try {
+      const response = await upgradeExpeditionGear(gearId);
+      if (!isCurrentSession(session) || expeditionRunRef.current) return;
+      userRef.current = response.user;
+      setUser(response.user);
+      setExpeditionProfile(response.profile);
+      showToast(`${EXPEDITION_GEAR[gearId].name}: усиление ${response.level}/${5}`);
+      trackGoal("expedition_gear_upgrade", { gear: gearId, level: response.level, spent: response.spent.coins });
+    } catch (expeditionError) {
+      if (isCurrentSession(session) && !expeditionRunRef.current) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось усилить экипировку");
+      }
+    } finally {
+      if (isCurrentSession(session)) setExpeditionBusy("");
+    }
+  }
+
+  async function handleClaimExpeditionQuest(questId: ExpeditionQuestId) {
+    if (expeditionBusy) return;
+    const session = captureSession();
+    if (!session) return;
+    setExpeditionBusy(`quest:${questId}`);
+    try {
+      const response = await claimExpeditionQuest(questId);
+      if (!isCurrentSession(session)) return;
+      userRef.current = response.user;
+      setUser(response.user);
+      setExpeditionProfile(response.profile);
+      showToast(`${response.quest.name}: награда получена`);
+      trackGoal("expedition_quest_claim", { quest: questId });
+    } catch (expeditionError) {
+      if (isCurrentSession(session)) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось получить награду");
+      }
+    } finally {
+      if (isCurrentSession(session)) setExpeditionBusy("");
+    }
+  }
+
   async function handleLootExpeditionContainer(containerId: string) {
     const session = captureSession();
     const runId = expeditionRunRef.current?.id;
@@ -1293,6 +1418,7 @@ export default function App() {
     try {
       const response = await lootExpeditionContainer(typedContainerId);
       if (!isCurrentSession(session) || expeditionRunRef.current?.id !== runId) return;
+      setExpeditionProfile(response.profile);
       updateExpeditionRun(response.run);
       const lootLabel = response.loot
         .map((stack) => `${EXPEDITION_ITEMS[stack.itemId].name} ×${stack.quantity}`)
@@ -1472,6 +1598,7 @@ export default function App() {
     try {
       const response = await useExpeditionTactical(itemId, origin, targets);
       if (!isCurrentSession(session) || expeditionRunRef.current?.id !== runId) return false;
+      setExpeditionProfile(response.profile);
       updateExpeditionRun(response.run);
       const defeated = response.hits.filter((hit) => hit.killed).length;
       const suffix = defeated > 0 ? ` · уничтожено целей: ${defeated}` : "";
@@ -1582,6 +1709,7 @@ export default function App() {
         try {
           const response = await hitExpeditionEnemies(hits);
           if (!isCurrentSession(session) || expeditionRunRef.current?.id !== runId) return;
+          setExpeditionProfile(response.profile);
           updateExpeditionRun(response.run);
           for (const result of response.hits) {
             if (!result.killed) continue;
@@ -1698,7 +1826,6 @@ export default function App() {
 
   function handleWorldRegionChange(region: WorldRegion) {
     setWorldRegion(region);
-    if (region !== "city") setShowExpeditionPanel(true);
   }
 
   function handlePartyInvite(username: string) {
@@ -1748,6 +1875,7 @@ export default function App() {
     expeditionBusyRef.current = "";
     setExpeditionBusy("");
     setShowExpeditionPanel(false);
+    setShowUtilityPanel(false);
     setWorldRegion("city");
     setCanExtractExpedition(false);
     setParty(null);
@@ -1805,19 +1933,39 @@ export default function App() {
   }
 
   const insideOwnHome = sceneMode === "street" && activeInteriorOwner === user.username;
-  const showNeighborhoodPanel = sceneMode === "street" && neighborhood !== null && !insideOwnHome;
-  const showExpeditionSidePanel = showExpeditionPanel && expeditionProfile !== null;
-  const showWideSidePanel = showNeighborhoodPanel || showExpeditionSidePanel;
+  const showNeighborhoodPanel = showUtilityPanel && sceneMode === "street" && neighborhood !== null && !insideOwnHome;
+  const showExpeditionModal = showExpeditionPanel && expeditionProfile !== null;
+  const showWideSidePanel = showUtilityPanel;
   const canEditHome = ownHome && (sceneMode === "home" || insideOwnHome);
   const seamlessLocationTitle = activeInteriorOwner === user.username
     ? `Мой дом · ${ownNeighborhoodResident?.houseLevel ?? 1} ур.`
     : activeInteriorOwner
       ? `В гостях у ${activeInteriorOwner}`
       : "Улица · рядом с моим домом";
+  const expeditionLocationTitle: Record<WorldRegion, string> = {
+    city: "Город",
+    checkpoint: "Северный КПП",
+    forest: "Хвойный рубеж",
+    depot: "Заброшенное депо",
+    quarry: "Красный карьер",
+    ruins: "Старый город",
+    marsh: "Туманные топи",
+    relay: "Релейная низина",
+    fortress: "Небесная крепость",
+    iceRidge: "Ледяной хребет",
+    reactor: "Реактор Пустоты"
+  };
+  const appShellClassName = [
+    "app-shell",
+    `region-${worldRegion}`,
+    hudPreferences.locationCard ? "" : "hud-location-hidden",
+    hudPreferences.weaponPanel ? "" : "hud-weapon-hidden",
+    hudPreferences.controlsHints ? "" : "hud-controls-hidden"
+  ].filter(Boolean).join(" ");
 
   return (
     <GameAssetGate plan={gameAssetPlan} onExit={logout}>
-      <main className="app-shell">
+      <main className={appShellClassName}>
       <section className="topbar">
         <div className="brand"><Home size={20} /> AnimeGame</div>
         <div className="home-title">
@@ -1860,12 +2008,23 @@ export default function App() {
           )}
         </div>
         <button
-          className={showExpeditionSidePanel ? "ghost-button expedition-toggle active" : "ghost-button expedition-toggle"}
+          className={showUtilityPanel ? "ghost-button utility-toggle active" : "ghost-button utility-toggle"}
           type="button"
-          onClick={() => setShowExpeditionPanel((current) => !current)}
-          title="Снаряжение, задание, тайник и группа"
+          onClick={() => {
+            setShowUtilityPanel((current) => !current);
+            setShowExpeditionPanel(false);
+          }}
+          title={sceneMode === "street" ? "Город, соседи и экономика" : "Магазин, вещи и гости"}
         >
-          <Crosshair size={17} /> {expeditionRun ? worldRegion === "city" ? "Рейд активен" : "В Залесье" : "Вылазка"}
+          <ShoppingBag size={17} /> {sceneMode === "street" ? "Город" : "Меню"}
+        </button>
+        <button
+          className={showExpeditionModal ? "ghost-button expedition-toggle active" : "ghost-button expedition-toggle"}
+          type="button"
+          onClick={() => showExpeditionModal ? setShowExpeditionPanel(false) : openExpeditionPanel(expeditionRun ? "raid" : "equipment")}
+          title="Открыть центр подготовки AEGIS · I — инвентарь"
+        >
+          <Crosshair size={17} /> AEGIS {expeditionRun ? "· рейд" : ""}
         </button>
         <div className="wallet"><Coins size={18} /> {user.coins}</div>
         <button className="icon-button" onClick={logout} title="Выйти"><LogOut size={18} /></button>
@@ -1894,6 +2053,8 @@ export default function App() {
               expeditionWeapon={expeditionRun?.selectedWeapon}
               expeditionSkills={expeditionProfile?.skills}
               expeditionGear={expeditionProfile?.equippedGear}
+              expeditionWeaponUpgrades={expeditionProfile?.weaponUpgrades}
+              expeditionGearUpgrades={expeditionProfile?.gearUpgrades}
               expeditionTacticalCounts={expeditionRun
                 ? Object.fromEntries([...EXPEDITION_GRENADE_IDS, ...EXPEDITION_ARTIFACT_IDS].map((itemId) => [
                     itemId,
@@ -1930,8 +2091,7 @@ export default function App() {
               onUseBandage={handleUseExpeditionBandage}
               onUseTactical={handleUseExpeditionTactical}
               onOpenExpeditionPanel={(tab) => {
-                setRequestedExpeditionTab(tab === "gear" ? "equipment" : tab ?? "raid");
-                setShowExpeditionPanel(true);
+                openExpeditionPanel(tab === "gear" ? "equipment" : tab ?? "raid");
               }}
               onExpeditionShot={handleExpeditionShot}
               onExtract={() => void handleExtractExpedition()}
@@ -1953,6 +2113,18 @@ export default function App() {
               onBuildMove={handleBuildMove}
             />
           )}
+          {expeditionProfile ? (
+            <CompactExpeditionHud
+              run={expeditionRun}
+              health={expeditionPlayerStatus.health}
+              maxHealth={expeditionPlayerStatus.maxHealth}
+              location={expeditionLocationTitle[worldRegion]}
+              inviteCount={partyInvites.filter((invite) => invite.expiresAt > Date.now()).length}
+              preferences={hudPreferences}
+              onPreferencesChange={setHudPreferences}
+              onOpen={openExpeditionPanel}
+            />
+          ) : null}
           {sceneMode === "home" || insideOwnHome ? (
             <div className={sceneMode === "street" ? "scene-hint street-scene-hint" : "scene-hint"}>
               {buildMode && canEditHome
@@ -2014,41 +2186,8 @@ export default function App() {
           {toast ? <div className="toast" role="status" aria-live="polite">{toast}</div> : null}
         </div>
 
-        <aside className={showWideSidePanel ? "side-panel neighborhood-side-panel" : "side-panel"}>
-          {showExpeditionSidePanel && expeditionProfile ? (
-            <ExpeditionPanel
-              profile={expeditionProfile}
-              run={expeditionRun}
-              currentUsername={user.username}
-              party={party}
-              invites={partyInvites.filter((invite) => invite.expiresAt > Date.now())}
-              outgoingInvites={partyOutgoingInvites.filter((invite) => invite.expiresAt > Date.now())}
-              canExtract={sceneMode === "street" && canExtractExpedition}
-              coins={user.coins}
-              onlinePlayers={partyOnlinePlayers}
-              busy={Boolean(expeditionBusy)}
-              onStart={() => void handleStartExpedition()}
-              onExtract={() => void handleExtractExpedition()}
-              onAbandon={() => void handleAbandonExpedition()}
-              onSelectWeapon={(weaponId) => void handleSelectExpeditionWeapon(weaponId)}
-              onBuyWeapon={(weaponId) => void handleBuyExpeditionWeapon(weaponId)}
-              onBuyAmmo={() => void handleBuyExpeditionAmmo()}
-              onTraderBuy={(itemId) => void handleTraderBuy(itemId)}
-              onTraderSell={(itemId) => void handleTraderSell(itemId)}
-              onUseBandage={() => void handleUseExpeditionBandage()}
-              playerHealth={expeditionPlayerStatus.health}
-              playerMaxHealth={expeditionPlayerStatus.maxHealth}
-              playerDowned={expeditionPlayerStatus.downed}
-              onCraft={(recipeId) => void handleCraftExpeditionItem(recipeId)}
-              onUpgradeSkill={(skillId) => void handleUpgradeExpeditionSkill(skillId)}
-              onEquipGear={(slot, gearId) => void handleEquipExpeditionGear(slot, gearId)}
-              requestedTab={requestedExpeditionTab}
-              onInvite={handlePartyInvite}
-              onAcceptInvite={handlePartyAccept}
-              onDeclineInvite={handlePartyDecline}
-              onLeaveParty={handlePartyLeave}
-            />
-          ) : showNeighborhoodPanel && neighborhood ? (
+        {showUtilityPanel ? <aside className={showNeighborhoodPanel ? "side-panel neighborhood-side-panel utility-drawer" : "side-panel utility-drawer"}>
+          {showNeighborhoodPanel && neighborhood ? (
             <NeighborhoodPanel
               user={user}
               neighborhood={neighborhood}
@@ -2206,8 +2345,53 @@ export default function App() {
           </div>
             </>
           )}
-        </aside>
+        </aside> : null}
       </section>
+      {showExpeditionModal && expeditionProfile ? (
+        <div className="aegis-modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setShowExpeditionPanel(false);
+        }}>
+          <section className="aegis-modal-shell" role="dialog" aria-modal="true" aria-label="Центр подготовки AEGIS">
+            <ExpeditionPanel
+              profile={expeditionProfile}
+              run={expeditionRun}
+              currentUsername={user.username}
+              party={party}
+              invites={partyInvites.filter((invite) => invite.expiresAt > Date.now())}
+              outgoingInvites={partyOutgoingInvites.filter((invite) => invite.expiresAt > Date.now())}
+              canExtract={sceneMode === "street" && canExtractExpedition}
+              coins={user.coins}
+              onlinePlayers={partyOnlinePlayers}
+              busy={Boolean(expeditionBusy)}
+              onStart={() => void handleStartExpedition()}
+              onExtract={() => void handleExtractExpedition()}
+              onAbandon={() => void handleAbandonExpedition()}
+              onSelectWeapon={(weaponId) => void handleSelectExpeditionWeapon(weaponId)}
+              onBuyWeapon={(weaponId) => void handleBuyExpeditionWeapon(weaponId)}
+              onBuyAmmo={() => void handleBuyExpeditionAmmo()}
+              onTraderBuy={(itemId) => void handleTraderBuy(itemId)}
+              onTraderSell={(itemId) => void handleTraderSell(itemId)}
+              onUseBandage={() => void handleUseExpeditionBandage()}
+              playerHealth={expeditionPlayerStatus.health}
+              playerMaxHealth={expeditionPlayerStatus.maxHealth}
+              playerDowned={expeditionPlayerStatus.downed}
+              onCraft={(recipeId) => void handleCraftExpeditionItem(recipeId)}
+              onUpgradeSkill={(skillId) => void handleUpgradeExpeditionSkill(skillId)}
+              onUpgradeWeapon={(weaponId, stat) => void handleUpgradeExpeditionWeapon(weaponId, stat)}
+              onUpgradeGear={(gearId) => void handleUpgradeExpeditionGear(gearId)}
+              onClaimQuest={(questId) => void handleClaimExpeditionQuest(questId)}
+              onEquipGear={(slot, gearId) => void handleEquipExpeditionGear(slot, gearId)}
+              requestedTab={requestedExpeditionTab}
+              requestedTabRevision={requestedExpeditionTabRevision}
+              onClose={() => setShowExpeditionPanel(false)}
+              onInvite={handlePartyInvite}
+              onAcceptInvite={handlePartyAccept}
+              onDeclineInvite={handlePartyDecline}
+              onLeaveParty={handlePartyLeave}
+            />
+          </section>
+        </div>
+      ) : null}
       </main>
     </GameAssetGate>
   );

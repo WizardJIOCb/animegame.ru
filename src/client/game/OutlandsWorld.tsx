@@ -36,6 +36,9 @@ type OutlandsSurfaceTextures = {
   depot: THREE.CanvasTexture;
   concrete: THREE.CanvasTexture;
   ruins: THREE.CanvasTexture;
+  marsh: THREE.CanvasTexture;
+  ice: THREE.CanvasTexture;
+  reactor: THREE.CanvasTexture;
   organicDetail: THREE.CanvasTexture;
   hardDetail: THREE.CanvasTexture;
 };
@@ -216,6 +219,27 @@ function useOutlandsSurfaceTextures(): OutlandsSurfaceTextures {
       repeat: [20, 18],
       pattern: "concrete"
     }),
+    marsh: createSurfaceTexture({
+      seed: 0x71a0b4,
+      base: "#304d43",
+      accents: ["#172f2b", "#516350", "#776746", "#1d5851"],
+      repeat: [34, 30],
+      pattern: "soil"
+    }),
+    ice: createSurfaceTexture({
+      seed: 0x1ce5a1,
+      base: "#b9d2d4",
+      accents: ["#eef6ef", "#799fa9", "#66828d", "#dce8e4"],
+      repeat: [32, 28],
+      pattern: "rock"
+    }),
+    reactor: createSurfaceTexture({
+      seed: 0xc0e4a9,
+      base: "#282b31",
+      accents: ["#11161c", "#4d4e56", "#604c68", "#7f6a55"],
+      repeat: [28, 25],
+      pattern: "concrete"
+    }),
     organicDetail: createSurfaceTexture({
       seed: 0xbad321,
       base: "#888888",
@@ -293,7 +317,8 @@ function makeScatter(
   xRange: [number, number],
   zRange: [number, number],
   minRoadDistance: number,
-  scaleRange: [number, number]
+  scaleRange: [number, number],
+  forbidden: ReadonlyArray<readonly [number, number, number, number]> = []
 ) {
   const random = seededRandom(seed);
   const result: ScatterTransform[] = [];
@@ -303,6 +328,7 @@ function makeScatter(
     const x = THREE.MathUtils.lerp(xRange[0], xRange[1], random());
     const z = THREE.MathUtils.lerp(zRange[0], zRange[1], random());
     if (Math.abs(x) < minRoadDistance) continue;
+    if (forbidden.some(([minX, maxX, minZ, maxZ]) => x >= minX && x <= maxX && z >= minZ && z <= maxZ)) continue;
     if (x < -20 && x > -64 && z < -185 && z > -232) continue;
     if (x > 48 && x < 108 && z < -215 && z > -278) continue;
     if (x < -42 && x > -104 && z < -260) continue;
@@ -321,13 +347,32 @@ function makeScatter(
 const FOREST_TREES_A = makeScatter(112, 0x71a11, [-145, 145], [-108, -190], 11, [3.25, 5.15]);
 const FOREST_TREES_B = makeScatter(94, 0x9913f, [-150, 150], [-138, -232], 14, [2.9, 4.65]);
 const BORDER_TREES = makeScatter(72, 0x4d991, [-160, 160], [-220, -324], 42, [2.65, 4.2]);
-export const OUTLAND_TREE_BLOCKERS = [...FOREST_TREES_A, ...FOREST_TREES_B, ...BORDER_TREES].map((tree) => ({
+const FAR_BASE_CLEARINGS = [
+  [-292, -145, -735, -565],
+  [-62, 62, -950, -805],
+  [155, 320, -1160, -985],
+  [-105, 105, -1385, -1190]
+] as const;
+const WESTERN_WILD_TREES = makeScatter(156, 0x29b0a, [-405, -55], [-338, -754], 24, [3.1, 5.8], FAR_BASE_CLEARINGS);
+const MARSH_TREES = makeScatter(118, 0x4aa31, [55, 405], [-350, -748], 26, [2.8, 5.1], FAR_BASE_CLEARINGS);
+const FORTRESS_PINES = makeScatter(104, 0x830df, [-405, 405], [-735, -962], 72, [3.2, 5.7], FAR_BASE_CLEARINGS);
+export const OUTLAND_TREE_BLOCKERS = [
+  ...FOREST_TREES_A,
+  ...FOREST_TREES_B,
+  ...BORDER_TREES,
+  ...WESTERN_WILD_TREES,
+  ...MARSH_TREES,
+  ...FORTRESS_PINES
+].map((tree) => ({
   x: tree.position[0],
   z: tree.position[2],
   radius: THREE.MathUtils.clamp(tree.scale * 0.16, 0.46, 0.86)
 }));
 const QUARRY_ROCKS_A = makeScatter(23, 0x811dd, [44, 132], [-205, -292], 0, [0.8, 1.75]);
 const RUIN_ROCKS = makeScatter(18, 0x6bb51, [-136, -32], [-238, -320], 0, [0.65, 1.25]);
+const MARSH_REEDS = makeScatter(128, 0x7721c, [70, 390], [-365, -728], 18, [1.2, 2.6], FAR_BASE_CLEARINGS);
+const ICE_ROCKS = makeScatter(86, 0x1ceb7, [-395, 395], [-968, -1175], 42, [1.15, 3.2], FAR_BASE_CLEARINGS);
+const REACTOR_ROCKS = makeScatter(76, 0xd31a9, [-395, 395], [-1170, -1390], 58, [0.9, 2.65], FAR_BASE_CLEARINGS);
 
 function InstancedPartView({ part, transforms, surface }: {
   part: InstancedPart;
@@ -683,6 +728,345 @@ function OldCityRuins({ textures }: { textures: OutlandsSurfaceTextures }) {
           <meshBasicMaterial color="#d7d4a1" />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+function FarRegionGround({ textures }: { textures: OutlandsSurfaceTextures }) {
+  const zones = [
+    { key: "wilds", position: [-210, -0.079, -548] as const, size: [420, 436] as const, map: textures.forestFloor, color: "#526a4d", surface: "dirt" },
+    { key: "marsh", position: [210, -0.073, -548] as const, size: [420, 436] as const, map: textures.marsh, color: "#426456", surface: "dirt" },
+    { key: "fortress", position: [0, -0.067, -855] as const, size: [840, 250] as const, map: textures.meadow, color: "#617153", surface: "dirt" },
+    { key: "ice", position: [0, -0.061, -1068] as const, size: [840, 190] as const, map: textures.ice, color: "#d2e2df", surface: "dirt" },
+    { key: "reactor", position: [0, -0.055, -1280] as const, size: [840, 250] as const, map: textures.reactor, color: "#34353d", surface: "concrete" }
+  ] as const;
+  return (
+    <group>
+      {zones.map((zone) => (
+        <mesh
+          key={zone.key}
+          receiveShadow
+          position={zone.position}
+          rotation={[-Math.PI / 2, 0, 0]}
+          userData={{ impactSurface: zone.surface }}
+        >
+          <planeGeometry args={[zone.size[0], zone.size[1]]} />
+          <meshStandardMaterial color={zone.color} map={zone.map} roughness={1} bumpMap={textures.organicDetail} bumpScale={0.04} />
+        </mesh>
+      ))}
+      <mesh receiveShadow position={[0, -0.024, -865]} rotation={[-Math.PI / 2, 0, 0]} userData={{ impactSurface: "dirt" }}>
+        <planeGeometry args={[15, 1_070]} />
+        <meshStandardMaterial color="#b09a72" map={textures.trail} roughness={1} bumpMap={textures.hardDetail} bumpScale={0.025} />
+      </mesh>
+      <mesh receiveShadow position={[-112, -0.018, -646]} rotation={[-Math.PI / 2, 0, -0.9]} userData={{ impactSurface: "dirt" }}>
+        <planeGeometry args={[10, 250]} />
+        <meshStandardMaterial color="#8d7a5c" map={textures.trail} roughness={1} />
+      </mesh>
+      <mesh receiveShadow position={[104, -0.017, -520]} rotation={[-Math.PI / 2, 0, 0.76]} userData={{ impactSurface: "dirt" }}>
+        <planeGeometry args={[8, 230]} />
+        <meshStandardMaterial color="#786e55" map={textures.trail} roughness={1} />
+      </mesh>
+    </group>
+  );
+}
+
+function RelayBase({ textures }: { textures: OutlandsSurfaceTextures }) {
+  return (
+    <group position={[-220, 0, -650]}>
+      <mesh receiveShadow position={[0, 0.01, 0]} userData={{ impactSurface: "concrete" }}>
+        <boxGeometry args={[96, 0.1, 112]} />
+        <meshStandardMaterial color="#71736c" map={textures.concrete} roughness={0.96} bumpMap={textures.hardDetail} bumpScale={0.025} />
+      </mesh>
+      {[-47, 47].map((x) => (
+        <mesh key={x} castShadow receiveShadow position={[x, 3, 0]} userData={{ impactSurface: "concrete" }}>
+          <boxGeometry args={[1.1, 6, 112]} />
+          <meshStandardMaterial color="#626c6e" map={textures.concrete} roughness={0.9} />
+        </mesh>
+      ))}
+      <mesh castShadow receiveShadow position={[0, 3, -55.5]} userData={{ impactSurface: "concrete" }}>
+        <boxGeometry args={[96, 6, 1.1]} />
+        <meshStandardMaterial color="#626c6e" map={textures.concrete} roughness={0.9} />
+      </mesh>
+      {[-32, 32].map((x) => (
+        <mesh key={x} castShadow receiveShadow position={[x, 3, 55.5]} userData={{ impactSurface: "concrete" }}>
+          <boxGeometry args={[32, 6, 1.1]} />
+          <meshStandardMaterial color="#59696d" map={textures.concrete} roughness={0.9} />
+        </mesh>
+      ))}
+      <group position={[-20, 0, -17]}>
+        <mesh castShadow receiveShadow position={[0, 4, -13]} userData={{ impactSurface: "metal" }}>
+          <boxGeometry args={[42, 8, 0.8]} />
+          <meshStandardMaterial color="#39474b" metalness={0.46} roughness={0.52} />
+        </mesh>
+        {[-20.5, 20.5].map((x) => (
+          <mesh key={x} castShadow receiveShadow position={[x, 4, 0]} userData={{ impactSurface: "metal" }}>
+            <boxGeometry args={[0.8, 8, 26]} />
+            <meshStandardMaterial color="#39474b" metalness={0.46} roughness={0.52} />
+          </mesh>
+        ))}
+        <mesh castShadow receiveShadow position={[0, 8.2, 0]} userData={{ impactSurface: "metal" }}>
+          <boxGeometry args={[42, 0.7, 26]} />
+          <meshStandardMaterial color="#26383e" metalness={0.62} roughness={0.42} />
+        </mesh>
+      </group>
+      {[-35, 35].map((x, index) => (
+        <group key={x} position={[x, 0, -38]}>
+          <mesh castShadow position={[0, 8, 0]} userData={{ impactSurface: "metal" }}>
+            <cylinderGeometry args={[0.55, 0.8, 16, 10]} />
+            <meshStandardMaterial color="#263c43" metalness={0.78} roughness={0.34} />
+          </mesh>
+          <mesh position={[0, 16, 0]} rotation={[0, index * Math.PI / 2, 0]} userData={{ impactSurface: "metal" }}>
+            <boxGeometry args={[8, 0.28, 0.25]} />
+            <meshStandardMaterial color="#74d6e9" emissive="#209dbc" emissiveIntensity={1.4} metalness={0.6} />
+          </mesh>
+          <pointLight position={[0, 15.5, 0]} color="#65e9ff" intensity={5} distance={18} />
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function MarshExpanse({ textures }: { textures: OutlandsSurfaceTextures }) {
+  const pools = [
+    [145, -444, 32, 20], [240, -492, 42, 25], [311, -622, 51, 31], [102, -672, 30, 19]
+  ] as const;
+  return (
+    <group>
+      {pools.map(([x, z, sx, sz], index) => (
+        <mesh
+          key={index}
+          position={[x, 0.025, z]}
+          rotation={[-Math.PI / 2, 0, index * 0.4]}
+          scale={[sx, sz, 1]}
+          userData={{ impactSurface: "dirt" }}
+        >
+          <circleGeometry args={[1, 32]} />
+          <meshStandardMaterial color={index % 2 ? "#284c49" : "#1e5555"} transparent opacity={0.82} roughness={0.22} metalness={0.08} />
+        </mesh>
+      ))}
+      <StaticModel
+        url="/assets/models/kenney-nature/bridge_wood.glb"
+        position={[196, 0, -533]}
+        rotation={Math.PI / 2}
+        scale={4.8}
+        surface="wood"
+        tint="#96765d"
+        roughness={1}
+        detailTexture={textures.organicDetail}
+        bumpScale={0.05}
+      />
+      <StaticModel
+        url="/assets/models/kenney-nature/tent_detailedOpen.glb"
+        position={[232, 0, -565]}
+        rotation={-1.1}
+        scale={4.2}
+        surface="wood"
+        tint="#596e57"
+        roughness={1}
+        detailTexture={textures.organicDetail}
+      />
+      {[[168, -492], [272, -570], [120, -625]].map(([x, z], index) => (
+        <group key={index} position={[x, 0.06, z]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[2.5, 3.2, 28]} />
+            <meshBasicMaterial color="#54ffd3" transparent opacity={0.4} side={THREE.DoubleSide} />
+          </mesh>
+          <pointLight position={[0, 0.8, 0]} color="#4effd2" intensity={2.8} distance={10} />
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function SteelFortress({ textures }: { textures: OutlandsSurfaceTextures }) {
+  return (
+    <group position={[0, 0, -875]}>
+      <mesh receiveShadow position={[0, 0.02, 0]} userData={{ impactSurface: "concrete" }}>
+        <boxGeometry args={[136, 0.12, 152]} />
+        <meshStandardMaterial color="#667176" map={textures.depot} roughness={0.86} metalness={0.12} />
+      </mesh>
+      {[-67.5, 67.5].map((x) => (
+        <mesh key={x} castShadow receiveShadow position={[x, 5, 0]} userData={{ impactSurface: "metal" }}>
+          <boxGeometry args={[1.3, 10, 152]} />
+          <meshStandardMaterial color="#34434b" metalness={0.64} roughness={0.4} />
+        </mesh>
+      ))}
+      <mesh castShadow receiveShadow position={[0, 5, -75.5]} userData={{ impactSurface: "metal" }}>
+        <boxGeometry args={[136, 10, 1.3]} />
+        <meshStandardMaterial color="#34434b" metalness={0.64} roughness={0.4} />
+      </mesh>
+      {[-47, 47].map((x) => (
+        <mesh key={x} castShadow receiveShadow position={[x, 5, 75.5]} userData={{ impactSurface: "metal" }}>
+          <boxGeometry args={[42, 10, 1.3]} />
+          <meshStandardMaterial color="#34434b" metalness={0.64} roughness={0.4} />
+        </mesh>
+      ))}
+      <group position={[0, 0, -18]}>
+        <mesh castShadow receiveShadow position={[0, 7, -25]} userData={{ impactSurface: "concrete" }}>
+          <boxGeometry args={[64, 14, 1]} />
+          <meshStandardMaterial color="#4d5b61" map={textures.concrete} roughness={0.78} metalness={0.22} />
+        </mesh>
+        {[-31.5, 31.5].map((x) => (
+          <mesh key={x} castShadow receiveShadow position={[x, 7, 0]} userData={{ impactSurface: "concrete" }}>
+            <boxGeometry args={[1, 14, 50]} />
+            <meshStandardMaterial color="#4d5b61" map={textures.concrete} roughness={0.78} metalness={0.22} />
+          </mesh>
+        ))}
+        <mesh castShadow receiveShadow position={[0, 14.1, 0]} userData={{ impactSurface: "metal" }}>
+          <boxGeometry args={[64, 0.8, 50]} />
+          <meshStandardMaterial color="#263840" metalness={0.72} roughness={0.34} />
+        </mesh>
+        <mesh position={[0, 10, -25.6]}>
+          <boxGeometry args={[24, 1.1, 0.2]} />
+          <meshStandardMaterial color="#f59e42" emissive="#c85c1b" emissiveIntensity={1.5} />
+        </mesh>
+      </group>
+      {[-52, 52].flatMap((x) => [-58, 58].map((z) => (
+        <group key={`${x}-${z}`} position={[x, 0, z]}>
+          <mesh castShadow position={[0, 8, 0]} userData={{ impactSurface: "metal" }}>
+            <cylinderGeometry args={[2.2, 3, 16, 10]} />
+            <meshStandardMaterial color="#293b43" metalness={0.67} roughness={0.38} />
+          </mesh>
+          <mesh position={[0, 16.1, 0]}>
+            <sphereGeometry args={[0.65, 12, 9]} />
+            <meshStandardMaterial color="#ffc15a" emissive="#ff6a21" emissiveIntensity={2.5} />
+          </mesh>
+        </group>
+      )))}
+      <mesh position={[0, 0.075, 8]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[19, 22, 56]} />
+        <meshBasicMaterial color="#ffae4d" transparent opacity={0.38} side={THREE.DoubleSide} />
+      </mesh>
+      <pointLight position={[0, 5, 8]} color="#ff8a35" intensity={6} distance={45} />
+    </group>
+  );
+}
+
+function IceRidgeArena({ textures }: { textures: OutlandsSurfaceTextures }) {
+  const ridges = [
+    [-330, -1030, 42, 24], [-282, -1135, 55, 31], [-130, -1110, 34, 25],
+    [120, -1012, 38, 24], [318, -1010, 50, 35], [352, -1145, 62, 38]
+  ] as const;
+  return (
+    <group>
+      {ridges.map(([x, z, scale, height], index) => (
+        <mesh key={index} castShadow receiveShadow position={[x, height * 0.42, z]} scale={[scale, height, scale * 0.72]} rotation={[0, index * 0.73, 0]} userData={{ impactSurface: "concrete" }}>
+          <dodecahedronGeometry args={[1, 1]} />
+          <meshStandardMaterial color={index % 2 ? "#a9c8ce" : "#d5e4e2"} map={textures.ice} roughness={0.74} metalness={0.04} flatShading />
+        </mesh>
+      ))}
+      <group position={[238, 0, -1072]}>
+        <mesh receiveShadow position={[0, 0.02, 0]} userData={{ impactSurface: "concrete" }}>
+          <cylinderGeometry args={[35, 38, 0.2, 12]} />
+          <meshStandardMaterial color="#7897a1" map={textures.ice} roughness={0.75} />
+        </mesh>
+        {[0, 1, 2].map((index) => {
+          const angle = index / 3 * Math.PI * 2;
+          return (
+            <group key={index} position={[Math.cos(angle) * 26, 0, Math.sin(angle) * 26]}>
+              <mesh castShadow position={[0, 7, 0]} userData={{ impactSurface: "metal" }}>
+                <cylinderGeometry args={[0.7, 1.1, 14, 8]} />
+                <meshStandardMaterial color="#405d6b" metalness={0.7} roughness={0.33} />
+              </mesh>
+              <mesh position={[0, 14, 0]}>
+                <octahedronGeometry args={[1.35, 0]} />
+                <meshStandardMaterial color="#c8fbff" emissive="#58d9ff" emissiveIntensity={2.4} />
+              </mesh>
+            </group>
+          );
+        })}
+        <mesh position={[0, 0.15, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[12, 16, 56]} />
+          <meshBasicMaterial color="#7de9ff" transparent opacity={0.55} side={THREE.DoubleSide} />
+        </mesh>
+        <pointLight position={[0, 6, 0]} color="#83ebff" intensity={8} distance={48} />
+      </group>
+    </group>
+  );
+}
+
+function VoidReactor({ textures }: { textures: OutlandsSurfaceTextures }) {
+  return (
+    <group position={[0, 0, -1298]}>
+      <mesh receiveShadow position={[0, 0.02, 0]} userData={{ impactSurface: "concrete" }}>
+        <boxGeometry args={[154, 0.14, 190]} />
+        <meshStandardMaterial color="#303139" map={textures.reactor} roughness={0.8} metalness={0.22} />
+      </mesh>
+      {[-76.5, 76.5].map((x) => (
+        <mesh key={x} castShadow receiveShadow position={[x, 7, 0]} userData={{ impactSurface: "metal" }}>
+          <boxGeometry args={[1.5, 14, 190]} />
+          <meshStandardMaterial color="#252331" metalness={0.72} roughness={0.34} />
+        </mesh>
+      ))}
+      <mesh castShadow receiveShadow position={[0, 7, -94.5]} userData={{ impactSurface: "metal" }}>
+        <boxGeometry args={[154, 14, 1.5]} />
+        <meshStandardMaterial color="#252331" metalness={0.72} roughness={0.34} />
+      </mesh>
+      {[-54, 54].map((x) => (
+        <mesh key={x} castShadow receiveShadow position={[x, 7, 94.5]} userData={{ impactSurface: "metal" }}>
+          <boxGeometry args={[46, 14, 1.5]} />
+          <meshStandardMaterial color="#252331" metalness={0.72} roughness={0.34} />
+        </mesh>
+      ))}
+      <group position={[0, 0, -8]}>
+        <mesh castShadow position={[0, 16, 0]} userData={{ impactSurface: "metal" }}>
+          <cylinderGeometry args={[9, 13, 32, 16]} />
+          <meshStandardMaterial color="#302742" metalness={0.7} roughness={0.3} emissive="#48116f" emissiveIntensity={0.65} />
+        </mesh>
+        {[0, 1, 2].map((index) => (
+          <mesh key={index} position={[0, 9 + index * 8, 0]} rotation={[Math.PI / 2 + index * 0.32, 0, 0]}>
+            <torusGeometry args={[14 + index * 3.5, 0.5, 8, 48]} />
+            <meshStandardMaterial color="#d78cff" emissive="#8b35e4" emissiveIntensity={2.1} metalness={0.32} roughness={0.2} />
+          </mesh>
+        ))}
+        <mesh position={[0, 16, 0]}>
+          <icosahedronGeometry args={[7, 1]} />
+          <meshBasicMaterial color="#b85cff" transparent opacity={0.68} wireframe toneMapped={false} />
+        </mesh>
+        <pointLight position={[0, 17, 0]} color="#bd64ff" intensity={14} distance={72} />
+      </group>
+      {[-48, 48].flatMap((x) => [-55, 45].map((z) => (
+        <group key={`${x}-${z}`} position={[x, 0, z]}>
+          <mesh castShadow position={[0, 6, 0]} userData={{ impactSurface: "metal" }}>
+            <boxGeometry args={[9, 12, 9]} />
+            <meshStandardMaterial color="#353343" map={textures.reactor} metalness={0.58} roughness={0.39} />
+          </mesh>
+          <mesh position={[0, 12.2, 0]}>
+            <octahedronGeometry args={[1.1, 0]} />
+            <meshStandardMaterial color="#f1c3ff" emissive="#9a3be7" emissiveIntensity={2.6} />
+          </mesh>
+        </group>
+      )))}
+      <mesh position={[0, 0.12, 42]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[25, 29, 64]} />
+        <meshBasicMaterial color="#c460ff" transparent opacity={0.5} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+function FarOutlands({ textures }: { textures: OutlandsSurfaceTextures }) {
+  return (
+    <group>
+      <FarRegionGround textures={textures} />
+      <RelayBase textures={textures} />
+      <MarshExpanse textures={textures} />
+      <SteelFortress textures={textures} />
+      <IceRidgeArena textures={textures} />
+      <VoidReactor textures={textures} />
+
+      <InstancedNature url="/assets/models/kenney-nature/tree_pineRoundB.glb" transforms={WESTERN_WILD_TREES} surface="wood" tint="#a3bd9c" roughness={1} detailTexture={textures.organicDetail} bumpScale={0.05} />
+      <InstancedNature url="/assets/models/kenney-nature/tree_default_dark.glb" transforms={MARSH_TREES} surface="wood" tint="#547b66" roughness={1} detailTexture={textures.organicDetail} bumpScale={0.055} />
+      <InstancedNature url="/assets/models/kenney-nature/tree_pineDefaultA.glb" transforms={FORTRESS_PINES} surface="wood" tint="#b5c6aa" roughness={1} detailTexture={textures.organicDetail} bumpScale={0.05} />
+      <InstancedNature url="/assets/models/kenney-nature/plant_flatTall.glb" transforms={MARSH_REEDS} surface="dirt" tint="#789b6b" roughness={1} detailTexture={textures.organicDetail} bumpScale={0.04} />
+      <InstancedNature url="/assets/models/kenney-nature/stone_largeC.glb" transforms={ICE_ROCKS} surface="concrete" tint="#d7e7e3" roughness={0.86} detailTexture={textures.hardDetail} bumpScale={0.045} />
+      <InstancedNature url="/assets/models/kenney-nature/cliff_blockCave_stone.glb" transforms={REACTOR_ROCKS} surface="concrete" tint="#5b5366" roughness={0.9} detailTexture={textures.hardDetail} bumpScale={0.06} />
+
+      <ZoneMarker position={[176, 0, -382]} title="ТОПИ МЕРИДИАНА" subtitle="аномалии · крио-ресурсы" color="#4cf2c7" />
+      <ZoneMarker position={[-155, 0, -505]} title="РЕЛЕЙНАЯ БАЗА «ЭХО»" subtitle="инженеры · оружейная" color="#5fd8ff" />
+      <ZoneMarker position={[0, 0, -776]} title="СТАЛЬНАЯ КРЕПОСТЬ" subtitle="Железный Колосс · высокая угроза" color="#ff9a45" />
+      <ZoneMarker position={[176, 0, -982]} title="ЛЕДЯНОЙ ХРЕБЕТ" subtitle="Штормовой Серафим · экстремальная угроза" color="#8beaff" />
+      <ZoneMarker position={[0, 0, -1172]} title="РЕАКТОР ПУСТОТЫ" subtitle="финальная зона · Страж Пустоты" color="#ca6dff" />
     </group>
   );
 }
@@ -1064,6 +1448,7 @@ export function OutlandsEnvironment({
       <AbandonedDepot textures={textures} />
       <Quarry textures={textures} />
       <OldCityRuins textures={textures} />
+      <FarOutlands textures={textures} />
 
       <InstancedNature
         url="/assets/models/kenney-nature/tree_pineTallA.glb"

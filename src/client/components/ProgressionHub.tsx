@@ -1,22 +1,27 @@
 import {
   Backpack,
+  ClipboardList,
   Coins,
   Crosshair,
   Radio,
   Shield,
+  SlidersHorizontal,
   Sparkles,
-  Store
+  Store,
+  X
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-export const PROGRESSION_TAB_IDS = ["raid", "inventory", "skills", "equipment", "traders"] as const;
+export const PROGRESSION_TAB_IDS = ["raid", "quests", "inventory", "equipment", "upgrades", "skills", "traders"] as const;
 export type ProgressionTabId = typeof PROGRESSION_TAB_IDS[number];
 
 const TAB_META = {
   raid: { label: "Рейд", Icon: Crosshair },
+  quests: { label: "Задания", Icon: ClipboardList },
   inventory: { label: "Инвентарь", Icon: Backpack },
-  skills: { label: "Навыки", Icon: Sparkles },
   equipment: { label: "Экипировка", Icon: Shield },
+  upgrades: { label: "Модификации", Icon: SlidersHorizontal },
+  skills: { label: "Навыки", Icon: Sparkles },
   traders: { label: "Торговцы", Icon: Store }
 } satisfies Record<ProgressionTabId, { label: string; Icon: typeof Crosshair }>;
 
@@ -28,6 +33,7 @@ type ProgressionHubProps = {
   busy?: boolean;
   children: ReactNode;
   onTabChange: (tab: ProgressionTabId) => void;
+  onClose?: () => void;
 };
 
 export function ProgressionHub({
@@ -37,7 +43,8 @@ export function ProgressionHub({
   runActive,
   busy = false,
   children,
-  onTabChange
+  onTabChange,
+  onClose
 }: ProgressionHubProps) {
   return (
     <div className="progression-hub" aria-busy={busy}>
@@ -54,6 +61,12 @@ export function ProgressionHub({
           <span className={runActive ? "is-live" : ""}>{runActive ? "В РЕЙДЕ" : "НА БАЗЕ"}</span>
           <b><Coins size={13} /> {coins.toLocaleString("ru-RU")}</b>
         </div>
+        {onClose ? (
+          <button className="progression-command-close" type="button" onClick={onClose} aria-label="Закрыть AEGIS">
+            <X size={19} />
+            <kbd>Esc</kbd>
+          </button>
+        ) : null}
       </header>
 
       <nav className="progression-tabs" role="tablist" aria-label="Разделы центра подготовки">

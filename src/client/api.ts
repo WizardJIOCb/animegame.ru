@@ -10,6 +10,8 @@ import type {
   ExpeditionHitInput,
   ExpeditionItemId,
   ExpeditionProfile,
+  ExpeditionQuestDefinition,
+  ExpeditionQuestId,
   ExpeditionRecipeDefinition,
   ExpeditionRecipeId,
   ExpeditionRunSnapshot,
@@ -19,6 +21,7 @@ import type {
   ExpeditionTacticalTarget,
   ExpeditionWeaponDefinition,
   ExpeditionWeaponId,
+  ExpeditionWeaponUpgradeStat,
   ItemStack
 } from "../shared/expedition";
 
@@ -185,12 +188,52 @@ export function upgradeExpeditionSkill(skillId: ExpeditionSkillId) {
   });
 }
 
+export function upgradeExpeditionWeapon(weaponId: ExpeditionWeaponId, stat: ExpeditionWeaponUpgradeStat) {
+  return request<{
+    user: PublicUser;
+    profile: ExpeditionProfile;
+    weapon: ExpeditionWeaponDefinition;
+    stat: ExpeditionWeaponUpgradeStat;
+    level: number;
+    spent: { coins: number; ingredients: ItemStack[] };
+  }>("/api/expedition/upgrade-weapon", {
+    method: "POST",
+    body: JSON.stringify({ weaponId, stat })
+  });
+}
+
+export function upgradeExpeditionGear(gearId: ExpeditionGearId) {
+  return request<{
+    user: PublicUser;
+    profile: ExpeditionProfile;
+    gear: ExpeditionGearDefinition;
+    level: number;
+    spent: { coins: number; ingredients: ItemStack[] };
+  }>("/api/expedition/upgrade-gear", {
+    method: "POST",
+    body: JSON.stringify({ gearId })
+  });
+}
+
+export function claimExpeditionQuest(questId: ExpeditionQuestId) {
+  return request<{
+    user: PublicUser;
+    profile: ExpeditionProfile;
+    quest: ExpeditionQuestDefinition;
+    reward: ExpeditionQuestDefinition["reward"];
+  }>("/api/expedition/claim-quest", {
+    method: "POST",
+    body: JSON.stringify({ questId })
+  });
+}
+
 export function startExpedition() {
   return request<{ run: ExpeditionRunSnapshot; profile: ExpeditionProfile; partySize: number }>("/api/expedition/start", { method: "POST" });
 }
 
 export function lootExpeditionContainer(containerId: ExpeditionContainerId) {
   return request<{
+    profile: ExpeditionProfile;
     run: ExpeditionRunSnapshot;
     container: ExpeditionContainerDefinition;
     loot: ItemStack[];
@@ -231,6 +274,7 @@ export function useExpeditionTactical(
   targets: ExpeditionTacticalTarget[] = []
 ) {
   return request<{
+    profile: ExpeditionProfile;
     run: ExpeditionRunSnapshot;
     used: ItemStack;
     item: { name: string };
@@ -266,6 +310,7 @@ export type ExpeditionEnemyHitResult = {
 };
 
 export type ExpeditionHitResult = {
+  profile: ExpeditionProfile;
   run: ExpeditionRunSnapshot;
   hits: ExpeditionEnemyHitResult[];
 };

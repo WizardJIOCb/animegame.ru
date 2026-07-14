@@ -2,23 +2,30 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, resolve } from "node:path";
 import {
   createDefaultExpeditionProfile,
+  EXPEDITION_QUESTS,
+  EXPEDITION_QUEST_IDS,
   EXPEDITION_CONTAINER_IDS,
   EXPEDITION_ENEMIES,
   EXPEDITION_ENEMY_IDS,
   EXPEDITION_GEAR,
   EXPEDITION_GEAR_IDS,
   EXPEDITION_GEAR_SLOTS,
+  EXPEDITION_GEAR_MAX_UPGRADE,
   EXPEDITION_ITEM_IDS,
   EXPEDITION_DOWNED_BLEED_OUT_MS,
   EXPEDITION_SHIELD_PER_MODULE,
   EXPEDITION_SKILLS,
   EXPEDITION_SKILL_IDS,
   EXPEDITION_WEAPON_IDS,
+  EXPEDITION_WEAPON_UPGRADE_PATHS,
+  EXPEDITION_WEAPON_UPGRADE_STATS,
   type ExpeditionContainerId,
   type ExpeditionEnemyId,
   type ExpeditionGearId,
   type ExpeditionItemId,
   type ExpeditionProfile,
+  type ExpeditionQuestId,
+  type ExpeditionWeaponUpgradeLevels,
   type ExpeditionWeaponId,
   type ItemStack
 } from "../shared/expedition";
@@ -170,6 +177,28 @@ function normalizeExpeditionProfile(value: Partial<ExpeditionProfile> | undefine
     const owned = gearId ? stash.some((stack) => stack.itemId === gearId && stack.quantity > 0) : false;
     return [slot, gearId && owned && EXPEDITION_GEAR[gearId].slot === slot ? gearId : null];
   })) as ExpeditionProfile["equippedGear"];
+  const weaponUpgrades = Object.fromEntries(EXPEDITION_WEAPON_IDS.map((weaponId) => [
+    weaponId,
+    Object.fromEntries(EXPEDITION_WEAPON_UPGRADE_STATS.map((stat) => [
+      stat,
+      clampInteger(value?.weaponUpgrades?.[weaponId]?.[stat], 0, EXPEDITION_WEAPON_UPGRADE_PATHS[stat].maxLevel, 0)
+    ])) as ExpeditionWeaponUpgradeLevels
+  ])) as ExpeditionProfile["weaponUpgrades"];
+  const gearUpgrades = Object.fromEntries(EXPEDITION_GEAR_IDS.map((gearId) => [
+    gearId,
+    clampInteger(value?.gearUpgrades?.[gearId], 0, EXPEDITION_GEAR_MAX_UPGRADE, 0)
+  ])) as ExpeditionProfile["gearUpgrades"];
+  const quests = Object.fromEntries(EXPEDITION_QUEST_IDS.map((questId) => {
+    const stored = value?.quests?.[questId];
+    const legacyCompleted = completedQuestIds.includes(questId);
+    const progress = clampInteger(stored?.progress, 0, EXPEDITION_QUESTS[questId].target, legacyCompleted ? EXPEDITION_QUESTS[questId].target : 0);
+    const completed = legacyCompleted || stored?.completed === true || progress >= EXPEDITION_QUESTS[questId].target;
+    return [questId, {
+      progress: completed ? EXPEDITION_QUESTS[questId].target : progress,
+      completed,
+      claimed: legacyCompleted || (completed && stored?.claimed === true)
+    }];
+  })) as Record<ExpeditionQuestId, ExpeditionProfile["quests"][ExpeditionQuestId]>;
 
   return {
     stash,
@@ -181,6 +210,9 @@ function normalizeExpeditionProfile(value: Partial<ExpeditionProfile> | undefine
       clampInteger(value?.skills?.[skillId], 0, EXPEDITION_SKILLS[skillId].maxLevel, defaults.skills[skillId])
     ])) as ExpeditionProfile["skills"],
     equippedGear,
+    weaponUpgrades,
+    gearUpgrades,
+    quests,
     completedQuestIds,
     stats: {
       expeditionsStarted: clampInteger(value?.stats?.expeditionsStarted, 0, 999_999_999, 0),
@@ -233,7 +265,7 @@ function normalizePersistedExpeditionRun(
     const rawPosition = value.enemyDeathPositions?.[enemyId];
     const x = Number(rawPosition?.x);
     const z = Number(rawPosition?.z);
-    if (Number.isFinite(x) && Number.isFinite(z) && Math.abs(x) <= 1_000 && Math.abs(z) <= 1_000) {
+    if (Number.isFinite(x) && Number.isFinite(z) && Math.abs(x) <= 500 && Math.abs(z) <= 1_500) {
       enemyDeathPositions[enemyId] = { x, z };
     }
   }
@@ -244,16 +276,17 @@ function normalizePersistedExpeditionRun(
       : total
   ), 0) + EXPEDITION_GEAR_SLOTS.reduce((total, slot) => {
     const gearId = user.expedition.equippedGear[slot];
-    return total + (gearId ? EXPEDITION_GEAR[gearId].bonusShield : 0);
+    const upgradeLevel = gearId ? user.expedition.gearUpgrades[gearId] : 0;
+    return total + (gearId ? EXPEDITION_GEAR[gearId].bonusShield * (1 + upgradeLevel * 0.08) : 0);
   }, 0)) * (1 + user.expedition.skills.armor * 0.04));
   const playerHealth = clampInteger(value.playerHealth, 0, playerMaxHealth, playerMaxHealth);
   const playerShield = clampInteger(value.playerShield, 0, maximumShield, maximumShield);
   const rawPlayerPosition = value.playerPosition;
   const rawPlayerRotation = clampNumber(rawPlayerPosition?.rotation, -Math.PI * 2, Math.PI * 2, 0);
   const playerPosition: PersistedExpeditionRun["playerPosition"] = {
-    x: clampNumber(rawPlayerPosition?.x, -170, 170, 0),
+    x: clampNumber(rawPlayerPosition?.x, -420, 420, 0),
     y: clampNumber(rawPlayerPosition?.y, 0, 4, 0),
-    z: clampNumber(rawPlayerPosition?.z, -330, 90, 68),
+    z: clampNumber(rawPlayerPosition?.z, -1_400, 90, 68),
     rotation: Math.atan2(Math.sin(rawPlayerRotation), Math.cos(rawPlayerRotation)),
     vehicle: rawPlayerPosition?.vehicle === true
   };

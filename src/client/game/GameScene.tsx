@@ -1611,6 +1611,12 @@ function ExpeditionGearOverlay({
               <boxGeometry args={[0.065, 0.22, 0.22]} />
               <meshStandardMaterial color="#1d2c34" roughness={0.42} metalness={0.45} />
             </mesh>
+            {gear.helmet === "colossus-helmet" ? ([-1, 1] as const).map((side) => (
+              <mesh key={side} castShadow position={[side * 0.24, 0.13, 0]} rotation={[0, 0, side * -0.48]}>
+                <coneGeometry args={[0.075, 0.34, 6]} />
+                <meshStandardMaterial color="#d28b42" emissive="#7d2f0d" emissiveIntensity={0.75} metalness={0.7} roughness={0.28} />
+              </mesh>
+            )) : null}
           </group>
         </BoneAttachment>
       ) : null}
@@ -1631,6 +1637,20 @@ function ExpeditionGearOverlay({
                 <meshStandardMaterial color="#62757d" roughness={0.4} metalness={0.45} />
               </mesh>
             ))}
+            {gear.armor === "storm-vest" ? (
+              <>
+                <mesh castShadow position={[0, 0.02, -0.34]}>
+                  <octahedronGeometry args={[0.12, 0]} />
+                  <meshStandardMaterial color="#9ef7ff" emissive="#31baf5" emissiveIntensity={2.2} metalness={0.25} roughness={0.18} />
+                </mesh>
+                {([-1, 1] as const).map((side) => (
+                  <mesh key={side} castShadow position={[side * 0.36, 0.18, -0.02]} rotation={[0, 0, side * 0.3]}>
+                    <boxGeometry args={[0.22, 0.13, 0.38]} />
+                    <meshStandardMaterial color="#426d91" emissive="#145d8c" emissiveIntensity={0.65} metalness={0.58} roughness={0.3} />
+                  </mesh>
+                ))}
+              </>
+            ) : null}
           </group>
         </BoneAttachment>
       ) : null}
@@ -1648,6 +1668,12 @@ function ExpeditionGearOverlay({
               <boxGeometry args={[0.11, 0.24, 0.16]} />
               <meshStandardMaterial color="#1b2d26" roughness={0.58} metalness={0.15} />
             </mesh>
+            {gear.legs === "void-greaves" ? (
+              <mesh castShadow position={[0, -0.08, -0.16]} rotation={[Math.PI / 2, 0, 0]}>
+                <coneGeometry args={[0.09, 0.3, 5]} />
+                <meshStandardMaterial color="#a86de0" emissive="#6c27ad" emissiveIntensity={1.15} metalness={0.52} roughness={0.28} />
+              </mesh>
+            ) : null}
           </group>
         </BoneAttachment>
       )) : null}
