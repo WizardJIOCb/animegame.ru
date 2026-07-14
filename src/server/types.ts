@@ -1,7 +1,8 @@
-import type { ExpeditionProfile, ExpeditionRunSnapshot } from "../shared/expedition";
+import type { ExpeditionEnemyId, ExpeditionProfile, ExpeditionRunSnapshot } from "../shared/expedition";
 
 export type PersistedExpeditionRun = ExpeditionRunSnapshot & {
   nextHitAt: number;
+  enemyDeathPositions?: Partial<Record<ExpeditionEnemyId, { x: number; z: number }>>;
 };
 
 export type ItemType = "furniture" | "clothing" | "pet" | "decor" | "outdoor" | "character" | "activity";

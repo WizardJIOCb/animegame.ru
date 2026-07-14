@@ -8,6 +8,8 @@ export type CharacterMotion =
   | "jumpLand"
   | "crouchIdle"
   | "crouchWalk"
+  | "crawlIdle"
+  | "crawl"
   | "aim"
   | "shoot"
   | "reload"
@@ -235,5 +237,5 @@ export const WEAPONS: Record<WeaponKind, WeaponConfig> = {
 };
 
 export function isLocomotionMotion(motion: CharacterMotion) {
-  return motion === "walk" || motion === "run" || motion === "crouchWalk";
+  return motion === "walk" || motion === "run" || motion === "crouchWalk" || motion === "crawl";
 }

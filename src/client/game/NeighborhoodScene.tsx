@@ -13,7 +13,7 @@ import {
   type SurfaceImpactMark
 } from "./CombatEffects";
 import { HomePlacedObject, Player } from "./GameScene";
-import { OutlandsEnvironment, OutlandsRobot, type RobotMotion } from "./OutlandsWorld";
+import { OUTLAND_TREE_BLOCKERS, OutlandsEnvironment, OutlandsRobot, type RobotMotion } from "./OutlandsWorld";
 import {
   TOWN_CAR_MODEL_URL,
   WEAPONS,
@@ -49,6 +49,10 @@ import type {
   ExpeditionHitZone,
   ExpeditionSkillId
 } from "../../shared/expedition";
+import {
+  EXPEDITION_DOWNED_BLEED_OUT_MS,
+  EXPEDITION_SHIELD_PER_MODULE
+} from "../../shared/expedition";
 
 type WorldPosition = { x: number; y: number; z: number; rotation?: number; vehicle?: boolean };
 
@@ -72,22 +76,41 @@ type NeighborhoodSceneProps = {
   expeditionWeapon?: WeaponKind;
   expeditionSkills?: Record<ExpeditionSkillId, number>;
   lootedContainerIds?: string[];
+  lootedEnemyIds?: string[];
   defeatedEnemyIds?: string[];
   enemyHealth?: Partial<Record<ExpeditionEnemyId, number>>;
   expeditionSyncPending?: boolean;
   expeditionAmmo?: number;
+  bandageCount?: number;
+  shieldCount?: number;
+  expeditionHealPulse?: number;
+  expeditionPlayerHealth?: number;
+  expeditionPlayerShield?: number;
+  expeditionDownedAt?: number | null;
+  expeditionBleedOutAt?: number | null;
   onWorldRegionChange?: (region: WorldRegion) => void;
   onExtractionAvailabilityChange?: (available: boolean) => void;
   onLootContainer?: (containerId: string) => void;
+  onLootEnemy?: (enemyId: string) => void;
+  onUseBandage?: () => void | boolean | Promise<void | boolean>;
   onExpeditionShot?: (hits: ExpeditionHitInput[]) => void;
   onExtract?: () => void;
-  onPlayerDefeated?: () => void;
+  onPlayerDefeated?: () => boolean | Promise<boolean>;
+  onPlayerSurrender?: () => boolean | Promise<boolean>;
+  onExpeditionStatusChange?: (status: { health: number; maxHealth: number; shield: number; downed: boolean }) => void;
 };
 
 type CarTransform = {
   position: THREE.Vector3;
   rotation: number;
 };
+
+type PlayerDownedUiState = {
+  fallingUntil: number;
+  bleedOutAt: number;
+} | null;
+
+type PlayerHitFeedback = "health" | "shield" | "heal";
 
 type CameraBounds = {
   minX: number;
@@ -147,6 +170,9 @@ const MAX_CORPSE_IMPULSE_SPEED = 8;
 const INTERIOR_GRID_STEP = 0.45;
 const PLAYER_PATH_CLEARANCE = 0.28;
 const CAR_MAX_SPEED = 12.5;
+const DOWNED_FALL_MS = 1_350;
+const DOWNED_BLEED_OUT_MS = EXPEDITION_DOWNED_BLEED_OUT_MS;
+const DOWNED_CRAWL_SPEED = 0.58;
 const DOOR_HALF_WIDTH = 0.72;
 const WALL_THICKNESS = 0.18;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -180,6 +206,7 @@ type NpcRuntime = {
   damage: number;
   aggroRange: number;
   attackRange: number;
+  attackStyle: "melee" | "ranged";
   respawnMs: number;
   homePosition: THREE.Vector3;
   patrol: THREE.Vector3[];
@@ -524,8 +551,9 @@ const OUTLANDS_CIRCLE_BLOCKERS = [
   { x: 104, z: -308, radius: 12 },
   { x: 151, z: -303, radius: 20 },
   { x: 14, z: -141, radius: 2.2 },
+  ...OUTLAND_TREE_BLOCKERS,
   ...OUTLAND_CONTAINERS.map((container) => ({ x: container.position[0], z: container.position[2], radius: 1.25 }))
-] as const;
+];
 
 function resolveOutlandsCollisions(current: THREE.Vector3, requested: THREE.Vector3, clearance = 0.42) {
   if (requested.z > -108 && current.z > -108) return requested;
@@ -1839,6 +1867,7 @@ function createNpcRuntime(resident: NeighborhoodResident): NpcRuntime {
     damage: 0,
     aggroRange: 0,
     attackRange: 0,
+    attackStyle: "melee",
     respawnMs: NPC_RESPAWN_MS,
     homePosition: position.clone(),
     patrol: NPC_PATROL_ROUTE,
@@ -1890,6 +1919,7 @@ function createOutlandsRuntime(definition: OutlandsEnemyDefinition): NpcRuntime 
     damage: definition.damage,
     aggroRange: definition.aggroRange,
     attackRange: definition.attackRange,
+    attackStyle: definition.attackStyle,
     respawnMs: definition.respawnMs,
     homePosition: position.clone(),
     patrol,
@@ -2300,15 +2330,26 @@ function NeighborhoodWorld({
   expeditionWeapon,
   expeditionSkills,
   lootedContainerIds = [],
+  lootedEnemyIds = [],
   defeatedEnemyIds = [],
   enemyHealth,
   expeditionSyncPending = false,
+  bandageCount = 0,
+  shieldCount = 0,
+  expeditionHealPulse = 0,
+  expeditionPlayerHealth,
+  expeditionPlayerShield,
+  expeditionDownedAt,
+  expeditionBleedOutAt,
   onWorldRegionChange,
   onExtractionAvailabilityChange,
   onLootContainer,
+  onLootEnemy,
+  onUseBandage,
   onExpeditionShot,
   onExtract,
   onPlayerDefeated,
+  onPlayerSurrender,
   onDrivingChange,
   selectedWeapon,
   onWeaponChange,
@@ -2322,7 +2363,10 @@ function NeighborhoodWorld({
   onCameraModeChange,
   onPointerLockChange,
   recoilRef,
-  onVitalsChange
+  onVitalsChange,
+  onDownedStateChange,
+  onPlayerHitFeedback,
+  surrenderNonce
 }: NeighborhoodSceneProps & {
   onDrivingChange: (driving: boolean) => void;
   selectedWeapon: WeaponKind;
@@ -2337,7 +2381,10 @@ function NeighborhoodWorld({
   onCameraModeChange: (mode: CameraMode) => void;
   onPointerLockChange: (locked: boolean) => void;
   recoilRef: RefObject<WeaponRecoilState>;
-  onVitalsChange: (health: number, region: WorldRegion) => void;
+  onVitalsChange: (health: number, region: WorldRegion, shield: number) => void;
+  onDownedStateChange: (state: PlayerDownedUiState) => void;
+  onPlayerHitFeedback: (feedback: PlayerHitFeedback) => void;
+  surrenderNonce: number;
 }) {
   const { camera, gl } = useThree();
   const worldResidents = useMemo(() => residents.map((resident) => resident.username === user.username ? {
@@ -2422,6 +2469,7 @@ function NeighborhoodWorld({
   const [playerMotion, setPlayerMotion] = useState<CharacterMotion>("idle");
   const [shotEffects, setShotEffects] = useState<ShotEffect[]>([]);
   const [bloodEffects, setBloodEffects] = useState<BloodEffect[]>([]);
+  const [playerRagdollImpact, setPlayerRagdollImpact] = useState<RagdollImpact>();
   const [impactEffects, setImpactEffects] = useState<SurfaceImpactEffect[]>([]);
   const [impactMarks, setImpactMarks] = useState<SurfaceImpactMark[]>([]);
   const impactMarkGeometriesRef = useRef(new Set<THREE.BufferGeometry>());
@@ -2431,14 +2479,38 @@ function NeighborhoodWorld({
   const [introView, setIntroView] = useState(!initialPosition);
   const [activeInterior, setActiveInterior] = useState<NeighborhoodResident | null>(activeInteriorRef.current);
   const [shoulderSide, setShoulderSide] = useState<1 | -1>(1);
-  const playerHealthRef = useRef(100);
+  const restoredDowned = Boolean(expeditionActive && expeditionDownedAt && expeditionBleedOutAt);
+  const restoredClockNow = performance.now();
+  const restoredFallingUntil = restoredDowned
+    ? restoredClockNow + Math.max(0, Number(expeditionDownedAt) + DOWNED_FALL_MS - Date.now())
+    : 0;
+  const restoredBleedOutAt = restoredDowned
+    ? restoredClockNow + Math.max(0, Number(expeditionBleedOutAt) - Date.now())
+    : 0;
+  const playerHealthRef = useRef(expeditionActive ? expeditionPlayerHealth ?? 100 : 100);
+  const playerShieldRef = useRef(expeditionActive
+    ? expeditionPlayerShield ?? Math.max(0, shieldCount) * EXPEDITION_SHIELD_PER_MODULE
+    : 0);
+  const playerDownedRef = useRef(restoredDowned);
+  const downedFallingUntilRef = useRef(restoredFallingUntil);
+  const downedBleedOutAtRef = useRef(restoredBleedOutAt);
+  const healingRef = useRef(false);
+  const surrenderRequestedRef = useRef(false);
+  const defeatSubmissionRef = useRef(false);
+  const defeatRetryAtRef = useRef(0);
+  const lastHealPulseRef = useRef(expeditionHealPulse);
+  const lastSurrenderNonceRef = useRef(surrenderNonce);
+  const enemyDamageTimersRef = useRef(new Set<number>());
   const currentRegionRef = useRef<WorldRegion>(worldRegionAt(playerPosition.current.x, playerPosition.current.z));
   const nearbyContainerRef = useRef<string | undefined>(undefined);
+  const nearbyEnemyRef = useRef<string | undefined>(undefined);
   const nearExtractionRef = useRef(false);
   const extractionAvailableRef = useRef(false);
   const [nearbyContainerId, setNearbyContainerId] = useState<string>();
+  const [nearbyEnemyId, setNearbyEnemyId] = useState<string>();
   const [nearExtraction, setNearExtraction] = useState(false);
   const lootedContainerSet = useMemo(() => new Set(lootedContainerIds), [lootedContainerIds]);
+  const lootedEnemySet = useMemo(() => new Set(lootedEnemyIds), [lootedEnemyIds]);
   const defeatedEnemySet = useMemo(() => new Set(defeatedEnemyIds), [defeatedEnemyIds]);
   const expeditionActiveRef = useRef(expeditionActive);
   const previousExpeditionActiveRef = useRef(false);
@@ -2447,6 +2519,7 @@ function NeighborhoodWorld({
   const weaponSkillLevel = expeditionSkills?.weapons ?? 0;
   const playerMaxHealthRef = useRef(100 + survivalSkillLevel * 10);
   const weaponSkillLevelRef = useRef(weaponSkillLevel);
+  const bandageCountRef = useRef(bandageCount);
 
   const ownOutfit = getCatalogItem(catalog, user.avatar.outfit);
   const ownCharacter = getCatalogItem(catalog, user.avatar.character);
@@ -2458,9 +2531,12 @@ function NeighborhoodWorld({
   const onMoveRef = useRef(onMove);
   const buildModeRef = useRef(buildMode);
   const lootedContainerSetRef = useRef(lootedContainerSet);
+  const lootedEnemySetRef = useRef(lootedEnemySet);
   const onDrivingChangeRef = useRef(onDrivingChange);
   const onExtractRef = useRef(onExtract);
   const onLootContainerRef = useRef(onLootContainer);
+  const onLootEnemyRef = useRef(onLootEnemy);
+  const onUseBandageRef = useRef(onUseBandage);
   const onReloadRef = useRef(onReload);
   const onWeaponChangeRef = useRef(onWeaponChange);
 
@@ -2472,11 +2548,15 @@ function NeighborhoodWorld({
   expeditionWeaponRef.current = expeditionWeapon;
   playerMaxHealthRef.current = 100 + survivalSkillLevel * 10;
   weaponSkillLevelRef.current = weaponSkillLevel;
+  bandageCountRef.current = bandageCount;
   buildModeRef.current = buildMode;
   lootedContainerSetRef.current = lootedContainerSet;
+  lootedEnemySetRef.current = lootedEnemySet;
   onDrivingChangeRef.current = onDrivingChange;
   onExtractRef.current = onExtract;
   onLootContainerRef.current = onLootContainer;
+  onLootEnemyRef.current = onLootEnemy;
+  onUseBandageRef.current = onUseBandage;
   onReloadRef.current = onReload;
   onWeaponChangeRef.current = onWeaponChange;
 
@@ -2490,13 +2570,15 @@ function NeighborhoodWorld({
 
   useEffect(() => () => {
     onExtractionAvailabilityChange?.(false);
+    for (const timer of enemyDamageTimersRef.current) window.clearTimeout(timer);
+    enemyDamageTimersRef.current.clear();
   }, [onExtractionAvailabilityChange]);
 
   useEffect(() => {
     const region = worldRegionAt(playerPosition.current.x, playerPosition.current.z);
     currentRegionRef.current = region;
     onWorldRegionChange?.(region);
-    onVitalsChange(playerHealthRef.current, region);
+    onVitalsChange(playerHealthRef.current, region, playerShieldRef.current);
   }, [onVitalsChange, onWorldRegionChange]);
 
   useEffect(() => {
@@ -2521,7 +2603,7 @@ function NeighborhoodWorld({
       playerRotation.current = Math.PI;
       currentRegionRef.current = "city";
       onWorldRegionChange?.("city");
-      onVitalsChange(playerHealthRef.current, "city");
+      onVitalsChange(playerHealthRef.current, "city", playerShieldRef.current);
       onMoveRef.current({ x: 0, y: 0, z: -72, rotation: Math.PI, vehicle: false });
     }
   }, [expeditionActive, onDrivingChange, onVitalsChange, onWorldRegionChange, ownCarStart]);
@@ -2566,7 +2648,26 @@ function NeighborhoodWorld({
     if (previousExpeditionActiveRef.current === expeditionActive) return;
     const wasActive = previousExpeditionActiveRef.current;
     previousExpeditionActiveRef.current = expeditionActive;
-    playerHealthRef.current = playerMaxHealthRef.current;
+    const now = performance.now();
+    const nextDowned = Boolean(expeditionActive && expeditionDownedAt && expeditionBleedOutAt);
+    playerHealthRef.current = expeditionActive
+      ? THREE.MathUtils.clamp(expeditionPlayerHealth ?? playerMaxHealthRef.current, 0, playerMaxHealthRef.current)
+      : playerMaxHealthRef.current;
+    playerShieldRef.current = expeditionActive
+      ? Math.max(0, expeditionPlayerShield ?? Math.max(0, shieldCount) * EXPEDITION_SHIELD_PER_MODULE)
+      : 0;
+    playerDownedRef.current = nextDowned;
+    setPlayerRagdollImpact(undefined);
+    downedFallingUntilRef.current = nextDowned
+      ? now + Math.max(0, Number(expeditionDownedAt) + DOWNED_FALL_MS - Date.now())
+      : 0;
+    downedBleedOutAtRef.current = nextDowned
+      ? now + Math.max(0, Number(expeditionBleedOutAt) - Date.now())
+      : 0;
+    onDownedStateChange(nextDowned ? {
+      fallingUntil: downedFallingUntilRef.current,
+      bleedOutAt: downedBleedOutAtRef.current
+    } : null);
     for (const { runtime } of outlandsActors) {
       const defeated = Boolean(expeditionActive && runtime.enemyId && defeatedEnemySet.has(runtime.enemyId));
       const storedHealth = runtime.enemyId ? Number(enemyHealth?.[runtime.enemyId as ExpeditionEnemyId]) : Number.NaN;
@@ -2615,8 +2716,54 @@ function NeighborhoodWorld({
         onMoveRef.current({ x: 0, y: 0, z: -72, rotation: Math.PI, vehicle: false });
       }
     }
-    onVitalsChange(playerHealthRef.current, currentRegionRef.current);
-  }, [defeatedEnemySet, enemyHealth, expeditionActive, onDrivingChange, onVitalsChange, onWorldRegionChange, outlandsActors, ownCarStart]);
+    onVitalsChange(playerHealthRef.current, currentRegionRef.current, playerShieldRef.current);
+  }, [defeatedEnemySet, enemyHealth, expeditionActive, expeditionBleedOutAt, expeditionDownedAt, expeditionPlayerHealth, expeditionPlayerShield, onDownedStateChange, onDrivingChange, onVitalsChange, onWorldRegionChange, outlandsActors, ownCarStart, shieldCount]);
+
+  useEffect(() => {
+    if (!expeditionActive) return;
+    let changed = false;
+    if (Number.isFinite(expeditionPlayerHealth)) {
+      const nextHealth = THREE.MathUtils.clamp(
+        Number(expeditionPlayerHealth),
+        0,
+        playerMaxHealthRef.current
+      );
+      if (nextHealth !== playerHealthRef.current) {
+        playerHealthRef.current = nextHealth;
+        changed = true;
+      }
+    }
+    if (Number.isFinite(expeditionPlayerShield)) {
+      const nextShield = Math.max(0, Number(expeditionPlayerShield));
+      if (nextShield !== playerShieldRef.current) {
+        playerShieldRef.current = nextShield;
+        changed = true;
+      }
+    }
+    if (expeditionDownedAt && expeditionBleedOutAt) {
+      const now = performance.now();
+      const nextFallingUntil = now + Math.max(0, expeditionDownedAt + DOWNED_FALL_MS - Date.now());
+      const nextBleedOutAt = now + Math.max(0, expeditionBleedOutAt - Date.now());
+      playerDownedRef.current = true;
+      downedFallingUntilRef.current = nextFallingUntil;
+      downedBleedOutAtRef.current = nextBleedOutAt;
+      updatePlayerMotion("death");
+      onDownedStateChange({ fallingUntil: nextFallingUntil, bleedOutAt: nextBleedOutAt });
+      changed = true;
+    }
+    if (changed) {
+      onVitalsChange(playerHealthRef.current, currentRegionRef.current, playerShieldRef.current);
+    }
+  }, [expeditionActive, expeditionBleedOutAt, expeditionDownedAt, expeditionPlayerHealth, expeditionPlayerShield, onDownedStateChange, onVitalsChange]);
+
+  useEffect(() => {
+    if (lastHealPulseRef.current === expeditionHealPulse) return;
+    lastHealPulseRef.current = expeditionHealPulse;
+    if (!expeditionActive || playerDownedRef.current) return;
+    onVitalsChange(playerHealthRef.current, currentRegionRef.current, playerShieldRef.current);
+    onPlayerHitFeedback("heal");
+    onToastRef.current("Бинт использован · здоровье восстановлено");
+  }, [expeditionActive, expeditionHealPulse, onPlayerHitFeedback, onVitalsChange]);
 
   useEffect(() => {
     // Keep the immediate hit reaction while requests are queued. Applying an
@@ -2783,7 +2930,7 @@ function NeighborhoodWorld({
     }
   }
 
-  function setCameraMode(next: CameraMode) {
+  function setCameraMode(next: CameraMode, capturePointer = true) {
     cameraModeRef.current = next;
     onCameraModeChange(next);
     clickTarget.current = null;
@@ -2797,7 +2944,8 @@ function NeighborhoodWorld({
       cameraYaw.current = playerRotation.current;
       cameraPitch.current = -0.08;
       lastRotationSent.current = playerRotation.current;
-      requestThirdPersonPointerLock();
+      if (capturePointer) requestThirdPersonPointerLock();
+      else if (document.pointerLockElement === gl.domElement) document.exitPointerLock?.();
     } else if (document.pointerLockElement === gl.domElement) {
       document.exitPointerLock?.();
     }
@@ -2993,14 +3141,16 @@ function NeighborhoodWorld({
   }
 
   function spawnEnemyTracer(runtime: NpcRuntime, now: number) {
-    const start = runtime.position.clone().setY(runtime.kind === "human" ? 1.25 : 0.95);
+    const start = runtime.position.clone()
+      .addScaledVector(frontVector(runtime.rotationRef.current), runtime.kind === "human" ? 0.62 : 0.95)
+      .setY(runtime.kind === "human" ? 1.25 : runtime.kind === "eyeDrone" ? 1.45 : 1.05);
     const end = playerPosition.current.clone().setY(1.02);
     shotId.current += 1;
     const shot: ShotEffect = {
       id: shotId.current,
       start,
       end,
-      color: runtime.kind === "human" ? "#ffb15c" : "#ff4f67",
+      color: runtime.kind === "human" ? "#ffb15c" : "#ff345f",
       weapon: "laser",
       width: 0.022,
       tracerLength: 1.4,
@@ -3015,14 +3165,76 @@ function NeighborhoodWorld({
     ].slice(-20));
   }
 
-  function damagePlayer(amount: number, source: NpcRuntime) {
-    if (amount <= 0 || playerHealthRef.current <= 0) return;
-    playerHealthRef.current = Math.max(0, playerHealthRef.current - Math.round(amount));
-    onVitalsChange(playerHealthRef.current, currentRegionRef.current);
-    if (playerHealthRef.current > 0) return;
+  function enterPlayerDowned(source: NpcRuntime) {
+    if (playerDownedRef.current) return;
+    const now = performance.now();
+    playerDownedRef.current = true;
+    downedFallingUntilRef.current = now + DOWNED_FALL_MS;
+    downedBleedOutAtRef.current = now + DOWNED_BLEED_OUT_MS;
+    clickTarget.current = null;
+    clickPath.current = [];
+    pendingVisit.current = null;
+    pendingInteraction.current = null;
+    thirdPersonFireHeld.current = false;
+    jumpElapsedMs.current = null;
+    keys.current.clear();
+    setAiming(false);
+    playerUpperMotionRef.current = null;
+    const group = worldGroupRef.current;
+    const playerWorld = group
+      ? group.localToWorld(playerPosition.current.clone().setY(1.02))
+      : playerPosition.current.clone().setY(1.02);
+    const sourceWorld = group
+      ? group.localToWorld(source.position.clone().setY(source.kind === "human" ? 1.25 : 1.05))
+      : source.position.clone().setY(source.kind === "human" ? 1.25 : 1.05);
+    const fallVelocity = playerWorld.clone().sub(sourceWorld).setY(0);
+    if (fallVelocity.lengthSq() < 0.001) fallVelocity.set(0, 0, 1);
+    fallVelocity.normalize().multiplyScalar(2.8).setY(1.15);
+    setPlayerRagdollImpact({
+      nonce: Date.now(),
+      kind: "bullet",
+      bodyPart: "chest",
+      boneName: "spine_02",
+      point: playerWorld.toArray(),
+      velocity: fallVelocity.toArray()
+    });
+    updatePlayerMotion("death");
+    if (cameraModeRef.current !== "thirdPerson") setCameraMode("thirdPerson", false);
+    else if (document.pointerLockElement === gl.domElement) document.exitPointerLock?.();
+    document.body.style.cursor = "default";
+    onDownedStateChange({
+      fallingUntil: downedFallingUntilRef.current,
+      bleedOutAt: downedBleedOutAtRef.current
+    });
+    onToast(`${source.displayName} вывел вас из строя · после падения можно медленно ползти`);
+    for (const { runtime } of outlandsActors) runtime.aggroed = false;
+  }
 
-    onToast(`${source.displayName} вывел вас из строя · добыча в рюкзаке потеряна`);
-    onPlayerDefeated?.();
+  async function finishPlayerDefeat(surrendered: boolean) {
+    if (!playerDownedRef.current || defeatSubmissionRef.current || performance.now() < defeatRetryAtRef.current) return;
+    defeatSubmissionRef.current = true;
+    let confirmed = false;
+    try {
+      const callback = surrendered ? onPlayerSurrender : onPlayerDefeated;
+      confirmed = Boolean(await callback?.());
+    } catch {
+      confirmed = false;
+    } finally {
+      defeatSubmissionRef.current = false;
+    }
+    if (!confirmed) {
+      surrenderRequestedRef.current = false;
+      defeatRetryAtRef.current = performance.now() + 1_500;
+      onToast("Не удалось вернуться в город · повторяем попытку");
+      return;
+    }
+    playerDownedRef.current = false;
+    setPlayerRagdollImpact(undefined);
+    surrenderRequestedRef.current = false;
+    downedFallingUntilRef.current = 0;
+    downedBleedOutAtRef.current = 0;
+    onDownedStateChange(null);
+    onToast(surrendered ? "Вы сдались · добыча потеряна" : "Вы истекли кровью · добыча потеряна");
     if (drivingRef.current) {
       drivingRef.current = false;
       setDriving(false);
@@ -3034,6 +3246,7 @@ function NeighborhoodWorld({
     setRenderCarPosition(ownCarStart.position.clone());
     setRenderCarRotation(ownCarStart.rotation);
     playerHealthRef.current = playerMaxHealthRef.current;
+    playerShieldRef.current = 0;
     playerPosition.current.set(0, 0, -72);
     playerRotation.current = Math.PI;
     clickTarget.current = null;
@@ -3042,8 +3255,32 @@ function NeighborhoodWorld({
     for (const { runtime } of outlandsActors) runtime.aggroed = false;
     currentRegionRef.current = "city";
     onWorldRegionChange?.("city");
-    onVitalsChange(playerHealthRef.current, "city");
+    onVitalsChange(playerHealthRef.current, "city", playerShieldRef.current);
     onMoveRef.current({ x: 0, y: 0, z: -72, rotation: Math.PI, vehicle: false });
+  }
+
+  function damagePlayer(amount: number, source: NpcRuntime) {
+    if (amount <= 0 || playerDownedRef.current || playerHealthRef.current <= 0) return;
+    const now = performance.now();
+    let remainingDamage = Math.max(0, Math.round(amount));
+    if (playerShieldRef.current > 0) {
+      const absorbed = Math.min(playerShieldRef.current, remainingDamage);
+      playerShieldRef.current -= absorbed;
+      remainingDamage -= absorbed;
+      onPlayerHitFeedback("shield");
+    }
+    if (remainingDamage > 0) {
+      playerHealthRef.current = Math.max(0, playerHealthRef.current - remainingDamage);
+      const group = worldGroupRef.current;
+      if (group) {
+        const sourceWorld = group.localToWorld(source.position.clone().setY(source.kind === "human" ? 1.25 : 1.05));
+        const playerWorld = group.localToWorld(playerPosition.current.clone().setY(1.05));
+        spawnBloodEffect(playerWorld, playerWorld.clone().sub(sourceWorld).normalize(), now);
+      }
+      onPlayerHitFeedback("health");
+    }
+    onVitalsChange(playerHealthRef.current, currentRegionRef.current, playerShieldRef.current);
+    if (playerHealthRef.current <= 0) enterPlayerDowned(source);
   }
 
   function advanceOutlandsPatrol(runtime: NpcRuntime, now: number, delta: number) {
@@ -3292,7 +3529,7 @@ function NeighborhoodWorld({
   }
 
   function shootAt(target: THREE.Vector3) {
-    if (drivingRef.current) return;
+    if (drivingRef.current || playerDownedRef.current) return;
     if (activeInteriorRef.current) {
       onToast("Чтобы стрелять, сначала выйдите на улицу");
       return;
@@ -3401,7 +3638,8 @@ function NeighborhoodWorld({
           expeditionHits.push({
             enemyId: runtime.enemyId as ExpeditionEnemyId,
             zone: expeditionHitZone(exactZone?.bodyPart ?? DEFAULT_BODY_PART),
-            damageScale: falloff
+            damageScale: falloff,
+            position: { x: runtime.position.x, z: runtime.position.z }
           });
         }
         const markNormal = directCombat?.runtime === runtime
@@ -3444,7 +3682,8 @@ function NeighborhoodWorld({
         if (expeditionActiveRef.current && directCombat.runtime.enemyId) {
           expeditionHits.push({
             enemyId: directCombat.runtime.enemyId as ExpeditionEnemyId,
-            zone: expeditionHitZone(directCombat.bodyPart)
+            zone: expeditionHitZone(directCombat.bodyPart),
+            position: { x: directCombat.runtime.position.x, z: directCombat.runtime.position.z }
           });
         }
       }
@@ -3517,6 +3756,8 @@ function NeighborhoodWorld({
         KeyD: "d",
         KeyE: "e",
         KeyF: "f",
+        KeyG: "g",
+        KeyH: "h",
         KeyQ: "q",
         KeyR: "r",
         KeyB: "b",
@@ -3551,6 +3792,39 @@ function NeighborhoodWorld({
       const target = event.target as HTMLElement | null;
       if (target && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable)) return;
       const key = controlKey(event);
+      if (playerDownedRef.current) {
+        if (key === "g") {
+          event.preventDefault();
+          if (!event.repeat) surrenderRequestedRef.current = true;
+          return;
+        }
+        if (["w", "a", "s", "d", "arrowup", "arrowleft", "arrowdown", "arrowright"].includes(key)) {
+          event.preventDefault();
+          keys.current.add(key);
+        }
+        return;
+      }
+      if (key === "h") {
+        event.preventDefault();
+        if (event.repeat || healingRef.current) return;
+        if (!expeditionActiveRef.current) {
+          onToastRef.current("Бинты используются во время вылазки");
+          return;
+        }
+        if (playerHealthRef.current >= playerMaxHealthRef.current) {
+          onToastRef.current("Здоровье уже полное");
+          return;
+        }
+        if (bandageCountRef.current <= 0 || !onUseBandageRef.current) {
+          onToastRef.current("В рюкзаке нет бинтов");
+          return;
+        }
+        healingRef.current = true;
+        Promise.resolve(onUseBandageRef.current())
+          .catch(() => onToastRef.current("Не удалось использовать бинт"))
+          .finally(() => { healingRef.current = false; });
+        return;
+      }
       if (key === "v") {
         event.preventDefault();
         if (event.repeat) return;
@@ -3610,6 +3884,18 @@ function NeighborhoodWorld({
 
       if (key !== "e" && key !== "f") return;
       if (event.repeat) return;
+
+      if (key === "e" && !drivingRef.current && nearbyEnemyRef.current) {
+        const enemyId = nearbyEnemyRef.current;
+        if (lootedEnemySetRef.current.has(enemyId)) {
+          onToastRef.current("С этого противника уже всё забрали");
+        } else if (!expeditionActiveRef.current) {
+          onToastRef.current("Сначала начните вылазку в правой панели");
+        } else {
+          onLootEnemyRef.current?.(enemyId);
+        }
+        return;
+      }
 
       if (key === "e" && !drivingRef.current && nearbyContainerRef.current) {
         const containerId = nearbyContainerRef.current;
@@ -3728,6 +4014,11 @@ function NeighborhoodWorld({
     const handleMouseDown = (event: MouseEvent) => {
       if (cameraModeRef.current !== "thirdPerson") return;
       event.preventDefault();
+      if (playerDownedRef.current) {
+        thirdPersonFireHeld.current = false;
+        setAiming(false);
+        return;
+      }
       if (document.pointerLockElement !== element) {
         requestThirdPersonPointerLock();
         return;
@@ -3890,6 +4181,13 @@ function NeighborhoodWorld({
 
   useFrame((_, delta) => {
     const now = performance.now();
+    if (surrenderNonce !== lastSurrenderNonceRef.current) {
+      lastSurrenderNonceRef.current = surrenderNonce;
+      if (playerDownedRef.current) surrenderRequestedRef.current = true;
+    }
+    if (playerDownedRef.current && (surrenderRequestedRef.current || now >= downedBleedOutAtRef.current)) {
+      void finishPlayerDefeat(surrenderRequestedRef.current);
+    }
     for (const { runtime } of npcActors) {
       if (runtime.dead) {
         if (now >= runtime.respawnAt) {
@@ -3968,6 +4266,7 @@ function NeighborhoodWorld({
       const homeDistance = runtime.position.distanceTo(runtime.homePosition);
       const playerInCombatZone = expeditionActiveRef.current
         && playerPosition.current.z < -105
+        && !playerDownedRef.current
         && !activeInteriorRef.current;
       if (runtime.aggroed && (playerDistance > runtime.aggroRange * 1.85 || homeDistance > runtime.aggroRange * 1.5)) runtime.aggroed = false;
       const chasing = runtime.faction === "hostile"
@@ -4009,8 +4308,17 @@ function NeighborhoodWorld({
       runtime.attackUntil = now + 430;
       runtime.motionRef.current = "shoot";
       runtime.robotMotionRef.current = "attack";
-      if (runtime.kind === "human") spawnEnemyTracer(runtime, now);
-      damagePlayer(runtime.damage, runtime);
+      if (runtime.attackStyle === "ranged") {
+        spawnEnemyTracer(runtime, now);
+        const timer = window.setTimeout(() => {
+          enemyDamageTimersRef.current.delete(timer);
+          if (!expeditionActiveRef.current || playerDownedRef.current) return;
+          damagePlayer(runtime.damage, runtime);
+        }, 90);
+        enemyDamageTimersRef.current.add(timer);
+      } else {
+        damagePlayer(runtime.damage, runtime);
+      }
     }
 
     let didMove = false;
@@ -4044,6 +4352,26 @@ function NeighborhoodWorld({
       }
       playerPosition.current.copy(carPosition.current);
       playerRotation.current = carRotation.current;
+    } else if (playerDownedRef.current) {
+      const falling = now < downedFallingUntilRef.current;
+      const inputX = (keys.current.has("a") || keys.current.has("arrowleft") ? 1 : 0)
+        - (keys.current.has("d") || keys.current.has("arrowright") ? 1 : 0);
+      const inputZ = (keys.current.has("w") || keys.current.has("arrowup") ? 1 : 0)
+        - (keys.current.has("s") || keys.current.has("arrowdown") ? 1 : 0);
+      if (!falling && (inputX !== 0 || inputZ !== 0)) {
+        const movement = frontVector(cameraYaw.current).multiplyScalar(inputZ)
+          .addScaledVector(rightVector(cameraYaw.current), inputX)
+          .normalize();
+        const currentPosition = playerPosition.current.clone();
+        const requested = currentPosition.clone().addScaledVector(movement, DOWNED_CRAWL_SPEED * Math.min(delta, WALK_DELTA_CAP));
+        const shellResolved = resolveWalkPosition(currentPosition, requested, worldResidents);
+        const worldResolved = resolveOutlandsCollisions(currentPosition, resolveWorldAccess(currentPosition, shellResolved));
+        if (currentPosition.distanceToSquared(worldResolved) > 0.00000025) {
+          playerPosition.current.copy(worldResolved);
+          playerRotation.current = Math.atan2(movement.x, movement.z);
+          didMove = true;
+        }
+      }
     } else if (cameraModeRef.current === "thirdPerson") {
       const inputX = (keys.current.has("a") ? 1 : 0) - (keys.current.has("d") ? 1 : 0);
       const inputZ = (keys.current.has("w") ? 1 : 0) - (keys.current.has("s") ? 1 : 0);
@@ -4132,11 +4460,12 @@ function NeighborhoodWorld({
     if (nextRegion !== currentRegionRef.current) {
       currentRegionRef.current = nextRegion;
       onWorldRegionChange?.(nextRegion);
-      onVitalsChange(playerHealthRef.current, nextRegion);
+      onVitalsChange(playerHealthRef.current, nextRegion, playerShieldRef.current);
     }
     let nextNearbyContainer: string | undefined;
     let nearestContainerDistance = 3.25;
     for (const container of OUTLAND_CONTAINERS) {
+      if (lootedContainerSetRef.current.has(container.id)) continue;
       const distance = playerPosition.current.distanceTo(new THREE.Vector3().fromArray(container.position));
       if (distance >= nearestContainerDistance) continue;
       nearestContainerDistance = distance;
@@ -4145,6 +4474,24 @@ function NeighborhoodWorld({
     if (nextNearbyContainer !== nearbyContainerRef.current) {
       nearbyContainerRef.current = nextNearbyContainer;
       setNearbyContainerId(nextNearbyContainer);
+    }
+    let nextNearbyEnemy: string | undefined;
+    let nearestEnemyDistance = 4.4;
+    for (const { runtime } of outlandsActors) {
+      if (
+        !runtime.dead
+        || !runtime.enemyId
+        || !defeatedEnemySet.has(runtime.enemyId)
+        || lootedEnemySetRef.current.has(runtime.enemyId)
+      ) continue;
+      const distance = playerPosition.current.distanceTo(runtime.position);
+      if (distance >= nearestEnemyDistance) continue;
+      nearestEnemyDistance = distance;
+      nextNearbyEnemy = runtime.enemyId;
+    }
+    if (nextNearbyEnemy !== nearbyEnemyRef.current) {
+      nearbyEnemyRef.current = nextNearbyEnemy;
+      setNearbyEnemyId(nextNearbyEnemy);
     }
     const extractionDistance = playerPosition.current.distanceTo(
       new THREE.Vector3(EXTRACTION_POSITION[0], 0, EXTRACTION_POSITION[2])
@@ -4169,7 +4516,7 @@ function NeighborhoodWorld({
     }
     let jumpHeight = 0;
     let jumpMotion: CharacterMotion | null = null;
-    if (!drivingRef.current && jumpElapsedMs.current !== null) {
+    if (!drivingRef.current && !playerDownedRef.current && jumpElapsedMs.current !== null) {
       jumpElapsedMs.current += Math.min(delta, 0.08) * 1000;
       const jumpProgress = jumpElapsedMs.current / JUMP_DURATION_MS;
       if (jumpProgress >= 1) {
@@ -4186,14 +4533,22 @@ function NeighborhoodWorld({
     const currentlyShooting = now < shootingUntil.current;
     const currentlyReloading = reloadStateRef.current?.weapon === selectedWeaponRef.current
       && now < reloadStateRef.current.endsAt;
-    playerUpperMotionRef.current = currentlyReloading
+    playerUpperMotionRef.current = playerDownedRef.current
+      ? null
+      : currentlyReloading
       ? "reload"
       : currentlyShooting
         ? "shoot"
         : currentlyAiming
           ? "aim"
           : null;
-    const nextMotion: CharacterMotion = jumpMotion
+    const nextMotion: CharacterMotion = playerDownedRef.current
+      ? now < downedFallingUntilRef.current
+        ? "death"
+        : locomoting
+          ? "crawl"
+          : "crawlIdle"
+      : jumpMotion
       ?? (keys.current.has("control")
         ? locomoting ? "crouchWalk" : "crouchIdle"
         : locomoting
@@ -4522,49 +4877,66 @@ function NeighborhoodWorld({
             if (!worldGroupRef.current) return;
             shootAt(worldGroupRef.current.worldToLocal(event.point.clone()));
           };
+          const corpsePrompt = runtime.dead && nearbyEnemyId === definition.id ? (
+            <Html
+              center
+              position={[runtime.position.x, definition.kind === "quadShell" ? 1.75 : 1.25, runtime.position.z]}
+              distanceFactor={12}
+              style={{ pointerEvents: "none" }}
+            >
+              <div className="world-interact-label corpse-loot">
+                <b>{lootedEnemySet.has(definition.id) ? "✓" : "E"}</b>
+                <span>{lootedEnemySet.has(definition.id) ? "противник обыскан" : `обыскать · ${definition.name}`}</span>
+              </div>
+            </Html>
+          ) : null;
           if (definition.kind === "eyeDrone" || definition.kind === "quadShell") {
             return (
-              <OutlandsRobot
-                key={definition.id}
-                kind={definition.kind}
-                username={runtime.username}
-                displayName={definition.name}
-                position={runtime.position}
-                rotationRef={runtime.rotationRef}
-                motionRef={runtime.robotMotionRef}
-                health={runtime.health}
-                maxHealth={runtime.maxHealth}
-                dead={runtime.dead}
-                faction={definition.faction}
-                onCombatHit={handleHit}
-              />
+              <group key={definition.id}>
+                <OutlandsRobot
+                  kind={definition.kind}
+                  username={runtime.username}
+                  displayName={definition.name}
+                  position={runtime.position}
+                  rotationRef={runtime.rotationRef}
+                  motionRef={runtime.robotMotionRef}
+                  health={runtime.health}
+                  maxHealth={runtime.maxHealth}
+                  dead={runtime.dead}
+                  faction={definition.faction}
+                  onCombatHit={handleHit}
+                />
+                {corpsePrompt}
+              </group>
             );
           }
           const visual = outlandsHumanVisuals[index % Math.max(1, outlandsHumanVisuals.length)] ?? ownResident;
           const outfit = getCatalogItem(catalog, visual.avatar.outfit);
           const character = getCatalogItem(catalog, visual.avatar.character);
           return (
-            <Player
-              key={definition.id}
-              username={runtime.dead ? `${definition.name} · повержен` : definition.name}
-              color={outfit?.color ?? "#9b4a3c"}
-              position={runtime.position}
-              character={character}
-              outfit={outfit}
-              motionRef={runtime.motionRef}
-              weapon="rifle"
-              rotation={runtime.rotationRef.current}
-              rotationRef={runtime.rotationRef}
-              teleportNonce={runtime.respawnNonce}
-              health={runtime.health}
-              maxHealth={runtime.maxHealth}
-              combatUsername={runtime.username}
-              combatDead={runtime.dead}
-              bloodMarks={runtime.bloodMarks}
-              ragdollImpact={runtime.ragdollImpact}
-              ragdollControllerRef={runtime.ragdollControllerRef}
-              onCombatHit={handleHit}
-            />
+            <group key={definition.id}>
+              <Player
+                username={runtime.dead ? `${definition.name} · повержен` : definition.name}
+                color={outfit?.color ?? "#9b4a3c"}
+                position={runtime.position}
+                character={character}
+                outfit={outfit}
+                motionRef={runtime.motionRef}
+                weapon="rifle"
+                rotation={runtime.rotationRef.current}
+                rotationRef={runtime.rotationRef}
+                teleportNonce={runtime.respawnNonce}
+                health={runtime.health}
+                maxHealth={runtime.maxHealth}
+                combatUsername={runtime.username}
+                combatDead={runtime.dead}
+                bloodMarks={runtime.bloodMarks}
+                ragdollImpact={runtime.ragdollImpact}
+                ragdollControllerRef={runtime.ragdollControllerRef}
+                onCombatHit={handleHit}
+              />
+              {corpsePrompt}
+            </group>
           );
         })}
         <Player
@@ -4598,12 +4970,14 @@ function NeighborhoodWorld({
             moving={moving}
             motion={playerMotion}
             motionRef={playerMotionRef}
-            weapon={activeInterior ? undefined : selectedWeapon}
+            weapon={activeInterior || playerDownedRef.current ? undefined : selectedWeapon}
             muzzleRef={playerMuzzleRef}
             weaponAimTargetRef={playerAimTargetRef}
             weaponRecoilRef={recoilRef}
             actionNonceRef={shotNonceRef}
             upperMotionRef={playerUpperMotionRef}
+            combatDead={playerMotion === "death" && playerDownedRef.current}
+            ragdollImpact={playerRagdollImpact}
             rotation={renderPlayerRotation.current}
             rotationRef={playerRotation}
           />
@@ -4705,13 +5079,51 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
   const [aiming, setAiming] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>("strategy");
   const [pointerLocked, setPointerLocked] = useState(false);
-  const [worldVitals, setWorldVitals] = useState<{ health: number; region: WorldRegion }>({ health: 100, region: "city" });
+  const [worldVitals, setWorldVitals] = useState<{ health: number; region: WorldRegion; shield: number }>({
+    health: props.expeditionActive ? props.expeditionPlayerHealth ?? 100 : 100,
+    region: "city",
+    shield: props.expeditionActive ? props.expeditionPlayerShield ?? 0 : 0
+  });
+  const [downedState, setDownedState] = useState<PlayerDownedUiState>(() => {
+    if (!props.expeditionActive || !props.expeditionDownedAt || !props.expeditionBleedOutAt) return null;
+    const now = performance.now();
+    return {
+      fallingUntil: now + Math.max(0, props.expeditionDownedAt + DOWNED_FALL_MS - Date.now()),
+      bleedOutAt: now + Math.max(0, props.expeditionBleedOutAt - Date.now())
+    };
+  });
+  const [downedClock, setDownedClock] = useState(() => performance.now());
+  const [surrenderNonce, setSurrenderNonce] = useState(0);
+  const [hitFeedback, setHitFeedback] = useState<{ kind: PlayerHitFeedback; nonce: number } | null>(null);
+  const hitFeedbackTimerRef = useRef<number | null>(null);
   const recoilRef = useRef<WeaponRecoilState>({ x: 0, y: 0, kick: 0 });
   const previousAmmoExpeditionActiveRef = useRef(false);
   const lastNoAmmoToastAtRef = useRef(0);
 
-  const handleVitalsChange = useCallback((health: number, region: WorldRegion) => {
-    setWorldVitals((current) => current.health === health && current.region === region ? current : { health, region });
+  const handleVitalsChange = useCallback((health: number, region: WorldRegion, shield: number) => {
+    setWorldVitals((current) => current.health === health && current.region === region && current.shield === shield
+      ? current
+      : { health, region, shield });
+  }, []);
+
+  const handlePlayerHitFeedback = useCallback((kind: PlayerHitFeedback) => {
+    if (hitFeedbackTimerRef.current !== null) window.clearTimeout(hitFeedbackTimerRef.current);
+    setHitFeedback({ kind, nonce: performance.now() });
+    hitFeedbackTimerRef.current = window.setTimeout(() => {
+      hitFeedbackTimerRef.current = null;
+      setHitFeedback(null);
+    }, kind === "heal" ? 360 : 220);
+  }, []);
+
+  useEffect(() => {
+    if (!downedState) return;
+    setDownedClock(performance.now());
+    const interval = window.setInterval(() => setDownedClock(performance.now()), 100);
+    return () => window.clearInterval(interval);
+  }, [downedState]);
+
+  useEffect(() => () => {
+    if (hitFeedbackTimerRef.current !== null) window.clearTimeout(hitFeedbackTimerRef.current);
   }, []);
 
   const cancelReload = useCallback(() => {
@@ -4810,6 +5222,18 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
   const weaponConfig = WEAPONS[selectedWeapon];
   const activeReload = reloadState?.weapon === selectedWeapon ? reloadState : null;
   const playerMaxHealth = 100 + (props.expeditionSkills?.survival ?? 0) * 10;
+  const fullRegionLabel = WORLD_REGION_LABELS[worldVitals.region];
+  const downedSeconds = downedState ? Math.max(0, Math.ceil((downedState.bleedOutAt - downedClock) / 1000)) : 0;
+  const downedFalling = Boolean(downedState && downedClock < downedState.fallingUntil);
+
+  useEffect(() => {
+    props.onExpeditionStatusChange?.({
+      health: worldVitals.health,
+      maxHealth: playerMaxHealth,
+      shield: worldVitals.shield,
+      downed: Boolean(downedState)
+    });
+  }, [downedState, playerMaxHealth, props.onExpeditionStatusChange, worldVitals.health, worldVitals.shield]);
 
   return (
     <>
@@ -4835,8 +5259,60 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
           onPointerLockChange={setPointerLocked}
           recoilRef={recoilRef}
           onVitalsChange={handleVitalsChange}
+          onDownedStateChange={setDownedState}
+          onPlayerHitFeedback={handlePlayerHitFeedback}
+          surrenderNonce={surrenderNonce}
         />
       </Canvas>
+      {hitFeedback ? (
+        <div
+          key={hitFeedback.nonce}
+          className={`player-hit-flash ${hitFeedback.kind}`}
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            zIndex: 8,
+            inset: 0,
+            pointerEvents: "none",
+            background: hitFeedback.kind === "health"
+              ? "radial-gradient(circle, transparent 46%, rgba(150, 8, 32, .5) 100%)"
+              : hitFeedback.kind === "shield"
+                ? "radial-gradient(circle, transparent 52%, rgba(45, 212, 191, .38) 100%)"
+                : "radial-gradient(circle, transparent 55%, rgba(74, 222, 128, .3) 100%)",
+            boxShadow: hitFeedback.kind === "health" ? "inset 0 0 70px rgba(127, 0, 20, .42)" : "none"
+          }}
+        />
+      ) : null}
+      {downedState ? (
+        <div
+          className={`player-downed-overlay ${downedFalling ? "falling" : "crawling"}`}
+          role="alert"
+          style={{ position: "absolute", zIndex: 12, inset: 0, pointerEvents: "none", display: "grid", placeItems: "start center", paddingTop: 90 }}
+        >
+          <div
+            className="player-downed-card"
+            style={{ pointerEvents: "auto", width: "min(420px, calc(100% - 32px))", padding: "18px 20px", borderRadius: 16, border: "1px solid rgba(248,113,113,.72)", background: "rgba(35,10,17,.9)", color: "#fff", textAlign: "center", boxShadow: "0 18px 55px rgba(0,0,0,.4)", backdropFilter: "blur(12px)" }}
+          >
+            <strong className="player-downed-title" style={{ display: "block", fontSize: 22 }}>
+              {downedFalling ? "Вы ранены — падаете" : "Вы тяжело ранены"}
+            </strong>
+            <span className="player-downed-copy" style={{ display: "block", margin: "7px 0 14px", color: "#fecaca", fontSize: 13 }}>
+              {downedFalling ? "Через мгновение сможете ползти" : "WASD — медленно ползти до истечения времени"}
+            </span>
+            <div className="player-downed-timer" style={{ marginBottom: 14, fontSize: 30, fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>
+              0:{String(downedSeconds).padStart(2, "0")}
+            </div>
+            <button
+              className="player-surrender-button"
+              type="button"
+              onClick={() => setSurrenderNonce((nonce) => nonce + 1)}
+              style={{ border: "1px solid rgba(252,165,165,.75)", borderRadius: 9, padding: "9px 15px", background: "rgba(127,29,29,.72)", color: "#fff", fontWeight: 850, cursor: "pointer" }}
+            >
+              Сдаться и вернуться в город · G
+            </button>
+          </div>
+        </div>
+      ) : null}
       {cameraMode === "thirdPerson" ? (
         <>
           <ThirdPersonReticle aiming={aiming} recoilRef={recoilRef} />
@@ -4848,7 +5324,7 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
       {!inside && worldVitals.region !== "city" ? (
         <div className="outlands-vitals" aria-label="Состояние экспедиции">
           <div className="outlands-vitals-heading">
-            <span>{WORLD_REGION_LABELS[worldVitals.region]}</span>
+            <span>{fullRegionLabel}</span>
             <b>{props.expeditionActive ? "ЭКСПЕДИЦИЯ" : "КПП ЗАКРЫТ"}</b>
           </div>
           <div className="outlands-health-row">
@@ -4856,9 +5332,18 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
             <strong>{Math.max(0, Math.round(worldVitals.health))} / {playerMaxHealth}</strong>
           </div>
           <div className="outlands-health-track"><i style={{ width: `${Math.max(0, Math.min(100, worldVitals.health / playerMaxHealth * 100))}%` }} /></div>
+          {(props.shieldCount ?? 0) > 0 ? (
+            <>
+              <div className="outlands-health-row outlands-shield-row">
+                <span>Щит</span>
+                <strong>{Math.ceil(worldVitals.shield)}</strong>
+              </div>
+              <div className="outlands-health-track outlands-shield-track"><i style={{ width: `${Math.max(0, Math.min(100, worldVitals.shield / Math.max(35, (props.shieldCount ?? 0) * 35) * 100))}%`, background: "linear-gradient(90deg, #22d3ee, #2dd4bf)" }} /></div>
+            </>
+          ) : null}
         </div>
       ) : null}
-      {!driving && !inside ? (
+      {!driving && !inside && !downedState ? (
         <div className={aiming ? "weapon-hud aiming" : "weapon-hud"}>
           <div className="weapon-hud-title">
             <div className="weapon-hud-copy">
@@ -4928,9 +5413,12 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
             <span className="control-dot">·</span><span><b>V</b> — от третьего лица</span>
           </>
         ) : null}
+        {props.expeditionActive && !inside && !downedState ? (
+          <><span className="control-dot">·</span><span><b>H</b> — использовать бинт ({props.bandageCount ?? 0})</span></>
+        ) : null}
         <span className="control-dot">·</span>
         <span className="control-key">E</span>
-        <span>{driving ? "выйти" : "сесть в свою машину"}</span>
+        <span>{driving ? "выйти" : props.expeditionActive ? "обыскать / эвакуироваться" : "сесть в свою машину"}</span>
       </div>
     </>
   );

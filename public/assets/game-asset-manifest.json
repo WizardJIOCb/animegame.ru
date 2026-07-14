@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "revision": "sha256-f1b77ec13206b7ce704bf7d1d38589cf1331967479ef78b6595147b15b7cd91c",
+  "revision": "sha256-f09aa742c09d8c03bd7fc1b2f3801e62d7419d920dc4d6126d7e776c4a34ca01",
   "missingFileCount": 2,
   "roots": {
     "/assets/animations/quaternius-universal/UAL1_Standard.glb": {
@@ -5666,7 +5666,7 @@
       "files": [
         {
           "url": "/assets/models/quaternius-scifi/Enemy_EyeDrone.gltf",
-          "bytes": 53939
+          "bytes": 57789
         },
         {
           "url": "/assets/models/quaternius-scifi/Enemy_EyeDrone.bin",
@@ -5691,7 +5691,7 @@
       "files": [
         {
           "url": "/assets/models/quaternius-scifi/Enemy_QuadShell.gltf",
-          "bytes": 235254
+          "bytes": 251796
         },
         {
           "url": "/assets/models/quaternius-scifi/Enemy_QuadShell.bin",
@@ -5716,7 +5716,7 @@
       "files": [
         {
           "url": "/assets/models/quaternius-scifi/Prop_Ammo.gltf",
-          "bytes": 2216
+          "bytes": 2375
         },
         {
           "url": "/assets/models/quaternius-scifi/Prop_Ammo.bin",
@@ -5741,7 +5741,7 @@
       "files": [
         {
           "url": "/assets/models/quaternius-scifi/Prop_Chest.gltf",
-          "bytes": 17853
+          "bytes": 19147
         },
         {
           "url": "/assets/models/quaternius-scifi/Prop_Chest.bin",
@@ -5766,7 +5766,7 @@
       "files": [
         {
           "url": "/assets/models/quaternius-scifi/Prop_HealthPack.gltf",
-          "bytes": 2230
+          "bytes": 2389
         },
         {
           "url": "/assets/models/quaternius-scifi/Prop_HealthPack.bin",

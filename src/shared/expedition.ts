@@ -5,6 +5,10 @@ export const EXPEDITION_ITEM_IDS = [
   "robot-lens",
   "ammo",
   "medkit",
+  "fabric",
+  "electronics",
+  "bandage",
+  "shield-module",
   "weapon-parts",
   "rifle-blueprint"
 ] as const;
@@ -66,6 +70,34 @@ export const EXPEDITION_ITEMS: Record<ExpeditionItemId, ExpeditionItemDefinition
     description: "Полевой комплект для восстановления здоровья.",
     rarity: "uncommon",
     stackSize: 10
+  },
+  fabric: {
+    id: "fabric",
+    name: "Техническая ткань",
+    description: "Прочная ткань для бинтов, разгрузок и защитного снаряжения.",
+    rarity: "common",
+    stackSize: 99
+  },
+  electronics: {
+    id: "electronics",
+    name: "Электроника",
+    description: "Микросхемы и проводка для оружия, щитов и сложных устройств.",
+    rarity: "uncommon",
+    stackSize: 50
+  },
+  bandage: {
+    id: "bandage",
+    name: "Полевой бинт",
+    description: "Останавливает кровотечение и восстанавливает часть здоровья в экспедиции.",
+    rarity: "common",
+    stackSize: 10
+  },
+  "shield-module": {
+    id: "shield-module",
+    name: "Модуль щита",
+    description: "Переносной защитный модуль, изготовленный из сплава и электроники.",
+    rarity: "rare",
+    stackSize: 5
   },
   "weapon-parts": {
     id: "weapon-parts",
@@ -175,6 +207,7 @@ export type ExpeditionHitInput = {
   enemyId: ExpeditionEnemyId;
   zone: ExpeditionHitZone;
   damageScale?: number;
+  position?: { x: number; z: number };
 };
 
 export const EXPEDITION_AMMO_PACK = { quantity: 30, price: 450 } as const;
@@ -185,8 +218,13 @@ export const EXPEDITION_START_AMMO: Record<ExpeditionWeaponId, number> = {
   laser: 60,
   sniper: 15
 };
+export const EXPEDITION_START_BANDAGES = 3;
+export const EXPEDITION_START_SHIELD_MODULES = 1;
+export const EXPEDITION_BANDAGE_HEAL = 35;
+export const EXPEDITION_SHIELD_PER_MODULE = 35;
+export const EXPEDITION_DOWNED_BLEED_OUT_MS = 35_000;
 
-export const EXPEDITION_RECIPE_IDS = ["rifle", "ammo", "medkit"] as const;
+export const EXPEDITION_RECIPE_IDS = ["rifle", "ammo", "medkit", "bandage", "shield"] as const;
 export type ExpeditionRecipeId = typeof EXPEDITION_RECIPE_IDS[number];
 
 export type ExpeditionRecipeDefinition = {
@@ -225,7 +263,50 @@ export const EXPEDITION_RECIPES: Record<ExpeditionRecipeId, ExpeditionRecipeDefi
       { itemId: "robot-lens", quantity: 1 }
     ],
     output: { itemId: "medkit", quantity: 1 }
+  },
+  bandage: {
+    id: "bandage",
+    name: "Сделать полевые бинты",
+    ingredients: [
+      { itemId: "fabric", quantity: 2 },
+      { itemId: "scrap", quantity: 1 }
+    ],
+    output: { itemId: "bandage", quantity: 2 }
+  },
+  shield: {
+    id: "shield",
+    name: "Собрать модуль щита",
+    ingredients: [
+      { itemId: "alloy", quantity: 3 },
+      { itemId: "electronics", quantity: 3 },
+      { itemId: "power-cell", quantity: 1 }
+    ],
+    output: { itemId: "shield-module", quantity: 1 }
   }
+};
+
+export const EXPEDITION_TRADER_BUY_PRICES = {
+  scrap: 35,
+  fabric: 55,
+  electronics: 140,
+  alloy: 170,
+  bandage: 90,
+  "weapon-parts": 260
+} satisfies Partial<Record<ExpeditionItemId, number>>;
+
+export const EXPEDITION_TRADER_SELL_PRICES: Record<ExpeditionItemId, number> = {
+  scrap: 12,
+  alloy: 75,
+  "power-cell": 280,
+  "robot-lens": 190,
+  ammo: 5,
+  medkit: 130,
+  fabric: 20,
+  electronics: 65,
+  bandage: 35,
+  "shield-module": 520,
+  "weapon-parts": 115,
+  "rifle-blueprint": 1_800
 };
 
 export const EXPEDITION_CONTAINER_IDS = ["forest-cache", "depot-alpha", "quarry-cache", "ruins-vault"] as const;
@@ -245,6 +326,7 @@ export const EXPEDITION_CONTAINERS: Record<ExpeditionContainerId, ExpeditionCont
     position: [35, -149],
     loot: [
       { itemId: "scrap", quantity: 4 },
+      { itemId: "fabric", quantity: 3 },
       { itemId: "ammo", quantity: 24 },
       { itemId: "medkit", quantity: 1 }
     ]
@@ -255,6 +337,7 @@ export const EXPEDITION_CONTAINERS: Record<ExpeditionContainerId, ExpeditionCont
     position: [-45, -211],
     loot: [
       { itemId: "alloy", quantity: 3 },
+      { itemId: "electronics", quantity: 2 },
       { itemId: "weapon-parts", quantity: 2 },
       { itemId: "ammo", quantity: 36 }
     ]
@@ -265,6 +348,7 @@ export const EXPEDITION_CONTAINERS: Record<ExpeditionContainerId, ExpeditionCont
     position: [75, -251],
     loot: [
       { itemId: "power-cell", quantity: 1 },
+      { itemId: "electronics", quantity: 2 },
       { itemId: "robot-lens", quantity: 2 },
       { itemId: "alloy", quantity: 2 }
     ]
@@ -275,6 +359,7 @@ export const EXPEDITION_CONTAINERS: Record<ExpeditionContainerId, ExpeditionCont
     position: [-73, -286],
     loot: [
       { itemId: "rifle-blueprint", quantity: 1 },
+      { itemId: "fabric", quantity: 4 },
       { itemId: "weapon-parts", quantity: 3 },
       { itemId: "scrap", quantity: 8 }
     ]
@@ -295,11 +380,11 @@ export type ExpeditionEnemyDefinition = {
 };
 
 export const EXPEDITION_ENEMIES: Record<ExpeditionEnemyId, ExpeditionEnemyDefinition> = {
-  "eye-scout": { id: "eye-scout", name: "Робот-наблюдатель", faction: "robot", hostile: false, maxHealth: 70, position: [24, -128], loot: [{ itemId: "robot-lens", quantity: 1 }] },
-  "quad-warden": { id: "quad-warden", name: "Четвероногий страж", faction: "robot", hostile: true, maxHealth: 180, position: [-43, -198], loot: [{ itemId: "alloy", quantity: 2 }, { itemId: "robot-lens", quantity: 1 }] },
-  "quad-hunter": { id: "quad-hunter", name: "Четвероногий охотник", faction: "robot", hostile: true, maxHealth: 145, position: [72, -230], loot: [{ itemId: "power-cell", quantity: 1 }, { itemId: "alloy", quantity: 2 }] },
-  "raider-vika": { id: "raider-vika", name: "Рейдер Вика", faction: "raider", hostile: true, maxHealth: 110, position: [-72, -266], loot: [{ itemId: "ammo", quantity: 18 }, { itemId: "weapon-parts", quantity: 1 }] },
-  "raider-boris": { id: "raider-boris", name: "Рейдер Борис", faction: "raider", hostile: true, maxHealth: 125, position: [-17, -177], loot: [{ itemId: "ammo", quantity: 14 }, { itemId: "scrap", quantity: 3 }] }
+  "eye-scout": { id: "eye-scout", name: "Робот-наблюдатель", faction: "robot", hostile: false, maxHealth: 70, position: [24, -128], loot: [{ itemId: "robot-lens", quantity: 1 }, { itemId: "electronics", quantity: 1 }] },
+  "quad-warden": { id: "quad-warden", name: "Четвероногий страж", faction: "robot", hostile: true, maxHealth: 180, position: [-43, -198], loot: [{ itemId: "alloy", quantity: 2 }, { itemId: "robot-lens", quantity: 1 }, { itemId: "electronics", quantity: 2 }] },
+  "quad-hunter": { id: "quad-hunter", name: "Четвероногий охотник", faction: "robot", hostile: true, maxHealth: 145, position: [72, -230], loot: [{ itemId: "power-cell", quantity: 1 }, { itemId: "alloy", quantity: 2 }, { itemId: "electronics", quantity: 1 }] },
+  "raider-vika": { id: "raider-vika", name: "Рейдер Вика", faction: "raider", hostile: true, maxHealth: 110, position: [-72, -266], loot: [{ itemId: "ammo", quantity: 18 }, { itemId: "weapon-parts", quantity: 1 }, { itemId: "fabric", quantity: 2 }] },
+  "raider-boris": { id: "raider-boris", name: "Рейдер Борис", faction: "raider", hostile: true, maxHealth: 125, position: [-17, -177], loot: [{ itemId: "ammo", quantity: 14 }, { itemId: "scrap", quantity: 3 }, { itemId: "fabric", quantity: 2 }] }
 };
 
 export const EXPEDITION_QUEST_ID = "first-expedition";
@@ -369,9 +454,24 @@ export type ExpeditionRunSnapshot = {
   id: string;
   startedAt: number;
   selectedWeapon: ExpeditionWeaponId;
+  playerPosition: {
+    x: number;
+    y: number;
+    z: number;
+    rotation?: number;
+    vehicle?: boolean;
+  };
   backpack: ItemStack[];
   lootedContainerIds: ExpeditionContainerId[];
+  lootedEnemyIds: ExpeditionEnemyId[];
   killedEnemyIds: ExpeditionEnemyId[];
+  carriedCoins: number;
+  carriedWeaponIds: ExpeditionWeaponId[];
+  playerHealth: number;
+  playerMaxHealth: number;
+  playerShield: number;
+  downedAt: number | null;
+  bleedOutAt: number | null;
   enemyHealth: Record<ExpeditionEnemyId, number>;
   objective: ExpeditionRunObjective;
 };
@@ -412,6 +512,8 @@ export function createDefaultExpeditionProfile(): ExpeditionProfile {
     stash: [
       { itemId: "ammo", quantity: 60 },
       { itemId: "medkit", quantity: 2 },
+      { itemId: "bandage", quantity: 2 },
+      { itemId: "fabric", quantity: 4 },
       { itemId: "scrap", quantity: 4 }
     ],
     unlockedWeapons: ["pistol"],

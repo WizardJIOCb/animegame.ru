@@ -87,9 +87,17 @@ function makeScatter(
   return result;
 }
 
-const FOREST_TREES_A = makeScatter(44, 0x71a11, [-116, 116], [-112, -180], 12, [0.82, 1.45]);
-const FOREST_TREES_B = makeScatter(34, 0x9913f, [-132, 132], [-142, -226], 15, [0.72, 1.25]);
-const BORDER_TREES = makeScatter(30, 0x4d991, [-150, 150], [-228, -318], 48, [0.78, 1.2]);
+// Kenney's trees are authored as compact diorama props. Scale them to a
+// believable 7–13 metre canopy and use instancing to keep the denser forest
+// inexpensive to render.
+const FOREST_TREES_A = makeScatter(112, 0x71a11, [-145, 145], [-108, -190], 11, [3.25, 5.15]);
+const FOREST_TREES_B = makeScatter(94, 0x9913f, [-150, 150], [-138, -232], 14, [2.9, 4.65]);
+const BORDER_TREES = makeScatter(72, 0x4d991, [-160, 160], [-220, -324], 42, [2.65, 4.2]);
+export const OUTLAND_TREE_BLOCKERS = [...FOREST_TREES_A, ...FOREST_TREES_B, ...BORDER_TREES].map((tree) => ({
+  x: tree.position[0],
+  z: tree.position[2],
+  radius: THREE.MathUtils.clamp(tree.scale * 0.16, 0.46, 0.86)
+}));
 const QUARRY_ROCKS_A = makeScatter(23, 0x811dd, [44, 132], [-205, -292], 0, [0.8, 1.75]);
 const RUIN_ROCKS = makeScatter(18, 0x6bb51, [-136, -32], [-238, -320], 0, [0.65, 1.25]);
 
@@ -432,6 +440,12 @@ function LootChest({
             <ringGeometry args={[0.95, 1.18, 28]} />
             <meshBasicMaterial color={nearby ? "#72ffd5" : "#269c7a"} transparent opacity={nearby ? 0.7 : 0.28} side={THREE.DoubleSide} />
           </mesh>
+          {nearby ? (
+            <mesh position={[0, 1.3, 0]} raycast={() => null}>
+              <cylinderGeometry args={[0.035, 0.18, 2.8, 12, 1, true]} />
+              <meshBasicMaterial color="#77ffda" transparent opacity={0.24} depthWrite={false} side={THREE.DoubleSide} />
+            </mesh>
+          ) : null}
         </>
       ) : null}
       {nearby ? (

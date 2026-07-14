@@ -2,10 +2,17 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, resolve } from "node:path";
 import {
   createDefaultExpeditionProfile,
+  EXPEDITION_CONTAINER_IDS,
+  EXPEDITION_ENEMIES,
+  EXPEDITION_ENEMY_IDS,
   EXPEDITION_ITEM_IDS,
+  EXPEDITION_DOWNED_BLEED_OUT_MS,
+  EXPEDITION_SHIELD_PER_MODULE,
   EXPEDITION_SKILLS,
   EXPEDITION_SKILL_IDS,
   EXPEDITION_WEAPON_IDS,
+  type ExpeditionContainerId,
+  type ExpeditionEnemyId,
   type ExpeditionItemId,
   type ExpeditionProfile,
   type ExpeditionWeaponId,
@@ -19,7 +26,7 @@ import {
   MAX_PLAYER_LEVEL,
   xpRequiredForLevel
 } from "./data/neighborhood";
-import type { DbShape, PublicUser, User } from "./types";
+import type { DbShape, PersistedExpeditionRun, PublicUser, User } from "./types";
 
 const dbPath = resolve(process.cwd(), "data", "db.json");
 
@@ -83,6 +90,15 @@ function normalizeDb(db: DbShape) {
       changed = true;
     }
 
+    const storedExpeditionRun = (user as User & { expeditionRun?: Partial<PersistedExpeditionRun> }).expeditionRun;
+    if (storedExpeditionRun) {
+      const normalizedExpeditionRun = normalizePersistedExpeditionRun(storedExpeditionRun, user);
+      if (JSON.stringify(storedExpeditionRun) !== JSON.stringify(normalizedExpeditionRun)) {
+        user.expeditionRun = normalizedExpeditionRun;
+        changed = true;
+      }
+    }
+
     if (user.username.toLowerCase() === "rodion" && !user.isAdmin) {
       user.isAdmin = true;
       changed = true;
@@ -94,6 +110,8 @@ function normalizeDb(db: DbShape) {
 
 const expeditionItemIds = new Set<string>(EXPEDITION_ITEM_IDS);
 const expeditionWeaponIds = new Set<string>(EXPEDITION_WEAPON_IDS);
+const expeditionContainerIds = new Set<string>(EXPEDITION_CONTAINER_IDS);
+const expeditionEnemyIds = new Set<string>(EXPEDITION_ENEMY_IDS);
 
 function normalizeItemStacks(value: unknown, fallback: ItemStack[]) {
   if (!Array.isArray(value)) {
@@ -162,6 +180,109 @@ function normalizeExpeditionProfile(value: Partial<ExpeditionProfile> | undefine
   };
 }
 
+function normalizePersistedExpeditionRun(
+  value: Partial<PersistedExpeditionRun>,
+  user: User
+): PersistedExpeditionRun {
+  const selectedWeapon = expeditionWeaponIds.has(String(value.selectedWeapon))
+    ? value.selectedWeapon as ExpeditionWeaponId
+    : user.expedition.selectedWeapon;
+  const backpack = normalizeItemStacks(value.backpack, []);
+  const lootedContainerIds = Array.isArray(value.lootedContainerIds)
+    ? [...new Set(value.lootedContainerIds.filter((id): id is ExpeditionContainerId => expeditionContainerIds.has(String(id))))]
+    : [];
+  const killedEnemyIds = Array.isArray(value.killedEnemyIds)
+    ? [...new Set(value.killedEnemyIds.filter((id): id is ExpeditionEnemyId => expeditionEnemyIds.has(String(id))))]
+    : [];
+  const lootedEnemyIds = Array.isArray(value.lootedEnemyIds)
+    ? [...new Set(value.lootedEnemyIds.filter((id): id is ExpeditionEnemyId => (
+      expeditionEnemyIds.has(String(id)) && killedEnemyIds.includes(id as ExpeditionEnemyId)
+    )))]
+    // Runs created before corpse looting already received their enemy drops at
+    // kill time. Mark those corpses as searched during migration so the same
+    // loot cannot be claimed twice after deploy.
+    : [...killedEnemyIds];
+  const carriedWeaponIds = Array.isArray(value.carriedWeaponIds)
+    ? [...new Set(value.carriedWeaponIds.filter((id): id is ExpeditionWeaponId => expeditionWeaponIds.has(String(id))))]
+    : [];
+  const enemyHealth = Object.fromEntries(EXPEDITION_ENEMY_IDS.map((enemyId) => {
+    const maximum = EXPEDITION_ENEMIES[enemyId].maxHealth;
+    if (killedEnemyIds.includes(enemyId)) return [enemyId, 0];
+    const candidate = Number(value.enemyHealth?.[enemyId]);
+    return [enemyId, Number.isFinite(candidate) ? Math.max(0, Math.min(maximum, candidate)) : maximum];
+  })) as PersistedExpeditionRun["enemyHealth"];
+  const powerCells = backpack.reduce((total, stack) => (
+    stack.itemId === "power-cell" ? total + stack.quantity : total
+  ), 0);
+  const hostileKills = killedEnemyIds.filter((enemyId) => EXPEDITION_ENEMIES[enemyId].hostile).length;
+  const enemyDeathPositions: NonNullable<PersistedExpeditionRun["enemyDeathPositions"]> = {};
+  for (const enemyId of killedEnemyIds) {
+    const rawPosition = value.enemyDeathPositions?.[enemyId];
+    const x = Number(rawPosition?.x);
+    const z = Number(rawPosition?.z);
+    if (Number.isFinite(x) && Number.isFinite(z) && Math.abs(x) <= 1_000 && Math.abs(z) <= 1_000) {
+      enemyDeathPositions[enemyId] = { x, z };
+    }
+  }
+  const playerMaxHealth = 100 + user.expedition.skills.survival * 10;
+  const maximumShield = backpack.reduce((total, stack) => (
+    stack.itemId === "shield-module"
+      ? total + stack.quantity * EXPEDITION_SHIELD_PER_MODULE
+      : total
+  ), 0);
+  const playerHealth = clampInteger(value.playerHealth, 0, playerMaxHealth, playerMaxHealth);
+  const playerShield = clampInteger(value.playerShield, 0, maximumShield, maximumShield);
+  const rawPlayerPosition = value.playerPosition;
+  const rawPlayerRotation = clampNumber(rawPlayerPosition?.rotation, -Math.PI * 2, Math.PI * 2, 0);
+  const playerPosition: PersistedExpeditionRun["playerPosition"] = {
+    x: clampNumber(rawPlayerPosition?.x, -170, 170, 0),
+    y: clampNumber(rawPlayerPosition?.y, 0, 4, 0),
+    z: clampNumber(rawPlayerPosition?.z, -330, 90, 68),
+    rotation: Math.atan2(Math.sin(rawPlayerRotation), Math.cos(rawPlayerRotation)),
+    vehicle: rawPlayerPosition?.vehicle === true
+  };
+  const storedDownedAt = Number(value.downedAt);
+  const downedAt = playerHealth <= 0 && Number.isFinite(storedDownedAt) && storedDownedAt > 0
+    ? Math.round(storedDownedAt)
+    : null;
+  const storedBleedOutAt = Number(value.bleedOutAt);
+  const bleedOutAt = downedAt
+    ? Number.isFinite(storedBleedOutAt) && storedBleedOutAt >= downedAt
+      ? Math.round(storedBleedOutAt)
+      : downedAt + EXPEDITION_DOWNED_BLEED_OUT_MS
+    : null;
+
+  return {
+    id: typeof value.id === "string" && value.id.trim() ? value.id : crypto.randomUUID(),
+    startedAt: Number.isFinite(Number(value.startedAt)) && Number(value.startedAt) > 0
+      ? Math.round(Number(value.startedAt))
+      : Date.now(),
+    selectedWeapon,
+    playerPosition,
+    backpack,
+    lootedContainerIds,
+    lootedEnemyIds,
+    killedEnemyIds,
+    carriedCoins: clampInteger(value.carriedCoins, 0, 999_999_999, 0),
+    carriedWeaponIds,
+    playerHealth,
+    playerMaxHealth,
+    playerShield,
+    downedAt,
+    bleedOutAt,
+    enemyHealth,
+    objective: {
+      powerCells,
+      hostileKills,
+      requiredPowerCells: 1,
+      requiredHostileKills: 2,
+      complete: powerCells >= 1 && hostileKills >= 2
+    },
+    nextHitAt: clampInteger(value.nextHitAt, 0, Date.now() + 60_000, 0),
+    enemyDeathPositions
+  };
+}
+
 function clampInteger(value: unknown, minimum: number, maximum: number, fallback: number) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) {
@@ -198,4 +319,10 @@ export function toPublicUser(user: User): PublicUser {
 export function findUserByName(username: string) {
   const db = readDb();
   return db.users.find((user) => user.username.toLowerCase() === username.toLowerCase());
+}
+
+function clampNumber(value: unknown, minimum: number, maximum: number, fallback: number) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallback;
+  return Math.max(minimum, Math.min(maximum, numericValue));
 }

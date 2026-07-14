@@ -5,6 +5,7 @@ import type {
   ExpeditionEnemyDefinition,
   ExpeditionEnemyId,
   ExpeditionHitInput,
+  ExpeditionItemId,
   ExpeditionProfile,
   ExpeditionRecipeDefinition,
   ExpeditionRecipeId,
@@ -26,6 +27,7 @@ export {
 export type {
   ExpeditionContainerId,
   ExpeditionEnemyId,
+  ExpeditionItemId,
   ExpeditionProfile,
   ExpeditionRecipeId,
   ExpeditionRunSnapshot,
@@ -126,6 +128,30 @@ export function buyExpeditionAmmo() {
   }>("/api/expedition/buy-ammo", { method: "POST" });
 }
 
+export function buyExpeditionTraderItem(itemId: ExpeditionItemId, quantity = 1) {
+  return request<{
+    user: PublicUser;
+    profile: ExpeditionProfile;
+    purchased: ItemStack;
+    spent: number;
+  }>("/api/expedition/trader/buy", {
+    method: "POST",
+    body: JSON.stringify({ itemId, quantity })
+  });
+}
+
+export function sellExpeditionTraderItem(itemId: ExpeditionItemId, quantity = 1) {
+  return request<{
+    user: PublicUser;
+    profile: ExpeditionProfile;
+    sold: ItemStack;
+    earned: number;
+  }>("/api/expedition/trader/sell", {
+    method: "POST",
+    body: JSON.stringify({ itemId, quantity })
+  });
+}
+
 export function craftExpeditionItem(recipeId: ExpeditionRecipeId) {
   return request<{ profile: ExpeditionProfile; recipe: ExpeditionRecipeDefinition }>("/api/expedition/craft", {
     method: "POST",
@@ -149,9 +175,41 @@ export function lootExpeditionContainer(containerId: ExpeditionContainerId) {
     run: ExpeditionRunSnapshot;
     container: ExpeditionContainerDefinition;
     loot: ItemStack[];
+    coins: number;
   }>("/api/expedition/loot", {
     method: "POST",
     body: JSON.stringify({ containerId })
+  });
+}
+
+export function lootExpeditionEnemy(enemyId: ExpeditionEnemyId) {
+  return request<{
+    profile: ExpeditionProfile;
+    run: ExpeditionRunSnapshot;
+    enemy: ExpeditionEnemyDefinition;
+    loot: ItemStack[];
+    coins: number;
+    weaponDrop: ExpeditionWeaponId | null;
+    carriedWeapon: ExpeditionWeaponId | null;
+    converted: ItemStack[];
+  }>("/api/expedition/loot-enemy", {
+    method: "POST",
+    body: JSON.stringify({ enemyId })
+  });
+}
+
+export function useExpeditionBandage() {
+  return request<{
+    run: ExpeditionRunSnapshot;
+    used: ItemStack;
+    heal: number;
+  }>("/api/expedition/use-bandage", { method: "POST" });
+}
+
+export function syncExpeditionPlayerStatus(status: { health: number; shield: number; downed: boolean }) {
+  return request<{ run: ExpeditionRunSnapshot }>("/api/expedition/player-status", {
+    method: "POST",
+    body: JSON.stringify(status)
   });
 }
 
@@ -162,6 +220,7 @@ export type ExpeditionEnemyHitResult = {
   remainingHealth: number;
   killed: boolean;
   loot: ItemStack[];
+  corpseLootAvailable: boolean;
 };
 
 export type ExpeditionHitResult = {
@@ -181,12 +240,25 @@ export function extractExpedition() {
     user: PublicUser;
     profile: ExpeditionProfile;
     extracted: ItemStack[];
-    reward: { coins: number; xp: number; levelsGained: number; objectiveCompleted: boolean };
+    extractedWeapons: ExpeditionWeaponId[];
+    reward: {
+      coins: number;
+      carriedCoins: number;
+      objectiveCoins: number;
+      xp: number;
+      levelsGained: number;
+      objectiveCompleted: boolean;
+    };
   }>("/api/expedition/extract", { method: "POST" });
 }
 
 export function abandonExpedition() {
-  return request<{ profile: ExpeditionProfile; lost: ItemStack[] }>("/api/expedition/abandon", { method: "POST" });
+  return request<{
+    profile: ExpeditionProfile;
+    lost: ItemStack[];
+    lostCoins: number;
+    lostWeapons: ExpeditionWeaponId[];
+  }>("/api/expedition/abandon", { method: "POST" });
 }
 
 export function getCatalog() {
