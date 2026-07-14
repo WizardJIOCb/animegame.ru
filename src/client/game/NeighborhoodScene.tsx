@@ -652,6 +652,7 @@ function StreetCamera({
   cameraMode,
   cameraYaw,
   cameraPitch,
+  shoulderSide,
   aiming,
   worldRoot,
   homePosition,
@@ -668,6 +669,7 @@ function StreetCamera({
   cameraMode: CameraMode;
   cameraYaw: { current: number };
   cameraPitch: { current: number };
+  shoulderSide: 1 | -1;
   aiming: boolean;
   worldRoot: { current: THREE.Group | null };
   homePosition: THREE.Vector3;
@@ -825,7 +827,7 @@ function StreetCamera({
     const element = gl.domElement;
     const handleMouseMove = (event: MouseEvent) => {
       if (cameraModeState.current !== "thirdPerson" || document.pointerLockElement !== element) return;
-      cameraYaw.current += event.movementX * 0.00235;
+      cameraYaw.current -= event.movementX * 0.00235;
       cameraPitch.current = THREE.MathUtils.clamp(cameraPitch.current - event.movementY * 0.0019, -0.72, 0.58);
     };
     document.addEventListener("mousemove", handleMouseMove);
@@ -863,7 +865,7 @@ function StreetCamera({
       const forward = frontVector(cameraYaw.current);
       const right = rightVector(cameraYaw.current);
       const followDistance = inside ? 1.85 : aiming ? 2.2 : 2.85;
-      const shoulderOffset = aiming ? 0.58 : 0.72;
+      const shoulderOffset = (aiming ? 0.58 : 0.72) * shoulderSide;
       const pivot = position.clone().add(new THREE.Vector3(0, aiming ? 1.32 : 1.45, 0));
       const desired = position.clone()
         .addScaledVector(forward, -followDistance)
@@ -1868,6 +1870,7 @@ function NeighborhoodWorld({
   const [driving, setDriving] = useState(false);
   const [introView, setIntroView] = useState(!initialPosition);
   const [activeInterior, setActiveInterior] = useState<NeighborhoodResident | null>(activeInteriorRef.current);
+  const [shoulderSide, setShoulderSide] = useState<1 | -1>(1);
 
   const ownOutfit = getCatalogItem(catalog, user.avatar.outfit);
   const ownCharacter = getCatalogItem(catalog, user.avatar.character);
@@ -2291,6 +2294,7 @@ function NeighborhoodWorld({
         KeyE: "e",
         KeyF: "f",
         KeyQ: "q",
+        KeyB: "b",
         KeyV: "v",
         ShiftLeft: "shift",
         ShiftRight: "shift",
@@ -2330,6 +2334,12 @@ function NeighborhoodWorld({
           return;
         }
         setCameraMode(cameraModeRef.current === "thirdPerson" ? "strategy" : "thirdPerson");
+        return;
+      }
+      if (key === "b" && cameraModeRef.current === "thirdPerson") {
+        event.preventDefault();
+        if (event.repeat) return;
+        setShoulderSide((side) => side === 1 ? -1 : 1);
         return;
       }
       if (key === "q" && (drivingRef.current || activeInteriorRef.current || cameraModeRef.current === "thirdPerson")) {
@@ -2612,7 +2622,7 @@ function NeighborhoodWorld({
       playerPosition.current.copy(carPosition.current);
       playerRotation.current = carRotation.current;
     } else if (cameraModeRef.current === "thirdPerson") {
-      const inputX = (keys.current.has("d") ? 1 : 0) - (keys.current.has("a") ? 1 : 0);
+      const inputX = (keys.current.has("a") ? 1 : 0) - (keys.current.has("d") ? 1 : 0);
       const inputZ = (keys.current.has("w") ? 1 : 0) - (keys.current.has("s") ? 1 : 0);
       if (aimingRef.current) playerRotation.current = cameraYaw.current;
       if (inputX !== 0 || inputZ !== 0) {
@@ -3060,6 +3070,7 @@ function NeighborhoodWorld({
         cameraMode={cameraMode}
         cameraYaw={cameraYaw}
         cameraPitch={cameraPitch}
+        shoulderSide={shoulderSide}
         aiming={aiming}
         worldRoot={worldGroupRef}
         homePosition={displayHomePosition}
@@ -3150,6 +3161,7 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
             <span className="control-dot">·</span><span><b>Shift</b> — бег</span>
             <span className="control-dot">·</span><span><b>Space</b> — прыжок</span>
             <span className="control-dot">·</span><span><b>Ctrl</b> — присесть</span>
+            <span className="control-dot">·</span><span><b>B</b> — сменить плечо</span>
             <span className="control-dot">·</span><span><b>V</b> — обычная камера</span>
           </>
         ) : !driving ? (
