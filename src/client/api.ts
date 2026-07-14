@@ -1,12 +1,51 @@
 import type { Activity, CatalogItem, HomeState, NeighborhoodProgress, NeighborhoodState, PlacedItem, PublicUser } from "./types";
+import type {
+  ExpeditionContainerDefinition,
+  ExpeditionContainerId,
+  ExpeditionEnemyDefinition,
+  ExpeditionEnemyId,
+  ExpeditionHitInput,
+  ExpeditionProfile,
+  ExpeditionRecipeDefinition,
+  ExpeditionRecipeId,
+  ExpeditionRunSnapshot,
+  ExpeditionSkillDefinition,
+  ExpeditionSkillId,
+  ExpeditionWeaponDefinition,
+  ExpeditionWeaponId,
+  ItemStack
+} from "../shared/expedition";
+
+export {
+  EXPEDITION_CONTAINERS,
+  EXPEDITION_ENEMIES,
+  EXPEDITION_ITEMS,
+  EXPEDITION_RECIPES,
+  EXPEDITION_WEAPONS
+} from "../shared/expedition";
+export type {
+  ExpeditionContainerId,
+  ExpeditionEnemyId,
+  ExpeditionProfile,
+  ExpeditionRecipeId,
+  ExpeditionRunSnapshot,
+  ExpeditionSkillId,
+  ExpeditionWeaponId,
+  ItemStack,
+  PartyInvite,
+  PartyInvitesSnapshot,
+  PartySnapshot
+} from "../shared/expedition";
 
 const TOKEN_KEY = "animegame_token";
+let authRevision = 0;
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
 
 export function setToken(token: string | null) {
+  authRevision += 1;
   if (token) {
     localStorage.setItem(TOKEN_KEY, token);
   } else {
@@ -16,16 +55,20 @@ export function setToken(token: string | null) {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
+  const requestAuthRevision = authRevision;
   const response = await fetch(path, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers
     }
   });
 
   const payload = await response.json().catch(() => ({}));
+  if (requestAuthRevision !== authRevision || token !== getToken()) {
+    throw new Error("Сессия изменилась, повторите действие");
+  }
   if (!response.ok) {
     throw new Error(payload.error ?? "Ошибка запроса");
   }
@@ -49,6 +92,101 @@ export function login(username: string, password: string) {
 
 export function me() {
   return request<{ user: PublicUser }>("/api/me");
+}
+
+export function getExpeditionProfile() {
+  return request<{ profile: ExpeditionProfile; run: ExpeditionRunSnapshot | null }>("/api/expedition/profile");
+}
+
+export function setExpeditionLoadout(weaponId: ExpeditionWeaponId) {
+  return request<{ profile: ExpeditionProfile; weapon: ExpeditionWeaponDefinition }>("/api/expedition/loadout", {
+    method: "POST",
+    body: JSON.stringify({ weaponId })
+  });
+}
+
+export function buyExpeditionWeapon(weaponId: ExpeditionWeaponId) {
+  return request<{
+    user: PublicUser;
+    profile: ExpeditionProfile;
+    weapon: ExpeditionWeaponDefinition;
+    spent: number;
+  }>("/api/expedition/buy-weapon", {
+    method: "POST",
+    body: JSON.stringify({ weaponId })
+  });
+}
+
+export function buyExpeditionAmmo() {
+  return request<{
+    user: PublicUser;
+    profile: ExpeditionProfile;
+    purchased: ItemStack;
+    spent: number;
+  }>("/api/expedition/buy-ammo", { method: "POST" });
+}
+
+export function craftExpeditionItem(recipeId: ExpeditionRecipeId) {
+  return request<{ profile: ExpeditionProfile; recipe: ExpeditionRecipeDefinition }>("/api/expedition/craft", {
+    method: "POST",
+    body: JSON.stringify({ recipeId })
+  });
+}
+
+export function upgradeExpeditionSkill(skillId: ExpeditionSkillId) {
+  return request<{ profile: ExpeditionProfile; skill: ExpeditionSkillDefinition }>("/api/expedition/upgrade-skill", {
+    method: "POST",
+    body: JSON.stringify({ skillId })
+  });
+}
+
+export function startExpedition() {
+  return request<{ run: ExpeditionRunSnapshot; profile: ExpeditionProfile; partySize: number }>("/api/expedition/start", { method: "POST" });
+}
+
+export function lootExpeditionContainer(containerId: ExpeditionContainerId) {
+  return request<{
+    run: ExpeditionRunSnapshot;
+    container: ExpeditionContainerDefinition;
+    loot: ItemStack[];
+  }>("/api/expedition/loot", {
+    method: "POST",
+    body: JSON.stringify({ containerId })
+  });
+}
+
+export type ExpeditionEnemyHitResult = {
+  enemy: ExpeditionEnemyDefinition;
+  weaponId: ExpeditionWeaponId;
+  damage: number;
+  remainingHealth: number;
+  killed: boolean;
+  loot: ItemStack[];
+};
+
+export type ExpeditionHitResult = {
+  run: ExpeditionRunSnapshot;
+  hits: ExpeditionEnemyHitResult[];
+};
+
+export function hitExpeditionEnemies(hits: ExpeditionHitInput[]) {
+  return request<ExpeditionHitResult>("/api/expedition/hit", {
+    method: "POST",
+    body: JSON.stringify({ hits })
+  });
+}
+
+export function extractExpedition() {
+  return request<{
+    user: PublicUser;
+    profile: ExpeditionProfile;
+    extracted: ItemStack[];
+    reward: { coins: number; xp: number; levelsGained: number; objectiveCompleted: boolean };
+  }>("/api/expedition/extract", { method: "POST" });
+}
+
+export function abandonExpedition() {
+  return request<{ profile: ExpeditionProfile; lost: ItemStack[] }>("/api/expedition/abandon", { method: "POST" });
 }
 
 export function getCatalog() {

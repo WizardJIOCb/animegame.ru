@@ -214,12 +214,26 @@ input:focus {
 
 .topbar {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr) auto 42px;
+  grid-template-columns: 190px minmax(0, 1fr) auto auto 42px;
   align-items: center;
   gap: 14px;
   padding: 10px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(17, 18, 26, 0.96);
+}
+
+.expedition-toggle {
+  min-height: 36px;
+  border: 1px solid rgba(249, 115, 22, 0.3);
+  color: #ffedd5;
+  white-space: nowrap;
+}
+
+.expedition-toggle.active {
+  border-color: rgba(94, 234, 212, 0.62);
+  background: rgba(20, 184, 166, 0.2);
+  color: #ccfbf1;
+  box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.08);
 }
 
 .brand {
@@ -1951,5 +1965,826 @@ input:focus {
 
   .asset-loader-track.indeterminate span {
     animation: none;
+  }
+}
+
+/* Outlands expedition */
+.outlands-world-sign,
+.outlands-zone-label,
+.outlands-enemy-label,
+.world-interact-label {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  pointer-events: none;
+  user-select: none;
+}
+
+.outlands-world-sign {
+  min-width: 190px;
+  display: grid;
+  gap: 3px;
+  padding: 9px 13px;
+  border: 1px solid rgba(94, 234, 212, 0.58);
+  border-radius: 9px;
+  background: rgba(10, 28, 31, 0.92);
+  color: #ecfeff;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(2, 12, 16, 0.3);
+  backdrop-filter: blur(8px);
+}
+
+.outlands-world-sign b {
+  font-size: 11px;
+  letter-spacing: 0.09em;
+}
+
+.outlands-world-sign span {
+  color: #99f6e4;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.outlands-zone-label {
+  min-width: 160px;
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid;
+  border-radius: 8px;
+  background: rgba(15, 23, 27, 0.88);
+  color: #ffffff;
+  text-align: center;
+  box-shadow: 0 8px 22px rgba(5, 12, 15, 0.28);
+  backdrop-filter: blur(7px);
+}
+
+.outlands-zone-label b {
+  font-size: 10px;
+  letter-spacing: 0.055em;
+}
+
+.outlands-zone-label span {
+  color: #d4dde0;
+  font-size: 9px;
+}
+
+.outlands-enemy-label {
+  min-width: 138px;
+  display: grid;
+  gap: 5px;
+  padding: 7px 9px;
+  border: 1px solid rgba(248, 113, 113, 0.65);
+  border-radius: 8px;
+  background: rgba(28, 19, 21, 0.9);
+  color: #ffffff;
+  box-shadow: 0 7px 20px rgba(12, 5, 7, 0.28);
+  backdrop-filter: blur(7px);
+}
+
+.outlands-enemy-label.neutral {
+  border-color: rgba(96, 165, 250, 0.62);
+  background: rgba(13, 31, 44, 0.9);
+}
+
+.outlands-enemy-label.dead {
+  opacity: 0.64;
+  filter: grayscale(0.7);
+}
+
+.outlands-enemy-label > div {
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.outlands-enemy-label b {
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outlands-enemy-label span {
+  color: #fca5a5;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.outlands-enemy-label.neutral span {
+  color: #93c5fd;
+}
+
+.outlands-enemy-label > i {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.outlands-enemy-label > i em {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ef4444, #f59e0b 55%, #22c55e);
+  transition: width 150ms ease-out;
+}
+
+.world-interact-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid rgba(94, 234, 212, 0.66);
+  border-radius: 999px;
+  background: rgba(8, 33, 31, 0.9);
+  color: #ecfdf5;
+  font-size: 10px;
+  font-weight: 850;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(4, 18, 17, 0.28);
+}
+
+.world-interact-label b {
+  min-width: 21px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: #5eead4;
+  color: #073b35;
+  font-size: 10px;
+}
+
+.world-interact-label.extraction {
+  border-color: rgba(134, 239, 172, 0.72);
+  background: rgba(12, 48, 34, 0.92);
+}
+
+.outlands-vitals {
+  position: absolute;
+  z-index: 5;
+  top: 14px;
+  right: 14px;
+  width: min(270px, calc(100% - 28px));
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px solid rgba(134, 239, 172, 0.5);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(13, 36, 33, 0.92), rgba(15, 23, 42, 0.9));
+  color: #f0fdf4;
+  box-shadow: 0 14px 34px rgba(3, 15, 18, 0.3);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.outlands-vitals-heading,
+.outlands-health-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.outlands-vitals-heading span {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outlands-vitals-heading b {
+  color: #86efac;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.outlands-health-row {
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.outlands-health-row strong {
+  color: #ffffff;
+  font-size: 12px;
+}
+
+.outlands-health-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.62);
+}
+
+.outlands-health-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ef4444, #f59e0b 45%, #22c55e 82%);
+  transition: width 160ms ease-out;
+}
+
+.expedition-panel {
+  height: 100%;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 11px;
+  padding: 14px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(249, 115, 22, 0.09), transparent 26%),
+    #eef1ec;
+  color: #17211e;
+  scrollbar-width: thin;
+  scrollbar-color: #9aa79f transparent;
+}
+
+.expedition-hero {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 13px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #2a3433, #172622);
+  color: #f8fafc;
+  box-shadow: 0 14px 28px rgba(23, 38, 34, 0.16);
+}
+
+.expedition-hero-active {
+  background: linear-gradient(135deg, #24483f, #16332e 58%, #442d1f);
+}
+
+.expedition-hero-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fdba74;
+}
+
+.expedition-hero-active .expedition-hero-icon {
+  color: #5eead4;
+}
+
+.expedition-hero-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.expedition-hero-copy span {
+  color: #fed7aa;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.expedition-hero-copy b {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expedition-status {
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  color: #cbd5e1;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.expedition-status-live {
+  border-color: rgba(94, 234, 212, 0.38);
+  background: rgba(20, 184, 166, 0.14);
+  color: #99f6e4;
+}
+
+.expedition-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d4dbd5;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 5px 16px rgba(31, 41, 37, 0.05);
+}
+
+.expedition-card-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1d3530;
+}
+
+.expedition-card-title svg {
+  flex: 0 0 auto;
+  color: #0f766e;
+}
+
+.expedition-card-title span {
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.expedition-card-title small {
+  color: #66736c;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.expedition-objective-done {
+  color: #16a34a !important;
+}
+
+.expedition-card-description {
+  margin: -2px 0 0;
+  color: #58635e;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.expedition-progress-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8e3;
+}
+
+.expedition-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f97316, #facc15 48%, #14b8a6);
+  transition: width 220ms ease-out;
+}
+
+.expedition-objective-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.expedition-objective-list > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #e0e4df;
+  border-radius: 9px;
+  background: #f5f6f2;
+  color: #53605a;
+  font-size: 11px;
+}
+
+.expedition-objective-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expedition-objective-list b {
+  color: #27352f;
+}
+
+.expedition-objective-list .expedition-objective-complete {
+  border-color: #a7d9c4;
+  background: #eaf8f1;
+  color: #187254;
+}
+
+.expedition-run-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+
+.expedition-action {
+  min-height: 35px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.expedition-action-primary {
+  background: #138a70;
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(19, 138, 112, 0.18);
+}
+
+.expedition-action-primary:hover:not(:disabled) {
+  background: #0f766e;
+}
+
+.expedition-action-danger {
+  border: 1px solid #f3c2be;
+  background: #fff2f1;
+  color: #b8322b;
+}
+
+.expedition-action-muted {
+  border: 1px solid #d8ddd9;
+  background: #f3f5f2;
+  color: #48554f;
+}
+
+.expedition-action-wide {
+  width: 100%;
+}
+
+.expedition-weapon-list,
+.expedition-recipe-list,
+.expedition-skill-list,
+.expedition-party-members,
+.expedition-invites,
+.expedition-online-players {
+  display: grid;
+  gap: 7px;
+}
+
+.expedition-skill {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid #dce3dd;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #f7faf6, #f2f6f3);
+}
+
+.expedition-skill-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.expedition-skill-copy b {
+  color: #22352d;
+  font-size: 11px;
+}
+
+.expedition-skill-copy > span {
+  color: #647269;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.expedition-skill-copy i {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.expedition-skill-copy i em {
+  width: 19px;
+  height: 4px;
+  border-radius: 999px;
+  background: #d8dfda;
+}
+
+.expedition-skill-copy i em.active {
+  background: linear-gradient(90deg, #14b8a6, #2dd4bf);
+  box-shadow: 0 0 0 1px rgba(20, 184, 166, 0.12);
+}
+
+.expedition-skill-action {
+  min-width: 55px;
+  min-height: 31px;
+  padding: 0 8px;
+  border: 1px solid #9fcbbc;
+  border-radius: 7px;
+  background: #e7f6f0;
+  color: #17634e;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.expedition-weapon {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid #dde2dd;
+  border-radius: 9px;
+  background: #f7f8f5;
+}
+
+.expedition-weapon-selected {
+  border-color: #7ec9b7;
+  background: #eaf8f4;
+  box-shadow: inset 3px 0 #14b8a6;
+}
+
+.expedition-weapon-copy,
+.expedition-recipe-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.expedition-weapon-copy b,
+.expedition-recipe-copy b {
+  color: #22302b;
+  font-size: 11px;
+}
+
+.expedition-weapon-copy span {
+  overflow: hidden;
+  color: #6a756f;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expedition-weapon-action,
+.expedition-recipe-action {
+  min-height: 29px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 9px;
+  border: 1px solid #cbd5ce;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #315148;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.expedition-weapon-buy {
+  border-color: #f1c982;
+  background: #fff8e8;
+  color: #85570c;
+}
+
+.expedition-hint,
+.expedition-empty {
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: #f2f4f1;
+  color: #718078;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.expedition-stack-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.expedition-ammo-buy {
+  margin-top: 10px;
+}
+
+.expedition-stack {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid #e0e4df;
+  border-radius: 8px;
+  background: #f8f9f7;
+  font-size: 10px;
+}
+
+.expedition-stack-marker {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.14);
+}
+
+.expedition-rarity-uncommon .expedition-stack-marker {
+  background: #22c55e;
+}
+
+.expedition-rarity-rare .expedition-stack-marker {
+  background: #3b82f6;
+}
+
+.expedition-rarity-epic .expedition-stack-marker {
+  background: #a855f7;
+}
+
+.expedition-stack-name {
+  overflow: hidden;
+  color: #46534d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expedition-stack-quantity {
+  color: #1f3029;
+  font-variant-numeric: tabular-nums;
+}
+
+.expedition-recipe {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid #dde2dd;
+  border-radius: 9px;
+  background: #f7f8f5;
+}
+
+.expedition-recipe-output {
+  color: #18725d;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.expedition-recipe-ingredients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.expedition-recipe-ingredients em {
+  padding: 3px 5px;
+  border-radius: 5px;
+  background: #f3e6e4;
+  color: #9c4a42;
+  font-size: 9px;
+  font-style: normal;
+}
+
+.expedition-recipe-ingredients .expedition-ingredient-ready {
+  background: #e2f5ea;
+  color: #247047;
+}
+
+.expedition-party-member,
+.expedition-invite,
+.expedition-online-player {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 9px;
+  border: 1px solid #e0e4df;
+  border-radius: 8px;
+  background: #f7f8f5;
+  font-size: 11px;
+}
+
+.expedition-party-member > span:nth-child(2),
+.expedition-online-player b {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expedition-party-member b {
+  color: #0f766e;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.expedition-online,
+.expedition-offline {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
+}
+
+.expedition-offline {
+  background: #94a3b8;
+  box-shadow: none;
+}
+
+.expedition-subtitle {
+  margin-top: 2px;
+  color: #748078;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.expedition-pending-note {
+  padding: 7px 8px;
+  border: 1px solid #ead7ac;
+  border-radius: 7px;
+  background: #fff8e8;
+  color: #76551c;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.expedition-invite > div:first-child {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.expedition-invite > div:first-child span {
+  color: #6c7771;
+  font-size: 10px;
+}
+
+.expedition-invite-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.expedition-invite-actions button,
+.expedition-online-player button {
+  min-height: 27px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid #bfd1c8;
+  border-radius: 6px;
+  background: #e8f5ef;
+  color: #246047;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.expedition-invite-actions button:last-child {
+  border-color: #efcbc7;
+  background: #fff0ef;
+  color: #a63d35;
+}
+
+@media (max-width: 980px) {
+  .topbar {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+  }
+
+  .expedition-toggle {
+    padding: 0 8px;
+  }
+
+  .outlands-vitals {
+    top: auto;
+    right: 10px;
+    bottom: 58px;
+    width: 220px;
+  }
+
+  .expedition-panel {
+    min-height: 620px;
+  }
+}
+
+@media (max-width: 560px) {
+  .topbar .expedition-toggle {
+    font-size: 0;
+  }
+
+  .topbar .expedition-toggle svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .expedition-objective-list,
+  .expedition-stack-list {
+    grid-template-columns: 1fr;
+  }
+
+  .expedition-run-actions {
+    grid-template-columns: 1fr;
   }
 }

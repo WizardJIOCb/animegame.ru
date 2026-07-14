@@ -1,14 +1,61 @@
-import { CarFront, Coins, DoorOpen, Hammer, Home, LogOut, Map as MapIcon, MessageCircle, Mic, MicOff, Minus, Plus, RotateCcw, RotateCw, Shield, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
+import { CarFront, Coins, Crosshair, DoorOpen, Hammer, Home, LogOut, Map as MapIcon, MessageCircle, Mic, MicOff, Minus, Plus, RotateCcw, RotateCw, Shield, Shirt, ShoppingBag, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { AdminPanel } from "./components/AdminPanel";
 import { AuthScreen } from "./components/AuthScreen";
+import { ExpeditionPanel } from "./components/ExpeditionPanel";
 import { createGameAssetPlan, GameAssetGate } from "./components/GameAssetGate";
 import { NeighborhoodPanel } from "./components/NeighborhoodPanel";
-import { buy, claimNeighborhoodIncome, earn, getCatalog, getHome, getNeighborhood, getPlayers, getToken, login, me, movePlacedItem, place, register, rotatePlacedItem, scalePlacedItem, sellPlacedItem, setToken, updateHomeStyle, upgradeCareer, upgradeHouse } from "./api";
+import {
+  abandonExpedition,
+  buy,
+  buyExpeditionAmmo,
+  buyExpeditionWeapon,
+  claimNeighborhoodIncome,
+  craftExpeditionItem,
+  earn,
+  extractExpedition,
+  getCatalog,
+  getExpeditionProfile,
+  getHome,
+  getNeighborhood,
+  getPlayers,
+  getToken,
+  hitExpeditionEnemies,
+  login,
+  lootExpeditionContainer,
+  me,
+  movePlacedItem,
+  place,
+  register,
+  rotatePlacedItem,
+  scalePlacedItem,
+  sellPlacedItem,
+  setExpeditionLoadout,
+  setToken,
+  startExpedition,
+  updateHomeStyle,
+  upgradeCareer,
+  upgradeExpeditionSkill,
+  upgradeHouse
+} from "./api";
 import { trackGoal, trackItemGoal, trackPurchase } from "./analytics";
 import { GameScene } from "./game/GameScene";
 import { NeighborhoodScene } from "./game/NeighborhoodScene";
+import type { WorldRegion } from "./game/outlands";
+import { EXPEDITION_ITEMS } from "../shared/expedition";
+import type {
+  ExpeditionContainerId,
+  ExpeditionHitInput,
+  ExpeditionProfile,
+  ExpeditionRecipeId,
+  ExpeditionRunSnapshot,
+  ExpeditionSkillId,
+  ExpeditionWeaponId,
+  PartyInvite,
+  PartyInvitesSnapshot,
+  PartySnapshot
+} from "../shared/expedition";
 import type { Activity, CatalogItem, ChatMessage, HomeState, NeighborhoodResident, NeighborhoodState, PlacedItem, PublicUser, RemotePlayer } from "./types";
 
 type Tab = "shop" | "work" | "visit" | "inventory" | "admin";
@@ -61,6 +108,17 @@ export default function App() {
   const [voiceState, setVoiceState] = useState<VoiceState>("off");
   const [voiceError, setVoiceError] = useState("");
   const [remoteVoicePeers, setRemoteVoicePeers] = useState<VoicePeerInfo[]>([]);
+  const [expeditionProfile, setExpeditionProfile] = useState<ExpeditionProfile | null>(null);
+  const [expeditionRun, setExpeditionRun] = useState<ExpeditionRunSnapshot | null>(null);
+  const [expeditionBusy, setExpeditionBusy] = useState("");
+  const [pendingExpeditionShots, setPendingExpeditionShots] = useState(0);
+  const [showExpeditionPanel, setShowExpeditionPanel] = useState(false);
+  const [worldRegion, setWorldRegion] = useState<WorldRegion>("city");
+  const [canExtractExpedition, setCanExtractExpedition] = useState(false);
+  const [party, setParty] = useState<PartySnapshot | null>(null);
+  const [partyInvites, setPartyInvites] = useState<PartyInvite[]>([]);
+  const [partyOutgoingInvites, setPartyOutgoingInvites] = useState<PartyInvite[]>([]);
+  const [partyOnlinePlayers, setPartyOnlinePlayers] = useState<Array<{ userId: string; username: string }>>([]);
   const userRef = useRef<PublicUser | null>(null);
   const sceneModeRef = useRef<SceneMode>("home");
   const activeInteriorOwnerRef = useRef<string | null>(null);
@@ -72,6 +130,42 @@ export default function App() {
   const voicePeerNamesRef = useRef<Map<string, string>>(new Map());
   const voiceCandidateQueueRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const voiceActiveRef = useRef(false);
+  const enemyHitQueueRef = useRef(Promise.resolve());
+  const pendingExpeditionShotsRef = useRef(0);
+  const pendingContainersRef = useRef(new Set<ExpeditionContainerId>());
+  const expeditionRunRef = useRef<ExpeditionRunSnapshot | null>(null);
+  const sessionVersionRef = useRef(0);
+
+  function updateExpeditionRun(run: ExpeditionRunSnapshot | null) {
+    if (run?.id !== expeditionRunRef.current?.id) {
+      pendingExpeditionShotsRef.current = 0;
+      setPendingExpeditionShots(0);
+    }
+    expeditionRunRef.current = run;
+    setExpeditionRun(run);
+  }
+
+  function adjustPendingExpeditionShots(delta: number) {
+    pendingExpeditionShotsRef.current = Math.max(0, pendingExpeditionShotsRef.current + delta);
+    setPendingExpeditionShots(pendingExpeditionShotsRef.current);
+  }
+
+  function disconnectSocket() {
+    socketRef.current?.disconnect();
+    socketRef.current = null;
+    setPartyOnlinePlayers([]);
+  }
+
+  function captureSession() {
+    const userId = userRef.current?.id;
+    return userId ? { version: sessionVersionRef.current, userId } : null;
+  }
+
+  function isCurrentSession(session: { version: number; userId: string } | null) {
+    return Boolean(session
+      && session.version === sessionVersionRef.current
+      && session.userId === userRef.current?.id);
+  }
 
   const ownHome = user?.username === homeOwner;
 
@@ -84,10 +178,23 @@ export default function App() {
   }, [sceneMode]);
 
   useEffect(() => {
+    const expirations = [...partyInvites, ...partyOutgoingInvites].map((invite) => invite.expiresAt);
+    if (expirations.length === 0) return;
+    const delay = Math.max(0, Math.min(...expirations) - Date.now() + 25);
+    const timeout = window.setTimeout(() => {
+      const now = Date.now();
+      setPartyInvites((current) => current.filter((invite) => invite.expiresAt > now));
+      setPartyOutgoingInvites((current) => current.filter((invite) => invite.expiresAt > now));
+    }, delay);
+    return () => window.clearTimeout(timeout);
+  }, [partyInvites, partyOutgoingInvites]);
+
+  useEffect(() => {
     void bootstrap();
     return () => {
+      sessionVersionRef.current += 1;
       stopVoice(false);
-      socketRef.current?.disconnect();
+      disconnectSocket();
     };
   }, []);
 
@@ -101,31 +208,72 @@ export default function App() {
     setPlayers(playersResponse.players);
 
     if (getToken()) {
+      const sessionVersion = sessionVersionRef.current + 1;
+      sessionVersionRef.current = sessionVersion;
       try {
         const response = await me();
+        if (sessionVersionRef.current !== sessionVersion) return;
+        const [primaryLocation, expeditionState] = await Promise.all([
+          fetchPrimaryLocation(response.user.username),
+          getExpeditionProfile()
+        ]);
+        if (sessionVersionRef.current !== sessionVersion) return;
+        commitPrimaryLocation(response.user.username, primaryLocation);
+        setExpeditionProfile(expeditionState.profile);
+        updateExpeditionRun(expeditionState.run);
         userRef.current = response.user;
         setUser(response.user);
-        await loadPrimaryLocation(response.user.username);
         connectSocket(response.user.username);
       } catch {
+        if (sessionVersionRef.current !== sessionVersion) return;
+        sessionVersionRef.current += 1;
+        disconnectSocket();
         setToken(null);
+        userRef.current = null;
+        setUser(null);
+        setHome(null);
+        setExpeditionProfile(null);
+        updateExpeditionRun(null);
+        setCanExtractExpedition(false);
       }
     }
   }
 
   async function handleAuth(mode: "login" | "register", username: string, password: string) {
+    const sessionVersion = sessionVersionRef.current + 1;
+    sessionVersionRef.current = sessionVersion;
+    disconnectSocket();
     setError("");
     try {
       const response = mode === "register" ? await register(username, password) : await login(username, password);
+      if (sessionVersionRef.current !== sessionVersion) return;
       setToken(response.token);
+      const [primaryLocation, expeditionState] = await Promise.all([
+        fetchPrimaryLocation(response.user.username),
+        getExpeditionProfile()
+      ]);
+      if (sessionVersionRef.current !== sessionVersion) return;
+      const playersResponse = await getPlayers();
+      if (sessionVersionRef.current !== sessionVersion) return;
+      commitPrimaryLocation(response.user.username, primaryLocation);
+      setExpeditionProfile(expeditionState.profile);
+      updateExpeditionRun(expeditionState.run);
       userRef.current = response.user;
       setUser(response.user);
-      await loadPrimaryLocation(response.user.username);
       connectSocket(response.user.username);
-      const playersResponse = await getPlayers();
       setPlayers(playersResponse.players);
       trackGoal(mode === "register" ? "auth_register" : "auth_login", { mode });
     } catch (authError) {
+      if (sessionVersionRef.current !== sessionVersion) return;
+      sessionVersionRef.current += 1;
+      disconnectSocket();
+      setToken(null);
+      userRef.current = null;
+      setUser(null);
+      setHome(null);
+      setExpeditionProfile(null);
+      updateExpeditionRun(null);
+      setCanExtractExpedition(false);
       setError(authError instanceof Error ? authError.message : "Не получилось войти");
     }
   }
@@ -169,6 +317,7 @@ export default function App() {
     });
 
     socket.on("connect", () => {
+      socket.emit("party:online-players");
       if (sceneModeRef.current === "street") {
         socket.emit("neighborhood:join");
         if (streetPositionRef.current) {
@@ -247,6 +396,57 @@ export default function App() {
     });
     socket.on("world:interaction", ({ username, action }: { username: string; action: string }) => {
       showToast(`${username}: ${action}`);
+    });
+    socket.on("party:snapshot", (snapshot: PartySnapshot | null) => {
+      setParty(snapshot);
+    });
+    socket.on("party:invites", ({ incoming, outgoing }: PartyInvitesSnapshot) => {
+      setPartyInvites(incoming);
+      setPartyOutgoingInvites(outgoing);
+      if (incoming.length > 0) setShowExpeditionPanel(true);
+    });
+    socket.on("party:online-players", ({ players: onlinePlayers }: {
+      players: Array<{ userId: string; username: string }>;
+    }) => {
+      setPartyOnlinePlayers(onlinePlayers.filter((player) => player.userId !== userRef.current?.id));
+    });
+    socket.on("party:invited", (invite: PartyInvite) => {
+      setPartyInvites((current) => [
+        ...current.filter((entry) => entry.id !== invite.id && entry.partyId !== invite.partyId),
+        invite
+      ]);
+      setShowExpeditionPanel(true);
+      showToast(`${invite.fromUsername} приглашает вас в группу`);
+    });
+    socket.on("party:invite-sent", (invite: PartyInvite) => {
+      setPartyOutgoingInvites((current) => [
+        ...current.filter((entry) => entry.id !== invite.id && entry.toUserId !== invite.toUserId),
+        invite
+      ]);
+      showToast(`Приглашение отправлено игроку ${invite.toUsername}`);
+    });
+    socket.on("party:invite-resolved", ({ inviteId }: { inviteId: string }) => {
+      setPartyInvites((current) => current.filter((invite) => invite.id !== inviteId));
+      setPartyOutgoingInvites((current) => current.filter((invite) => invite.id !== inviteId));
+    });
+    socket.on("party:error", ({ error: partyError }: { error: string }) => {
+      showToast(partyError || "Не удалось изменить группу");
+    });
+    socket.on("expedition:started", ({ run, profile, partySize, leaderUsername }: {
+      run: ExpeditionRunSnapshot;
+      profile: ExpeditionProfile;
+      partySize: number;
+      leaderUsername: string;
+    }) => {
+      if (!userRef.current) return;
+      setExpeditionProfile(profile);
+      updateExpeditionRun(run);
+      setCanExtractExpedition(false);
+      setShowExpeditionPanel(true);
+      showToast(partySize > 1
+        ? `${leaderUsername} начал групповую экспедицию · участников: ${partySize}`
+        : "Экспедиция начата");
+      if (sceneModeRef.current !== "street") void openNeighborhood();
     });
     socket.on("voice:users", ({ users }: { users: VoicePeerInfo[] }) => {
       users.forEach((peer) => {
@@ -481,10 +681,18 @@ export default function App() {
     return nextHome;
   }
 
-  async function loadPrimaryLocation(owner: string) {
+  async function fetchPrimaryLocation(owner: string) {
     const homePromise = getHome(owner);
     const neighborhoodPromise = getNeighborhood().catch(() => null);
     const [nextHome, nextNeighborhood] = await Promise.all([homePromise, neighborhoodPromise]);
+    return { home: nextHome, neighborhood: nextNeighborhood };
+  }
+
+  function commitPrimaryLocation(
+    owner: string,
+    primaryLocation: { home: HomeState; neighborhood: NeighborhoodState | null }
+  ) {
+    const { home: nextHome, neighborhood: nextNeighborhood } = primaryLocation;
     setHomeOwner(owner);
     setHome(nextHome);
     setMessages(nextHome.chats);
@@ -809,6 +1017,296 @@ export default function App() {
     showToast(item ? `Вы используете: ${item.name}` : "Взаимодействие");
   }
 
+  async function handleStartExpedition() {
+    if (expeditionBusy || expeditionRun) return;
+    const session = captureSession();
+    if (!session) return;
+    setExpeditionBusy("start");
+    try {
+      const response = await startExpedition();
+      if (!isCurrentSession(session)) return;
+      const currentRunId = expeditionRunRef.current?.id;
+      if (currentRunId && currentRunId !== response.run.id) return;
+      setExpeditionProfile(response.profile);
+      updateExpeditionRun(response.run);
+      setCanExtractExpedition(false);
+      setShowExpeditionPanel(true);
+      if (sceneModeRef.current !== "street") {
+        await openNeighborhood();
+      }
+      if (!isCurrentSession(session) || expeditionRunRef.current?.id !== response.run.id) return;
+      showToast(response.partySize > 1
+        ? `Групповая экспедиция начата · участников: ${response.partySize}`
+        : "Экспедиция начата · выйдите из дома и пройдите через КПП");
+      trackGoal("expedition_start", { weapon: response.run.selectedWeapon, party_size: response.partySize });
+    } catch (expeditionError) {
+      if (isCurrentSession(session)) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось начать экспедицию");
+      }
+    } finally {
+      if (isCurrentSession(session)) setExpeditionBusy("");
+    }
+  }
+
+  async function handleSelectExpeditionWeapon(weaponId: ExpeditionWeaponId) {
+    if (expeditionBusy || expeditionRun) return;
+    const session = captureSession();
+    if (!session) return;
+    setExpeditionBusy(`loadout:${weaponId}`);
+    try {
+      const response = await setExpeditionLoadout(weaponId);
+      if (!isCurrentSession(session) || expeditionRunRef.current) return;
+      setExpeditionProfile(response.profile);
+      showToast(`${response.weapon.name} выбран для следующей вылазки`);
+    } catch (expeditionError) {
+      if (isCurrentSession(session) && !expeditionRunRef.current) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось изменить оружие");
+      }
+    } finally {
+      if (isCurrentSession(session)) setExpeditionBusy("");
+    }
+  }
+
+  async function handleBuyExpeditionWeapon(weaponId: ExpeditionWeaponId) {
+    if (expeditionBusy || expeditionRun) return;
+    const session = captureSession();
+    if (!session) return;
+    setExpeditionBusy(`buy:${weaponId}`);
+    try {
+      const response = await buyExpeditionWeapon(weaponId);
+      if (!isCurrentSession(session) || expeditionRunRef.current) return;
+      userRef.current = response.user;
+      setUser(response.user);
+      setExpeditionProfile(response.profile);
+      showToast(`${response.weapon.name} куплен · −${response.spent.toLocaleString("ru-RU")} монет`);
+      trackGoal("expedition_weapon_buy", { weapon: weaponId, price: response.spent });
+    } catch (expeditionError) {
+      if (isCurrentSession(session) && !expeditionRunRef.current) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось купить оружие");
+      }
+    } finally {
+      if (isCurrentSession(session)) setExpeditionBusy("");
+    }
+  }
+
+  async function handleBuyExpeditionAmmo() {
+    if (expeditionBusy || expeditionRun) return;
+    const session = captureSession();
+    if (!session) return;
+    setExpeditionBusy("buy:ammo");
+    try {
+      const response = await buyExpeditionAmmo();
+      if (!isCurrentSession(session) || expeditionRunRef.current) return;
+      userRef.current = response.user;
+      setUser(response.user);
+      setExpeditionProfile(response.profile);
+      showToast(`Куплено патронов: ${response.purchased.quantity} · −${response.spent.toLocaleString("ru-RU")} монет`);
+      trackGoal("expedition_ammo_buy", { quantity: response.purchased.quantity, price: response.spent });
+    } catch (expeditionError) {
+      if (isCurrentSession(session) && !expeditionRunRef.current) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось купить боеприпасы");
+      }
+    } finally {
+      if (isCurrentSession(session)) setExpeditionBusy("");
+    }
+  }
+
+  async function handleCraftExpeditionItem(recipeId: ExpeditionRecipeId) {
+    if (expeditionBusy || expeditionRun) return;
+    const session = captureSession();
+    if (!session) return;
+    setExpeditionBusy(`craft:${recipeId}`);
+    try {
+      const response = await craftExpeditionItem(recipeId);
+      if (!isCurrentSession(session) || expeditionRunRef.current) return;
+      setExpeditionProfile(response.profile);
+      showToast(`${response.recipe.name}: готово`);
+      trackGoal("expedition_craft", { recipe: recipeId });
+    } catch (expeditionError) {
+      if (isCurrentSession(session) && !expeditionRunRef.current) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось изготовить предмет");
+      }
+    } finally {
+      if (isCurrentSession(session)) setExpeditionBusy("");
+    }
+  }
+
+  async function handleUpgradeExpeditionSkill(skillId: ExpeditionSkillId) {
+    if (expeditionBusy || expeditionRun) return;
+    const session = captureSession();
+    if (!session) return;
+    setExpeditionBusy(`skill:${skillId}`);
+    try {
+      const response = await upgradeExpeditionSkill(skillId);
+      if (!isCurrentSession(session) || expeditionRunRef.current) return;
+      setExpeditionProfile(response.profile);
+      showToast(`${response.skill.name} повышен до ${response.profile.skills[skillId]} уровня`);
+      trackGoal("expedition_skill_upgrade", { skill: skillId, level: response.profile.skills[skillId] });
+    } catch (expeditionError) {
+      if (isCurrentSession(session) && !expeditionRunRef.current) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось повысить навык");
+      }
+    } finally {
+      if (isCurrentSession(session)) setExpeditionBusy("");
+    }
+  }
+
+  async function handleLootExpeditionContainer(containerId: string) {
+    const session = captureSession();
+    const runId = expeditionRunRef.current?.id;
+    if (!session || !runId || pendingContainersRef.current.has(containerId as ExpeditionContainerId)) return;
+    const typedContainerId = containerId as ExpeditionContainerId;
+    pendingContainersRef.current.add(typedContainerId);
+    try {
+      const response = await lootExpeditionContainer(typedContainerId);
+      if (!isCurrentSession(session) || expeditionRunRef.current?.id !== runId) return;
+      updateExpeditionRun(response.run);
+      const lootLabel = response.loot
+        .map((stack) => `${EXPEDITION_ITEMS[stack.itemId].name} ×${stack.quantity}`)
+        .join(" · ");
+      showToast(`${response.container.name}: ${lootLabel}`);
+      trackGoal("expedition_container_loot", { container: containerId, items: response.loot.length });
+    } catch (expeditionError) {
+      if (isCurrentSession(session) && expeditionRunRef.current?.id === runId) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось обыскать контейнер");
+      }
+    } finally {
+      pendingContainersRef.current.delete(typedContainerId);
+    }
+  }
+
+  function handleExpeditionShot(hits: ExpeditionHitInput[]) {
+    const session = captureSession();
+    const runId = expeditionRunRef.current?.id;
+    if (!session || !runId) return;
+
+    // Reserve a round immediately so a high-latency connection cannot fire more
+    // visual shots than the authoritative expedition backpack contains.
+    adjustPendingExpeditionShots(1);
+
+    enemyHitQueueRef.current = enemyHitQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (!isCurrentSession(session) || expeditionRunRef.current?.id !== runId) return;
+        try {
+          const response = await hitExpeditionEnemies(hits);
+          if (!isCurrentSession(session) || expeditionRunRef.current?.id !== runId) return;
+          updateExpeditionRun(response.run);
+          for (const result of response.hits) {
+            if (!result.killed) continue;
+            const recovered = result.loot
+              .map((stack) => `${EXPEDITION_ITEMS[stack.itemId].name} ×${stack.quantity}`)
+              .join(" · ");
+            showToast(`${result.enemy.name} уничтожен · добыча: ${recovered} · цель ${response.run.objective.hostileKills}/${response.run.objective.requiredHostileKills}`);
+            trackGoal("expedition_enemy_kill", { enemy: result.enemy.id, hostile: result.enemy.hostile });
+          }
+        } catch (expeditionError) {
+          const message = expeditionError instanceof Error ? expeditionError.message : "Не удалось подтвердить попадание";
+          if (isCurrentSession(session)
+            && expeditionRunRef.current?.id === runId
+            && !message.includes("уже были побеждены")
+            && !message.includes("ещё не готово")) {
+            showToast(message);
+          }
+
+          // A rejected shot may leave local enemy health ahead of the server.
+          // Pull the authoritative snapshot before allowing the next prediction.
+          if (isCurrentSession(session) && expeditionRunRef.current?.id === runId) {
+            try {
+              const snapshot = await getExpeditionProfile();
+              if (isCurrentSession(session) && expeditionRunRef.current?.id === runId) {
+                setExpeditionProfile(snapshot.profile);
+                updateExpeditionRun(snapshot.run);
+              }
+            } catch {
+              // The next successful shot/profile refresh will reconcile state.
+            }
+          }
+        } finally {
+          if (isCurrentSession(session) && expeditionRunRef.current?.id === runId) {
+            adjustPendingExpeditionShots(-1);
+          }
+        }
+      });
+  }
+
+  async function handleExtractExpedition() {
+    const session = captureSession();
+    const runId = expeditionRunRef.current?.id;
+    if (expeditionBusy || !session || !runId) return;
+    setExpeditionBusy("extract");
+    try {
+      const response = await extractExpedition();
+      if (!isCurrentSession(session) || expeditionRunRef.current?.id !== runId) return;
+      userRef.current = response.user;
+      setUser(response.user);
+      setExpeditionProfile(response.profile);
+      updateExpeditionRun(null);
+      setCanExtractExpedition(false);
+      setWorldRegion("city");
+      const reward = response.reward.objectiveCompleted
+        ? ` Задание выполнено: +${response.reward.coins} монет, +${response.reward.xp} XP.`
+        : " Основная цель не завершена, но добыча сохранена.";
+      showToast(`Эвакуация успешна · предметов: ${response.extracted.reduce((total, stack) => total + stack.quantity, 0)}.${reward}`);
+      trackGoal("expedition_extract", {
+        objective_complete: response.reward.objectiveCompleted,
+        extracted_items: response.extracted.length
+      });
+    } catch (expeditionError) {
+      if (isCurrentSession(session) && expeditionRunRef.current?.id === runId) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Эвакуация не удалась");
+      }
+    } finally {
+      if (isCurrentSession(session)) setExpeditionBusy("");
+    }
+  }
+
+  async function handleAbandonExpedition(defeated = false) {
+    const session = captureSession();
+    const runId = expeditionRunRef.current?.id;
+    if (expeditionBusy || !session || !runId) return;
+    setExpeditionBusy("abandon");
+    try {
+      const response = await abandonExpedition();
+      if (!isCurrentSession(session) || expeditionRunRef.current?.id !== runId) return;
+      setExpeditionProfile(response.profile);
+      updateExpeditionRun(null);
+      setCanExtractExpedition(false);
+      setWorldRegion("city");
+      if (!defeated) {
+        showToast(`Вылазка прервана · потеряно предметов: ${response.lost.reduce((total, stack) => total + stack.quantity, 0)}`);
+      }
+      trackGoal(defeated ? "expedition_defeat" : "expedition_abandon", { lost_items: response.lost.length });
+    } catch (expeditionError) {
+      if (isCurrentSession(session) && expeditionRunRef.current?.id === runId) {
+        showToast(expeditionError instanceof Error ? expeditionError.message : "Не удалось завершить вылазку");
+      }
+    } finally {
+      if (isCurrentSession(session)) setExpeditionBusy("");
+    }
+  }
+
+  function handleWorldRegionChange(region: WorldRegion) {
+    setWorldRegion(region);
+    if (region !== "city") setShowExpeditionPanel(true);
+  }
+
+  function handlePartyInvite(username: string) {
+    socketRef.current?.emit("party:invite", { username });
+  }
+
+  function handlePartyAccept(partyId: string) {
+    socketRef.current?.emit("party:accept", { partyId });
+  }
+
+  function handlePartyDecline(partyId: string) {
+    socketRef.current?.emit("party:decline", { partyId });
+  }
+
+  function handlePartyLeave() {
+    socketRef.current?.emit("party:leave");
+  }
+
   function sendChat() {
     if (!chatText.trim()) {
       return;
@@ -819,10 +1317,12 @@ export default function App() {
   }
 
   function logout() {
+    sessionVersionRef.current += 1;
+    userRef.current = null;
     stopVoice();
     trackGoal("auth_logout");
     setToken(null);
-    socketRef.current?.disconnect();
+    disconnectSocket();
     setUser(null);
     setHome(null);
     setHomeOwner("");
@@ -833,6 +1333,18 @@ export default function App() {
     setSceneMode("home");
     sceneModeRef.current = "home";
     streetPositionRef.current = undefined;
+    setExpeditionProfile(null);
+    updateExpeditionRun(null);
+    setExpeditionBusy("");
+    setShowExpeditionPanel(false);
+    setWorldRegion("city");
+    setCanExtractExpedition(false);
+    setParty(null);
+    setPartyInvites([]);
+    setPartyOutgoingInvites([]);
+    setPartyOnlinePlayers([]);
+    enemyHitQueueRef.current = Promise.resolve();
+    pendingContainersRef.current.clear();
   }
 
   function showToast(text: string) {
@@ -874,6 +1386,8 @@ export default function App() {
 
   const insideOwnHome = sceneMode === "street" && activeInteriorOwner === user.username;
   const showNeighborhoodPanel = sceneMode === "street" && neighborhood !== null && !insideOwnHome;
+  const showExpeditionSidePanel = showExpeditionPanel && expeditionProfile !== null;
+  const showWideSidePanel = showNeighborhoodPanel || showExpeditionSidePanel;
   const canEditHome = ownHome && (sceneMode === "home" || insideOwnHome);
   const seamlessLocationTitle = activeInteriorOwner === user.username
     ? `Мой дом · ${ownNeighborhoodResident?.houseLevel ?? 1} ур.`
@@ -925,11 +1439,19 @@ export default function App() {
             </>
           )}
         </div>
+        <button
+          className={showExpeditionSidePanel ? "ghost-button expedition-toggle active" : "ghost-button expedition-toggle"}
+          type="button"
+          onClick={() => setShowExpeditionPanel((current) => !current)}
+          title="Снаряжение, задание, тайник и группа"
+        >
+          <Crosshair size={17} /> {expeditionRun ? worldRegion === "city" ? "Рейд активен" : "В Залесье" : "Вылазка"}
+        </button>
         <div className="wallet"><Coins size={18} /> {user.coins}</div>
         <button className="icon-button" onClick={logout} title="Выйти"><LogOut size={18} /></button>
       </section>
 
-      <section className={showNeighborhoodPanel ? "game-layout street-layout" : "game-layout"}>
+      <section className={showWideSidePanel ? "game-layout street-layout" : "game-layout"}>
         <div className="scene-wrap">
           {sceneMode === "street" && neighborhood ? (
             <NeighborhoodScene
@@ -948,6 +1470,24 @@ export default function App() {
               onSelectPlaced={setSelectedPlacedId}
               onBuildMove={handleBuildMove}
               onToast={showToast}
+              expeditionActive={Boolean(expeditionRun)}
+              expeditionWeapon={expeditionRun?.selectedWeapon}
+              expeditionSkills={expeditionProfile?.skills}
+              lootedContainerIds={expeditionRun?.lootedContainerIds ?? []}
+              defeatedEnemyIds={expeditionRun?.killedEnemyIds ?? []}
+              enemyHealth={expeditionRun?.enemyHealth}
+              expeditionSyncPending={pendingExpeditionShots > 0}
+              expeditionAmmo={expeditionRun
+                ? Math.max(0, expeditionRun.backpack.reduce((total, stack) => (
+                  stack.itemId === "ammo" ? total + stack.quantity : total
+                ), 0) - pendingExpeditionShots)
+                : undefined}
+              onWorldRegionChange={handleWorldRegionChange}
+              onExtractionAvailabilityChange={setCanExtractExpedition}
+              onLootContainer={(containerId) => void handleLootExpeditionContainer(containerId)}
+              onExpeditionShot={handleExpeditionShot}
+              onExtract={() => void handleExtractExpedition()}
+              onPlayerDefeated={() => void handleAbandonExpedition(true)}
             />
           ) : (
             <GameScene
@@ -1024,8 +1564,32 @@ export default function App() {
           {toast ? <div className="toast">{toast}</div> : null}
         </div>
 
-        <aside className={showNeighborhoodPanel ? "side-panel neighborhood-side-panel" : "side-panel"}>
-          {showNeighborhoodPanel && neighborhood ? (
+        <aside className={showWideSidePanel ? "side-panel neighborhood-side-panel" : "side-panel"}>
+          {showExpeditionSidePanel && expeditionProfile ? (
+            <ExpeditionPanel
+              profile={expeditionProfile}
+              run={expeditionRun}
+              currentUsername={user.username}
+              party={party}
+              invites={partyInvites.filter((invite) => invite.expiresAt > Date.now())}
+              outgoingInvites={partyOutgoingInvites.filter((invite) => invite.expiresAt > Date.now())}
+              canExtract={sceneMode === "street" && canExtractExpedition}
+              onlinePlayers={partyOnlinePlayers}
+              busy={Boolean(expeditionBusy)}
+              onStart={() => void handleStartExpedition()}
+              onExtract={() => void handleExtractExpedition()}
+              onAbandon={() => void handleAbandonExpedition()}
+              onSelectWeapon={(weaponId) => void handleSelectExpeditionWeapon(weaponId)}
+              onBuyWeapon={(weaponId) => void handleBuyExpeditionWeapon(weaponId)}
+              onBuyAmmo={() => void handleBuyExpeditionAmmo()}
+              onCraft={(recipeId) => void handleCraftExpeditionItem(recipeId)}
+              onUpgradeSkill={(skillId) => void handleUpgradeExpeditionSkill(skillId)}
+              onInvite={handlePartyInvite}
+              onAcceptInvite={handlePartyAccept}
+              onDeclineInvite={handlePartyDecline}
+              onLeaveParty={handlePartyLeave}
+            />
+          ) : showNeighborhoodPanel && neighborhood ? (
             <NeighborhoodPanel
               user={user}
               neighborhood={neighborhood}

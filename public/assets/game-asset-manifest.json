@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "revision": "sha256-b3b8c5c44b3c8900c2ee751da68b1509de77a0a745193a338644ce18eb241f51",
+  "revision": "sha256-f1b77ec13206b7ce704bf7d1d38589cf1331967479ef78b6595147b15b7cd91c",
   "missingFileCount": 2,
   "roots": {
     "/assets/animations/quaternius-universal/UAL1_Standard.glb": {
@@ -5658,6 +5658,131 @@
         {
           "url": "/assets/models/quaternius-characters/T_Superhero_Male_Roughness.png",
           "bytes": 3152049
+        }
+      ]
+    },
+    "/assets/models/quaternius-scifi/Enemy_EyeDrone.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/quaternius-scifi/Enemy_EyeDrone.gltf",
+          "bytes": 53939
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/Enemy_EyeDrone.bin",
+          "bytes": 221780
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Enemies_BaseColor_png.png",
+          "bytes": 1076933
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Enemies_Normal.png",
+          "bytes": 313447
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Enemies_ORM.png",
+          "bytes": 3043013
+        }
+      ]
+    },
+    "/assets/models/quaternius-scifi/Enemy_QuadShell.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/quaternius-scifi/Enemy_QuadShell.gltf",
+          "bytes": 235254
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/Enemy_QuadShell.bin",
+          "bytes": 551404
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Enemies_BaseColor_png.png",
+          "bytes": 1076933
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Enemies_Normal.png",
+          "bytes": 313447
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Enemies_ORM.png",
+          "bytes": 3043013
+        }
+      ]
+    },
+    "/assets/models/quaternius-scifi/Prop_Ammo.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/quaternius-scifi/Prop_Ammo.gltf",
+          "bytes": 2216
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/Prop_Ammo.bin",
+          "bytes": 242532
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Props_Batch2_BaseColor.png",
+          "bytes": 450209
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Props_Batch2_Normal.png",
+          "bytes": 770775
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Props_Batch2_ORM.png",
+          "bytes": 931537
+        }
+      ]
+    },
+    "/assets/models/quaternius-scifi/Prop_Chest.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/quaternius-scifi/Prop_Chest.gltf",
+          "bytes": 17853
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/Prop_Chest.bin",
+          "bytes": 223204
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Props_Batch2_BaseColor.png",
+          "bytes": 450209
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Props_Batch2_Normal.png",
+          "bytes": 770775
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Props_Batch2_ORM.png",
+          "bytes": 931537
+        }
+      ]
+    },
+    "/assets/models/quaternius-scifi/Prop_HealthPack.gltf": {
+      "complete": true,
+      "files": [
+        {
+          "url": "/assets/models/quaternius-scifi/Prop_HealthPack.gltf",
+          "bytes": 2230
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/Prop_HealthPack.bin",
+          "bytes": 97160
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Props_Batch2_BaseColor.png",
+          "bytes": 450209
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Props_Batch2_Normal.png",
+          "bytes": 770775
+        },
+        {
+          "url": "/assets/models/quaternius-scifi/T_Props_Batch2_ORM.png",
+          "bytes": 931537
         }
       ]
     },

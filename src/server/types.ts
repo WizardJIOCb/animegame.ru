@@ -1,3 +1,9 @@
+import type { ExpeditionProfile, ExpeditionRunSnapshot } from "../shared/expedition";
+
+export type PersistedExpeditionRun = ExpeditionRunSnapshot & {
+  nextHitAt: number;
+};
+
 export type ItemType = "furniture" | "clothing" | "pet" | "decor" | "outdoor" | "character" | "activity";
 
 export type CatalogItem = {
@@ -113,11 +119,13 @@ export type User = {
     floorColor: string;
     wallColor: string;
   };
+  expedition: ExpeditionProfile;
+  expeditionRun?: PersistedExpeditionRun;
   progress: UserProgress;
   createdAt: number;
 };
 
-export type PublicUser = Omit<User, "passwordHash">;
+export type PublicUser = Omit<User, "passwordHash" | "expeditionRun">;
 
 export type DbShape = {
   users: User[];
