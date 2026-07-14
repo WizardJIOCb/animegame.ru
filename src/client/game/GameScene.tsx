@@ -10,6 +10,8 @@ import {
   type BodyPart,
   type CharacterMotion,
   type RagdollImpact,
+  type UpperBodyMotion,
+  type WeaponRecoilState,
   type WeaponKind
 } from "./combat";
 import { SkeletonRagdoll } from "./ragdoll";
@@ -1007,6 +1009,18 @@ const MOTION_SPEED: Record<CharacterMotion, number> = {
 
 const ONE_SHOT_MOTIONS = new Set<CharacterMotion>(["jumpStart", "jumpLand", "shoot", "death"]);
 const retargetedAnimationCache = new Map<string, Map<string, THREE.AnimationClip>>();
+const BONE_TRACK_PATTERN = /^\.bones\[([^\]]+)\]\./;
+
+type CharacterAnimationLayers = {
+  lower: Map<string, THREE.AnimationClip>;
+  upper: Map<string, THREE.AnimationClip>;
+};
+
+type ActiveAnimationLayer = {
+  action: THREE.AnimationAction | null;
+  motion: CharacterMotion | null;
+  handledNonce: number;
+};
 
 function findFirstSkinnedMesh(root: THREE.Object3D): THREE.SkinnedMesh | null {
   let result: THREE.SkinnedMesh | null = null;
@@ -1051,13 +1065,92 @@ function retargetCharacterAnimations(
   return result;
 }
 
+function splitCharacterAnimationLayers(
+  targetMesh: THREE.SkinnedMesh | null,
+  clips: Map<string, THREE.AnimationClip>
+): CharacterAnimationLayers {
+  const upperBodyBones = new Set<string>();
+  const upperBodyRoot = targetMesh?.skeleton.getBoneByName("spine_01");
+  upperBodyRoot?.traverse((object) => {
+    if (object instanceof THREE.Bone) upperBodyBones.add(object.name);
+  });
+
+  const lower = new Map<string, THREE.AnimationClip>();
+  const upper = new Map<string, THREE.AnimationClip>();
+  for (const [name, clip] of clips) {
+    const lowerTracks: THREE.KeyframeTrack[] = [];
+    const upperTracks: THREE.KeyframeTrack[] = [];
+    for (const track of clip.tracks) {
+      const boneName = BONE_TRACK_PATTERN.exec(track.name)?.[1];
+      (boneName && upperBodyBones.has(boneName) ? upperTracks : lowerTracks).push(track);
+    }
+    lower.set(name, new THREE.AnimationClip(`${name}:lower`, clip.duration, lowerTracks));
+    const upperClip = new THREE.AnimationClip(`${name}:upper`, clip.duration, upperTracks);
+    upper.set(name, upperClip);
+    if (name === MOTION_CLIPS.shoot) {
+      upper.set(`${name}:alternate`, new THREE.AnimationClip(`${name}:upper:alternate`, clip.duration, upperTracks));
+    }
+  }
+  return { lower, upper };
+}
+
+function updateCharacterAnimationLayer(
+  mixer: THREE.AnimationMixer,
+  clips: Map<string, THREE.AnimationClip>,
+  layer: ActiveAnimationLayer,
+  desiredMotion: CharacterMotion,
+  actionNonce: number,
+  phaseSource?: THREE.AnimationAction | null
+) {
+  const shouldRetrigger = desiredMotion === "shoot" && layer.handledNonce !== actionNonce;
+  if (layer.motion === desiredMotion && !shouldRetrigger) return;
+
+  const clipName = desiredMotion === "shoot" && actionNonce % 2 !== 0
+    ? `${MOTION_CLIPS[desiredMotion]}:alternate`
+    : MOTION_CLIPS[desiredMotion];
+  const clip = clips.get(clipName) ?? clips.get(MOTION_CLIPS[desiredMotion]);
+  if (!clip || clip.tracks.length === 0) return;
+  const previous = layer.action;
+  const next = mixer.clipAction(clip);
+  next.enabled = true;
+  next.clampWhenFinished = ONE_SHOT_MOTIONS.has(desiredMotion);
+  next.setLoop(ONE_SHOT_MOTIONS.has(desiredMotion) ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
+  next.reset();
+  if (phaseSource && desiredMotion !== "shoot") {
+    const sourceDuration = phaseSource.getClip().duration;
+    if (sourceDuration > 0 && clip.duration > 0) {
+      const normalizedPhase = THREE.MathUtils.euclideanModulo(phaseSource.time, sourceDuration) / sourceDuration;
+      next.time = normalizedPhase * clip.duration;
+    }
+  }
+  next.setEffectiveTimeScale(MOTION_SPEED[desiredMotion]);
+  next.setEffectiveWeight(1);
+  next.play();
+  if (previous && previous !== next) {
+    const fadeDuration = desiredMotion === "death"
+      ? 0.08
+      : desiredMotion === "shoot"
+        ? 0.05
+        : desiredMotion === "jumpStart" || desiredMotion === "jumpLand"
+          ? 0.22
+          : 0.14;
+    previous.fadeOut(fadeDuration);
+    next.fadeIn(fadeDuration);
+  }
+  layer.action = next;
+  layer.motion = desiredMotion;
+  layer.handledNonce = actionNonce;
+}
+
 function useCharacterAnimation(
   scene: THREE.Object3D,
   cacheKey: string,
   motion: CharacterMotion,
   motionRef?: RefObject<CharacterMotion>,
   actionNonce = 0,
-  paused = false
+  paused = false,
+  upperMotionRef?: RefObject<UpperBodyMotion | null>,
+  actionNonceRef?: RefObject<number>
 ) {
   const animationGltf = useGLTF(CHARACTER_ANIMATION_URL);
   const targetMesh = useMemo(() => findFirstSkinnedMesh(scene), [scene]);
@@ -1065,43 +1158,35 @@ function useCharacterAnimation(
     () => retargetCharacterAnimations(cacheKey, scene, animationGltf.scene, animationGltf.animations),
     [animationGltf.animations, animationGltf.scene, cacheKey, scene]
   );
+  const layeredClips = useMemo(
+    () => splitCharacterAnimationLayers(targetMesh, clips),
+    [clips, targetMesh]
+  );
   const mixer = useMemo(() => targetMesh ? new THREE.AnimationMixer(targetMesh) : null, [targetMesh]);
-  const activeAction = useRef<THREE.AnimationAction | null>(null);
-  const activeMotion = useRef<CharacterMotion | null>(null);
-  const handledNonce = useRef(actionNonce);
+  const lowerLayer = useRef<ActiveAnimationLayer>({ action: null, motion: null, handledNonce: actionNonce });
+  const upperLayer = useRef<ActiveAnimationLayer>({ action: null, motion: null, handledNonce: actionNonce });
 
   useFrame((_, delta) => {
     if (!mixer || paused) return;
     const desiredMotion = motionRef?.current ?? motion;
-    const shouldRetrigger = desiredMotion === "shoot" && handledNonce.current !== actionNonce;
-    if (activeMotion.current !== desiredMotion || shouldRetrigger) {
-      const clip = clips.get(MOTION_CLIPS[desiredMotion]);
-      if (clip) {
-        const previous = activeAction.current;
-        const next = mixer.clipAction(clip);
-        next.enabled = true;
-        next.clampWhenFinished = ONE_SHOT_MOTIONS.has(desiredMotion);
-        next.setLoop(ONE_SHOT_MOTIONS.has(desiredMotion) ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
-        next.reset();
-        next.setEffectiveTimeScale(MOTION_SPEED[desiredMotion]);
-        next.setEffectiveWeight(1);
-        next.play();
-        if (previous && previous !== next) {
-          previous.fadeOut(desiredMotion === "death" ? 0.08 : 0.16);
-          next.fadeIn(desiredMotion === "death" ? 0.08 : 0.16);
-        }
-        activeAction.current = next;
-        activeMotion.current = desiredMotion;
-      }
-      handledNonce.current = actionNonce;
-    }
+    const desiredActionNonce = actionNonceRef?.current ?? actionNonce;
+    const upperOverride = upperMotionRef?.current ?? null;
+    const desiredUpperMotion = upperOverride ?? desiredMotion;
+    updateCharacterAnimationLayer(mixer, layeredClips.lower, lowerLayer.current, desiredMotion, desiredActionNonce);
+    updateCharacterAnimationLayer(
+      mixer,
+      layeredClips.upper,
+      upperLayer.current,
+      desiredUpperMotion,
+      desiredActionNonce,
+      upperOverride ? null : lowerLayer.current.action
+    );
     mixer.update(Math.min(delta, 0.08));
-  });
+  }, -1);
 
   useEffect(() => {
-    activeAction.current = null;
-    activeMotion.current = null;
-    handledNonce.current = actionNonce;
+    lowerLayer.current = { action: null, motion: null, handledNonce: actionNonce };
+    upperLayer.current = { action: null, motion: null, handledNonce: actionNonce };
     return () => {
       mixer?.stopAllAction();
     };
@@ -1603,16 +1688,25 @@ function CharacterCombatHitboxes({
 function WeaponAttachment({
   targetScene,
   weapon,
-  muzzleRef
+  muzzleRef,
+  aimTargetRef,
+  recoilRef,
+  upperMotionRef
 }: {
   targetScene: THREE.Object3D;
   weapon: WeaponKind;
   muzzleRef?: RefObject<THREE.Object3D | null>;
+  aimTargetRef?: RefObject<THREE.Vector3 | null>;
+  recoilRef?: RefObject<WeaponRecoilState>;
+  upperMotionRef?: RefObject<UpperBodyMotion | null>;
 }) {
   const spec = WEAPON_MODELS[weapon];
   const gltf = useGLTF(spec.url);
-  const { attachment, muzzle } = useMemo(() => {
+  const { attachment, aimPivot, recoilPivot, muzzle, barrelGuide } = useMemo(() => {
     const wrapper = new THREE.Group();
+    const nextAimPivot = new THREE.Group();
+    const kickPivot = new THREE.Group();
+    const modelRoot = new THREE.Group();
     const model = gltf.scene.clone(true);
     model.traverse((node) => {
       if (!(node instanceof THREE.Mesh)) return;
@@ -1639,12 +1733,80 @@ function WeaponAttachment({
     nextMuzzle.name = `weapon-muzzle:${weapon}`;
     nextMuzzle.position.set(...spec.muzzlePosition);
     nextMuzzle.userData.weapon = weapon;
-    wrapper.add(model, nextMuzzle);
-    wrapper.position.set(...spec.position);
-    wrapper.rotation.set(...spec.rotation);
-    wrapper.scale.setScalar(spec.scale);
-    return { attachment: wrapper, muzzle: nextMuzzle };
-  }, [gltf.scene, spec.muzzlePosition, spec.position, spec.rotation, spec.scale, weapon]);
+    const nextBarrelGuide = new THREE.Object3D();
+    nextBarrelGuide.position.fromArray(spec.muzzlePosition)
+      .addScaledVector(new THREE.Vector3().fromArray(spec.barrelAxis).normalize(), 0.25);
+    modelRoot.add(model, nextMuzzle, nextBarrelGuide);
+    modelRoot.rotation.set(...spec.rotation);
+    modelRoot.scale.setScalar(spec.scale);
+    kickPivot.add(modelRoot);
+    nextAimPivot.add(kickPivot);
+    wrapper.add(nextAimPivot);
+    const fingerRoots = ["index_01_r", "middle_01_r", "ring_01_r", "pinky_01_r"]
+      .map((name) => targetScene.getObjectByName(name))
+      .filter((bone): bone is THREE.Object3D => Boolean(bone));
+    if (fingerRoots.length > 0) {
+      for (const finger of fingerRoots) wrapper.position.add(finger.position);
+      wrapper.position.multiplyScalar(1 / fingerRoots.length);
+      wrapper.position.y *= 0.5;
+    }
+    wrapper.position.add(new THREE.Vector3().fromArray(spec.gripNudge));
+    return {
+      attachment: wrapper,
+      aimPivot: nextAimPivot,
+      recoilPivot: kickPivot,
+      muzzle: nextMuzzle,
+      barrelGuide: nextBarrelGuide
+    };
+  }, [gltf.scene, spec.barrelAxis, spec.gripNudge, spec.muzzlePosition, spec.rotation, spec.scale, targetScene, weapon]);
+  const aimScratch = useMemo(() => ({
+    forward: new THREE.Vector3(),
+    muzzle: new THREE.Vector3(),
+    guide: new THREE.Vector3(),
+    parentWorld: new THREE.Quaternion(),
+    world: new THREE.Quaternion(),
+    desired: new THREE.Quaternion(),
+    correction: new THREE.Quaternion(),
+    local: new THREE.Quaternion(),
+    identity: new THREE.Quaternion()
+  }), []);
+
+  useFrame((_, delta) => {
+    const recoil = recoilRef?.current;
+    const target = aimTargetRef?.current;
+    const aimingWeapon = Boolean(target && upperMotionRef?.current);
+    recoilPivot.position.y = THREE.MathUtils.lerp(
+      recoilPivot.position.y,
+      -(recoil?.kick ?? 0),
+      1 - Math.exp(-delta * 32)
+    );
+
+    const parent = aimPivot.parent;
+    if (!aimingWeapon || !target || !parent) {
+      aimPivot.quaternion.slerp(aimScratch.identity, 1 - Math.exp(-delta * 24));
+      return;
+    }
+
+    // Rotate only around the grip. The guide uses each asset's real barrel axis,
+    // so the rendered barrel, muzzle ray and reticle all converge on one point.
+    for (let iteration = 0; iteration < 2; iteration += 1) {
+      attachment.updateWorldMatrix(true, true);
+      muzzle.getWorldPosition(aimScratch.muzzle);
+      barrelGuide.getWorldPosition(aimScratch.guide);
+      aimScratch.guide.sub(aimScratch.muzzle);
+      if (aimScratch.guide.lengthSq() < 0.000001) break;
+      aimScratch.guide.normalize();
+      aimScratch.forward.copy(target).sub(aimScratch.muzzle);
+      if (aimScratch.forward.lengthSq() < 0.000001) break;
+      aimScratch.forward.normalize();
+      aimScratch.correction.setFromUnitVectors(aimScratch.guide, aimScratch.forward);
+      aimPivot.getWorldQuaternion(aimScratch.world);
+      aimScratch.desired.copy(aimScratch.correction).multiply(aimScratch.world);
+      parent.getWorldQuaternion(aimScratch.parentWorld);
+      aimScratch.local.copy(aimScratch.parentWorld).invert().multiply(aimScratch.desired);
+      aimPivot.quaternion.copy(aimScratch.local).normalize();
+    }
+  });
 
   useEffect(() => {
     const hand = targetScene.getObjectByName("hand_r");
@@ -1674,7 +1836,11 @@ function CharacterModel({
   outfit,
   weapon,
   muzzleRef,
+  weaponAimTargetRef,
+  weaponRecoilRef,
   actionNonce,
+  actionNonceRef,
+  upperMotionRef,
   combatUsername,
   combatDead = false,
   onCombatHit,
@@ -1686,7 +1852,11 @@ function CharacterModel({
   outfit?: CatalogItem;
   weapon?: WeaponKind;
   muzzleRef?: RefObject<THREE.Object3D | null>;
+  weaponAimTargetRef?: RefObject<THREE.Vector3 | null>;
+  weaponRecoilRef?: RefObject<WeaponRecoilState>;
   actionNonce?: number;
+  actionNonceRef?: RefObject<number>;
+  upperMotionRef?: RefObject<UpperBodyMotion | null>;
   combatUsername?: string;
   combatDead?: boolean;
   onCombatHit?: (event: ThreeEvent<MouseEvent>) => void;
@@ -1726,7 +1896,16 @@ function CharacterModel({
     return clone;
   }, [gltf.scene, outfit?.id]);
   const ragdollActive = combatDead && Boolean(ragdollImpact);
-  useCharacterAnimation(scene, item.modelUrl ?? item.id, motion, motionRef, actionNonce, ragdollActive);
+  useCharacterAnimation(
+    scene,
+    item.modelUrl ?? item.id,
+    motion,
+    motionRef,
+    actionNonce,
+    ragdollActive,
+    upperMotionRef,
+    actionNonceRef
+  );
 
   useEffect(() => {
     ragdollRef.current?.dispose();
@@ -1757,12 +1936,26 @@ function CharacterModel({
       ) : null}
       {weapon ? (
         <Suspense fallback={null}>
-          <WeaponAttachment targetScene={scene} weapon={weapon} muzzleRef={muzzleRef} />
+          <WeaponAttachment
+            targetScene={scene}
+            weapon={weapon}
+            muzzleRef={muzzleRef}
+            aimTargetRef={weaponAimTargetRef}
+            recoilRef={weaponRecoilRef}
+            upperMotionRef={upperMotionRef}
+          />
         </Suspense>
       ) : null}
       {outfit?.clothingModelUrl && !outfit.clothingPaintStyle ? (
         <Suspense fallback={null}>
-          <SkinnedOutfitModel outfit={outfit} motion={motion} motionRef={motionRef} actionNonce={actionNonce} />
+          <SkinnedOutfitModel
+            outfit={outfit}
+            motion={motion}
+            motionRef={motionRef}
+            actionNonce={actionNonce}
+            actionNonceRef={actionNonceRef}
+            upperMotionRef={upperMotionRef}
+          />
         </Suspense>
       ) : (
         <OutfitOverlay outfit={outfit} character={item} targetScene={scene} />
@@ -1775,12 +1968,16 @@ function SkinnedOutfitModel({
   outfit,
   motion,
   motionRef,
-  actionNonce
+  actionNonce,
+  actionNonceRef,
+  upperMotionRef
 }: {
   outfit: CatalogItem;
   motion: CharacterMotion;
   motionRef?: RefObject<CharacterMotion>;
   actionNonce?: number;
+  actionNonceRef?: RefObject<number>;
+  upperMotionRef?: RefObject<UpperBodyMotion | null>;
 }) {
   const gltf = useGLTF(outfit.clothingModelUrl ?? "");
   const scene = useMemo(() => {
@@ -1790,7 +1987,16 @@ function SkinnedOutfitModel({
     return clone;
   }, [gltf.scene]);
 
-  useCharacterAnimation(scene, outfit.clothingModelUrl ?? outfit.id, motion, motionRef, actionNonce);
+  useCharacterAnimation(
+    scene,
+    outfit.clothingModelUrl ?? outfit.id,
+    motion,
+    motionRef,
+    actionNonce,
+    false,
+    upperMotionRef,
+    actionNonceRef
+  );
 
   return <primitive object={scene} scale={outfit.clothingModelScale ?? 1} />;
 }
@@ -2171,7 +2377,11 @@ export function Player({
   motionRef,
   weapon,
   muzzleRef,
+  weaponAimTargetRef,
+  weaponRecoilRef,
   actionNonce = 0,
+  actionNonceRef,
+  upperMotionRef,
   rotation = 0,
   rotationRef,
   teleportNonce = 0,
@@ -2195,7 +2405,11 @@ export function Player({
   motionRef?: RefObject<CharacterMotion>;
   weapon?: WeaponKind;
   muzzleRef?: RefObject<THREE.Object3D | null>;
+  weaponAimTargetRef?: RefObject<THREE.Vector3 | null>;
+  weaponRecoilRef?: RefObject<WeaponRecoilState>;
   actionNonce?: number;
+  actionNonceRef?: RefObject<number>;
+  upperMotionRef?: RefObject<UpperBodyMotion | null>;
   rotation?: number;
   rotationRef?: RefObject<number>;
   teleportNonce?: number;
@@ -2233,10 +2447,10 @@ export function Player({
       }
       bob.current += delta * (actuallyMoving ? 9 : 1.8);
       const lerpSpeed = actuallyMoving ? 10 : 7;
-      if (distance > 8) {
+      if (isSelf || distance > 8) {
         group.current.position.copy(position);
       } else {
-        const alpha = Math.min(1, delta * lerpSpeed);
+        const alpha = 1 - Math.exp(-lerpSpeed * delta);
         group.current.position.x = THREE.MathUtils.lerp(group.current.position.x, position.x, alpha);
         group.current.position.z = THREE.MathUtils.lerp(group.current.position.z, position.z, alpha);
         group.current.position.y = position.y;
@@ -2248,7 +2462,7 @@ export function Player({
         body.current.rotation.z = character?.modelUrl ? 0 : actuallyMoving ? Math.sin(bob.current) * 0.035 : 0;
       }
     }
-  });
+  }, -1);
 
   const renderedMotion = motion ?? (isActuallyMoving ? "walk" : "idle");
   const healthPercent = THREE.MathUtils.clamp((health ?? maxHealth) / Math.max(1, maxHealth), 0, 1);
@@ -2285,7 +2499,11 @@ export function Player({
                 outfit={outfit}
                 weapon={weapon}
                 muzzleRef={muzzleRef}
+                weaponAimTargetRef={weaponAimTargetRef}
+                weaponRecoilRef={weaponRecoilRef}
                 actionNonce={actionNonce}
+                actionNonceRef={actionNonceRef}
+                upperMotionRef={upperMotionRef}
                 combatUsername={combatUsername}
                 combatDead={combatDead}
                 onCombatHit={onCombatHit}

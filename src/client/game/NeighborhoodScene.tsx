@@ -1,6 +1,6 @@
 import { Html, OrbitControls, Sky, Sparkles, useGLTF } from "@react-three/drei";
 import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import type { CatalogItem, HomeState, NeighborhoodResident, PublicUser, RemotePlayer } from "../types";
 import { HomePlacedObject, Player } from "./GameScene";
@@ -10,6 +10,8 @@ import {
   type BodyPart,
   type CharacterMotion,
   type RagdollImpact,
+  type UpperBodyMotion,
+  type WeaponRecoilState,
   type WeaponKind
 } from "./combat";
 
@@ -85,6 +87,9 @@ const JUMP_DURATION_MS = 1180;
 const JUMP_HEIGHT = 1.15;
 const NPC_MAX_HEALTH = 100;
 const NPC_RESPAWN_MS = 6200;
+const BULLET_DEATH_IMPULSE_MULTIPLIER = 1.65;
+const EXPLOSION_DEATH_IMPULSE_MULTIPLIER = 1.4;
+const MAX_DEATH_IMPULSE_SPEED = 11.5;
 const INTERIOR_GRID_STEP = 0.45;
 const PLAYER_PATH_CLEARANCE = 0.28;
 const CAR_MAX_SPEED = 12.5;
@@ -134,6 +139,14 @@ type ShotEffect = {
   blastRadius?: number;
 };
 
+type BloodEffect = {
+  id: number;
+  point: THREE.Vector3;
+  direction: THREE.Vector3;
+  createdAt: number;
+  duration: number;
+};
+
 const BODY_DAMAGE_MULTIPLIER: Record<BodyPart, number> = {
   head: 1.8,
   chest: 1,
@@ -156,6 +169,7 @@ const BODY_DAMAGE_MULTIPLIER: Record<BodyPart, number> = {
 const DEFAULT_BODY_PART: BodyPart = "chest";
 const DEFAULT_BODY_BONE = "spine_03";
 const AIM_CENTER = new THREE.Vector2(0, 0);
+const BLOOD_EFFECT_DURATION = 7200;
 
 function objectActorUsername(object: THREE.Object3D | null) {
   let cursor = object;
@@ -966,7 +980,7 @@ function StreetCamera({
       move.normalize().multiplyScalar(delta * 7.2);
       panFlat(move);
     }
-  });
+  }, -1);
 
   return (
     <OrbitControls
@@ -1601,6 +1615,148 @@ function ShotEffectView({ effect }: { effect: ShotEffect }) {
   );
 }
 
+function bloodRandom(seed: number) {
+  const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function BloodHitEffect({ effect }: { effect: BloodEffect }) {
+  const cloudRef = useRef<THREE.InstancedMesh>(null);
+  const dropletsRef = useRef<THREE.InstancedMesh>(null);
+  const stainsRef = useRef<THREE.InstancedMesh>(null);
+  const cloudMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const dropletMaterialRef = useRef<THREE.MeshStandardMaterial>(null);
+  const stainMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const particles = useMemo(() => {
+    const direction = effect.direction.clone().normalize();
+    const right = direction.clone().cross(UP);
+    if (right.lengthSq() < 0.0001) right.set(1, 0, 0);
+    else right.normalize();
+    const spreadUp = right.clone().cross(direction).normalize();
+    const clouds = Array.from({ length: 8 }, (_, index) => ({
+      velocity: direction.clone().multiplyScalar(0.28 + bloodRandom(effect.id * 41 + index) * 0.7)
+        .addScaledVector(right, (bloodRandom(effect.id * 67 + index) - 0.5) * 0.9)
+        .addScaledVector(spreadUp, (bloodRandom(effect.id * 89 + index) - 0.35) * 0.7),
+      radius: 0.045 + bloodRandom(effect.id * 109 + index) * 0.075
+    }));
+    const droplets = Array.from({ length: 18 }, (_, index) => {
+      const velocity = direction.clone().multiplyScalar(1.15 + bloodRandom(effect.id * 127 + index) * 2.5)
+        .addScaledVector(right, (bloodRandom(effect.id * 149 + index) - 0.5) * 2.3)
+        .addScaledVector(spreadUp, (bloodRandom(effect.id * 173 + index) - 0.2) * 1.65);
+      velocity.y += 0.65 + bloodRandom(effect.id * 191 + index) * 2.15;
+      const groundY = 0.018;
+      const height = Math.max(0, effect.point.y - groundY);
+      const landingTime = THREE.MathUtils.clamp(
+        (velocity.y + Math.sqrt(velocity.y * velocity.y + 2 * 9.81 * height)) / 9.81,
+        0.16,
+        1.65
+      );
+      const landing = effect.point.clone()
+        .addScaledVector(velocity, landingTime)
+        .addScaledVector(UP, -0.5 * 9.81 * landingTime * landingTime);
+      landing.y = groundY + index * 0.00008;
+      return {
+        velocity,
+        landingTime,
+        landing,
+        radius: 0.018 + bloodRandom(effect.id * 211 + index) * 0.022,
+        stainRadius: 0.045 + bloodRandom(effect.id * 233 + index) * 0.1,
+        stainRotation: bloodRandom(effect.id * 257 + index) * Math.PI * 2
+      };
+    });
+    return { clouds, droplets };
+  }, [effect.direction, effect.id, effect.point]);
+  const scratch = useMemo(() => ({
+    matrix: new THREE.Matrix4(),
+    position: new THREE.Vector3(),
+    scale: new THREE.Vector3(),
+    identity: new THREE.Quaternion(),
+    groundQuaternion: new THREE.Quaternion(),
+    groundEuler: new THREE.Euler()
+  }), []);
+
+  useFrame(() => {
+    const elapsed = Math.max(0, (performance.now() - effect.createdAt) / 1000);
+    const cloudLife = 0.32;
+    particles.clouds.forEach((particle, index) => {
+      const alive = elapsed < cloudLife;
+      scratch.position.copy(effect.point).addScaledVector(particle.velocity, elapsed);
+      const radius = alive ? particle.radius * (0.65 + elapsed * 5.5) : 0;
+      scratch.scale.setScalar(radius);
+      scratch.matrix.compose(scratch.position, scratch.identity, scratch.scale);
+      cloudRef.current?.setMatrixAt(index, scratch.matrix);
+    });
+    if (cloudRef.current) cloudRef.current.instanceMatrix.needsUpdate = true;
+    if (cloudMaterialRef.current) {
+      const progress = THREE.MathUtils.clamp(elapsed / cloudLife, 0, 1);
+      cloudMaterialRef.current.opacity = (1 - progress) * 0.68;
+    }
+
+    particles.droplets.forEach((particle, index) => {
+      if (elapsed < particle.landingTime) {
+        scratch.position.copy(effect.point)
+          .addScaledVector(particle.velocity, elapsed)
+          .addScaledVector(UP, -0.5 * 9.81 * elapsed * elapsed);
+        scratch.scale.setScalar(particle.radius);
+      } else {
+        scratch.position.copy(particle.landing);
+        scratch.scale.setScalar(0);
+      }
+      scratch.matrix.compose(scratch.position, scratch.identity, scratch.scale);
+      dropletsRef.current?.setMatrixAt(index, scratch.matrix);
+
+      if (elapsed >= particle.landingTime && elapsed * 1000 < effect.duration) {
+        const stainGrowth = THREE.MathUtils.clamp((elapsed - particle.landingTime) * 8, 0.25, 1);
+        scratch.position.copy(particle.landing);
+        scratch.scale.set(particle.stainRadius * stainGrowth, particle.stainRadius * (0.55 + index % 3 * 0.18), 1);
+        scratch.groundEuler.set(-Math.PI / 2, 0, particle.stainRotation);
+        scratch.groundQuaternion.setFromEuler(scratch.groundEuler);
+      } else {
+        scratch.position.copy(particle.landing);
+        scratch.scale.setScalar(0);
+        scratch.groundQuaternion.copy(scratch.identity);
+      }
+      scratch.matrix.compose(scratch.position, scratch.groundQuaternion, scratch.scale);
+      stainsRef.current?.setMatrixAt(index, scratch.matrix);
+    });
+    if (dropletsRef.current) dropletsRef.current.instanceMatrix.needsUpdate = true;
+    if (stainsRef.current) stainsRef.current.instanceMatrix.needsUpdate = true;
+    if (dropletMaterialRef.current) {
+      dropletMaterialRef.current.opacity = elapsed < 1.8 ? 0.96 : 0;
+    }
+    if (stainMaterialRef.current) {
+      const fadeStart = effect.duration / 1000 - 2.2;
+      stainMaterialRef.current.opacity = 0.72 * (1 - THREE.MathUtils.clamp((elapsed - fadeStart) / 2.2, 0, 1));
+    }
+  });
+
+  return (
+    <group>
+      <instancedMesh ref={cloudRef} args={[undefined, undefined, particles.clouds.length]} frustumCulled={false} raycast={() => null}>
+        <sphereGeometry args={[1, 7, 5]} />
+        <meshBasicMaterial ref={cloudMaterialRef} color="#9f1239" transparent opacity={0.68} depthWrite={false} />
+      </instancedMesh>
+      <instancedMesh ref={dropletsRef} args={[undefined, undefined, particles.droplets.length]} frustumCulled={false} raycast={() => null}>
+        <sphereGeometry args={[1, 6, 4]} />
+        <meshStandardMaterial ref={dropletMaterialRef} color="#7f1028" emissive="#36040f" emissiveIntensity={0.22} roughness={0.72} transparent />
+      </instancedMesh>
+      <instancedMesh ref={stainsRef} args={[undefined, undefined, particles.droplets.length]} frustumCulled={false} raycast={() => null} renderOrder={2}>
+        <circleGeometry args={[1, 7]} />
+        <meshBasicMaterial
+          ref={stainMaterialRef}
+          color="#5c0716"
+          transparent
+          opacity={0.72}
+          depthWrite={false}
+          polygonOffset
+          polygonOffsetFactor={-3}
+          side={THREE.DoubleSide}
+        />
+      </instancedMesh>
+    </group>
+  );
+}
+
 function TownCar({ color, active = false }: { color: string; active?: boolean }) {
   const gltf = useGLTF("/assets/models/custom/town-car.glb");
   const model = useMemo(() => {
@@ -1783,7 +1939,8 @@ function NeighborhoodWorld({
   onInsideChange,
   cameraMode,
   onCameraModeChange,
-  onPointerLockChange
+  onPointerLockChange,
+  recoilRef
 }: NeighborhoodSceneProps & {
   onDrivingChange: (driving: boolean) => void;
   selectedWeapon: WeaponKind;
@@ -1794,6 +1951,7 @@ function NeighborhoodWorld({
   cameraMode: CameraMode;
   onCameraModeChange: (mode: CameraMode) => void;
   onPointerLockChange: (locked: boolean) => void;
+  recoilRef: RefObject<WeaponRecoilState>;
 }) {
   const { camera, gl } = useThree();
   const worldResidents = useMemo(() => residents.map((resident) => resident.username === user.username ? {
@@ -1833,12 +1991,17 @@ function NeighborhoodWorld({
   const clickTarget = useRef<THREE.Vector3 | null>(null);
   const clickPath = useRef<THREE.Vector3[]>([]);
   const travelMode = useRef<TravelMode>("walk");
-  const jumpStartedAt = useRef<number | null>(null);
+  const jumpElapsedMs = useRef<number | null>(null);
   const shootingUntil = useRef(0);
   const nextShotAt = useRef(0);
   const shotId = useRef(0);
+  const bloodId = useRef(0);
+  const shotNonceRef = useRef(0);
   const worldGroupRef = useRef<THREE.Group>(null);
   const playerMuzzleRef = useRef<THREE.Object3D | null>(null);
+  const playerAimTargetRef = useRef<THREE.Vector3 | null>(null);
+  const aimDistanceRef = useRef(WEAPONS[selectedWeapon].range);
+  const lastAimSurfaceAt = useRef(0);
   const cameraModeRef = useRef<CameraMode>(cameraMode);
   const cameraYaw = useRef(initialPosition?.rotation ?? ownResident.lot.rotation);
   const cameraPitch = useRef(-0.08);
@@ -1850,6 +2013,7 @@ function NeighborhoodWorld({
   const shotRaycaster = useRef(new THREE.Raycaster());
   const aimRaycaster = useRef(new THREE.Raycaster());
   const playerMotionRef = useRef<CharacterMotion>("idle");
+  const playerUpperMotionRef = useRef<UpperBodyMotion | null>(null);
   const pendingVisit = useRef<NeighborhoodResident | null>(null);
   const pendingInteraction = useRef<PendingInteriorInteraction>(null);
   const handledVisitRequest = useRef<number | null>(null);
@@ -1858,14 +2022,15 @@ function NeighborhoodWorld({
   const lastRotationSent = useRef(playerRotation.current);
   const introViewRef = useRef(!initialPosition);
   const activeInteriorRef = useRef<NeighborhoodResident | null>(initialPosition ? residentAtPosition(playerPosition.current, worldResidents) ?? null : ownResident);
-  const [renderPlayerPosition, setRenderPlayerPosition] = useState(() => playerPosition.current.clone());
-  const [renderPlayerRotation, setRenderPlayerRotation] = useState(playerRotation.current);
+  const [renderPlayerPosition] = useState(() => playerPosition.current.clone());
+  const renderPlayerRotation = useRef(playerRotation.current);
+  const [cameraFollowPosition] = useState(() => playerPosition.current.clone().sub(viewOrigin));
   const [renderCarPosition, setRenderCarPosition] = useState(() => carPosition.current.clone());
   const [renderCarRotation, setRenderCarRotation] = useState(carRotation.current);
   const [moving, setMoving] = useState(false);
   const [playerMotion, setPlayerMotion] = useState<CharacterMotion>("idle");
-  const [shotNonce, setShotNonce] = useState(0);
   const [shotEffects, setShotEffects] = useState<ShotEffect[]>([]);
+  const [bloodEffects, setBloodEffects] = useState<BloodEffect[]>([]);
   const [, setNpcUiVersion] = useState(0);
   const [driving, setDriving] = useState(false);
   const [introView, setIntroView] = useState(!initialPosition);
@@ -2094,7 +2259,17 @@ function NeighborhoodWorld({
     group.traverse((object) => {
       const metadata = combatMetadata(object);
       if (!metadata || metadata.runtime !== runtime) return;
-      const point = object.getWorldPosition(new THREE.Vector3());
+      const center = object.getWorldPosition(new THREE.Vector3());
+      const towardCenter = center.clone().sub(referencePoint);
+      let point = center;
+      if (towardCenter.lengthSq() > 0.000001) {
+        const raycaster = shotRaycaster.current;
+        const centerDistance = towardCenter.length();
+        raycaster.set(referencePoint, towardCenter.multiplyScalar(1 / centerDistance));
+        raycaster.near = 0;
+        raycaster.far = centerDistance + 2;
+        point = raycaster.intersectObject(object, false)[0]?.point.clone() ?? center;
+      }
       const distance = point.distanceToSquared(referencePoint);
       if (distance >= bestDistance) return;
       bestDistance = distance;
@@ -2139,29 +2314,86 @@ function NeighborhoodWorld({
       runtime.respawnAt = now + NPC_RESPAWN_MS;
       runtime.motionRef.current = "death";
       runtime.deathNonce += 1;
-      runtime.ragdollImpact = { ...impact, nonce: runtime.deathNonce };
+      const deathVelocity = new THREE.Vector3().fromArray(impact.velocity);
+      if (Number.isFinite(deathVelocity.lengthSq()) && deathVelocity.lengthSq() > 0) {
+        deathVelocity
+          .multiplyScalar(impact.kind === "bullet"
+            ? BULLET_DEATH_IMPULSE_MULTIPLIER
+            : EXPLOSION_DEATH_IMPULSE_MULTIPLIER)
+          .clampLength(0, MAX_DEATH_IMPULSE_SPEED);
+      } else {
+        deathVelocity.set(0, 0, 0);
+      }
+      runtime.ragdollImpact = {
+        ...impact,
+        velocity: deathVelocity.toArray(),
+        nonce: runtime.deathNonce
+      };
       onToast(`${runtime.username} повержен — вернётся в центре города`);
     }
     setNpcUiVersion((version) => version + 1);
     return runtime.dead;
   }
 
-  function getThirdPersonAimPoint() {
+  function getThirdPersonAimPoint(resolveSurface = true) {
     const group = worldGroupRef.current;
     const config = WEAPONS[selectedWeaponRef.current];
     const raycaster = aimRaycaster.current;
+    AIM_CENTER.set(recoilRef.current.x, recoilRef.current.y);
     raycaster.setFromCamera(AIM_CENTER, camera);
     raycaster.far = config.range;
     if (group) {
-      const valid = validRayIntersection(raycaster.intersectObject(group, true));
-      if (valid) return group.worldToLocal(valid.intersection.point.clone());
-      return group.worldToLocal(raycaster.ray.at(config.range, new THREE.Vector3()));
+      if (resolveSurface) {
+        const valid = validRayIntersection(raycaster.intersectObject(group, true));
+        aimDistanceRef.current = valid?.intersection.distance ?? config.range;
+      }
+      const distance = THREE.MathUtils.clamp(aimDistanceRef.current, 0.5, config.range);
+      const targetWorld = raycaster.ray.at(distance, new THREE.Vector3());
+      if (!playerAimTargetRef.current) playerAimTargetRef.current = new THREE.Vector3();
+      playerAimTargetRef.current.copy(targetWorld);
+      return group.worldToLocal(targetWorld.clone());
     }
-    return raycaster.ray.at(config.range, new THREE.Vector3()).add(viewOrigin);
+    const targetWorld = raycaster.ray.at(config.range, new THREE.Vector3());
+    if (!playerAimTargetRef.current) playerAimTargetRef.current = new THREE.Vector3();
+    playerAimTargetRef.current.copy(targetWorld);
+    return targetWorld.add(viewOrigin);
+  }
+
+  function spawnBloodEffect(impactWorld: THREE.Vector3, directionWorld: THREE.Vector3, now: number) {
+    const group = worldGroupRef.current;
+    if (!group) return;
+    const point = group.worldToLocal(impactWorld.clone());
+    const directionEnd = group.worldToLocal(impactWorld.clone().add(directionWorld));
+    const direction = directionEnd.sub(point);
+    if (direction.lengthSq() < 0.000001) direction.set(0, 0.3, 1);
+    direction.normalize();
+    bloodId.current += 1;
+    const effect: BloodEffect = {
+      id: bloodId.current,
+      point,
+      direction,
+      createdAt: now,
+      duration: BLOOD_EFFECT_DURATION
+    };
+    setBloodEffects((effects) => [
+      ...effects.filter((current) => now < current.createdAt + current.duration),
+      effect
+    ].slice(-12));
+  }
+
+  function applyWeaponRecoil(config: (typeof WEAPONS)[WeaponKind]) {
+    const recoil = recoilRef.current;
+    recoil.kick = Math.min(config.recoilKick * 1.65, recoil.kick + config.recoilKick);
+    if (cameraModeRef.current !== "thirdPerson") return;
+    const horizontalKick = (Math.random() * 2 - 1) * config.recoilYaw;
+    const verticalKick = config.recoilPitch * (0.82 + Math.random() * 0.36);
+    recoil.x = THREE.MathUtils.clamp(recoil.x + horizontalKick, -0.075, 0.075);
+    recoil.y = THREE.MathUtils.clamp(recoil.y + verticalKick, 0, 0.12);
+    getThirdPersonAimPoint(false);
   }
 
   function shootAt(target: THREE.Vector3) {
-    if (drivingRef.current || jumpStartedAt.current !== null) return;
+    if (drivingRef.current) return;
     if (activeInteriorRef.current) {
       onToast("Чтобы стрелять, сначала выйдите на улицу");
       return;
@@ -2181,8 +2413,13 @@ function NeighborhoodWorld({
 
     const shotStartWorld = group.localToWorld(playerPosition.current.clone().setY(1.15));
     const muzzle = playerMuzzleRef.current;
-    if (muzzle?.userData.weapon === weapon) muzzle.getWorldPosition(shotStartWorld);
+    if (muzzle?.userData.weapon === weapon) {
+      muzzle.updateWorldMatrix(true, false);
+      muzzle.getWorldPosition(shotStartWorld);
+    }
     const targetWorld = group.localToWorld(target.clone());
+    if (!playerAimTargetRef.current) playerAimTargetRef.current = new THREE.Vector3();
+    playerAimTargetRef.current.copy(targetWorld);
     const directionWorld = targetWorld.clone().sub(shotStartWorld);
     if (directionWorld.lengthSq() < 0.001) directionWorld.copy(frontVector(playerRotation.current));
     const targetDistance = Math.max(0.1, directionWorld.length());
@@ -2192,7 +2429,6 @@ function NeighborhoodWorld({
     if (flatDirection.lengthSq() > 0.001) {
       flatDirection.normalize();
       playerRotation.current = Math.atan2(flatDirection.x, flatDirection.z);
-      setRenderPlayerRotation(playerRotation.current);
     }
 
     const shotDistance = Math.min(config.range, targetDistance + 0.35);
@@ -2228,13 +2464,15 @@ function NeighborhoodWorld({
         if (impulseDirection.lengthSq() < 0.002) impulseDirection.copy(directionWorld);
         impulseDirection.y += 0.32;
         impulseDirection.normalize();
+        const bloodDirection = impulseDirection.clone();
         damageNpc(runtime, config.damage * falloff, now, {
           kind: "explosion",
           bodyPart: exactZone?.bodyPart ?? DEFAULT_BODY_PART,
           boneName: exactZone?.boneName ?? DEFAULT_BODY_BONE,
           point: bodyPoint.toArray(),
-          velocity: impulseDirection.multiplyScalar((config.blastImpulse ?? config.impactImpulse) * falloff).toArray()
+          velocity: impulseDirection.clone().multiplyScalar((config.blastImpulse ?? config.impactImpulse) * falloff).toArray()
         });
+        spawnBloodEffect(bodyPoint, bloodDirection, now);
       }
     } else if (directCombat) {
       const impulse = directionWorld.clone().multiplyScalar(config.impactImpulse);
@@ -2251,6 +2489,7 @@ function NeighborhoodWorld({
           velocity: impulse.toArray()
         }
       );
+      spawnBloodEffect(directCombat.point, directionWorld, now);
     }
 
     const shotStart = group.worldToLocal(shotStartWorld.clone());
@@ -2270,7 +2509,8 @@ function NeighborhoodWorld({
       }
     ].slice(-16));
     shootingUntil.current = now + 370;
-    setShotNonce((nonce) => nonce + 1);
+    shotNonceRef.current += 1;
+    applyWeaponRecoil(config);
     lastRotationSent.current = playerRotation.current;
     lastMoveSent.current = now;
     onMove({
@@ -2314,7 +2554,7 @@ function NeighborhoodWorld({
       setDriving(next);
       onDrivingChange(next);
       if (next) {
-        jumpStartedAt.current = null;
+        jumpElapsedMs.current = null;
         keys.current.delete("q");
         setAiming(false);
         if (cameraModeRef.current === "thirdPerson") setCameraMode("strategy");
@@ -2365,8 +2605,8 @@ function NeighborhoodWorld({
         document.body.style.cursor = "crosshair";
       }
 
-      if (key === " " && !drivingRef.current && !event.repeat && jumpStartedAt.current === null) {
-        jumpStartedAt.current = performance.now();
+      if (key === " " && !drivingRef.current && !event.repeat && jumpElapsedMs.current === null) {
+        jumpElapsedMs.current = 0;
       }
 
       if (key !== "e" && key !== "f") return;
@@ -2447,8 +2687,8 @@ function NeighborhoodWorld({
         if (cameraModeRef.current === "thirdPerson") setAiming(false);
       }
     };
-    const handlePointerDown = (event: PointerEvent) => {
-      if (cameraModeRef.current !== "thirdPerson" || event.pointerType === "touch") return;
+    const handleMouseDown = (event: MouseEvent) => {
+      if (cameraModeRef.current !== "thirdPerson") return;
       event.preventDefault();
       if (document.pointerLockElement !== element) {
         requestThirdPersonPointerLock();
@@ -2465,7 +2705,7 @@ function NeighborhoodWorld({
         if (performance.now() >= nextShotAt.current) shootAtRef.current(getThirdPersonAimPoint());
       }
     };
-    const handlePointerUp = (event: PointerEvent) => {
+    const handleMouseUp = (event: MouseEvent) => {
       if (cameraModeRef.current === "thirdPerson" && event.button === 2) setAiming(false);
       if (event.button === 0) thirdPersonFireHeld.current = false;
     };
@@ -2478,14 +2718,14 @@ function NeighborhoodWorld({
 
     document.addEventListener("pointerlockchange", handlePointerLockChange);
     document.addEventListener("pointerlockerror", handlePointerLockError);
-    element.addEventListener("pointerdown", handlePointerDown, { passive: false });
-    window.addEventListener("pointerup", handlePointerUp);
+    element.addEventListener("mousedown", handleMouseDown, { passive: false });
+    window.addEventListener("mouseup", handleMouseUp);
     handlePointerLockChange();
     return () => {
       document.removeEventListener("pointerlockchange", handlePointerLockChange);
       document.removeEventListener("pointerlockerror", handlePointerLockError);
-      element.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("pointerup", handlePointerUp);
+      element.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mouseup", handleMouseUp);
       if (document.pointerLockElement === element) document.exitPointerLock?.();
       onPointerLockChange(false);
     };
@@ -2496,6 +2736,14 @@ function NeighborhoodWorld({
   }, [buildMode]);
 
   useEffect(() => {
+    recoilRef.current.x = 0;
+    recoilRef.current.y = 0;
+    recoilRef.current.kick = 0;
+    aimDistanceRef.current = WEAPONS[selectedWeapon].range;
+    if (cameraMode !== "thirdPerson") playerAimTargetRef.current = null;
+  }, [cameraMode, recoilRef, selectedWeapon]);
+
+  useEffect(() => {
     if (shotEffects.length === 0) return;
     const nextExpiry = Math.min(...shotEffects.map((effect) => effect.createdAt + effect.duration));
     const timeout = window.setTimeout(() => {
@@ -2504,6 +2752,16 @@ function NeighborhoodWorld({
     }, Math.max(16, nextExpiry - performance.now() + 24));
     return () => window.clearTimeout(timeout);
   }, [shotEffects]);
+
+  useEffect(() => {
+    if (bloodEffects.length === 0) return;
+    const nextExpiry = Math.min(...bloodEffects.map((effect) => effect.createdAt + effect.duration));
+    const timeout = window.setTimeout(() => {
+      const now = performance.now();
+      setBloodEffects((effects) => effects.filter((effect) => now < effect.createdAt + effect.duration));
+    }, Math.max(32, nextExpiry - performance.now() + 32));
+    return () => window.clearTimeout(timeout);
+  }, [bloodEffects]);
 
   useEffect(() => {
     const announcePosition = () => onMove({
@@ -2548,12 +2806,29 @@ function NeighborhoodWorld({
 
   useFrame((_, delta) => {
     const now = performance.now();
+    const recoilDelta = Math.min(delta, 0.05);
+    const screenDecay = Math.exp(-recoilDelta * 10.5);
+    recoilRef.current.x *= screenDecay;
+    recoilRef.current.y *= screenDecay;
+    recoilRef.current.kick *= Math.exp(-recoilDelta * 18);
+    if (Math.abs(recoilRef.current.x) < 0.00005) recoilRef.current.x = 0;
+    if (Math.abs(recoilRef.current.y) < 0.00005) recoilRef.current.y = 0;
+    if (recoilRef.current.kick < 0.00005) recoilRef.current.kick = 0;
+    if (cameraModeRef.current === "thirdPerson") {
+      const resolveSurface = now - lastAimSurfaceAt.current >= 48;
+      if (resolveSurface) lastAimSurfaceAt.current = now;
+      getThirdPersonAimPoint(resolveSurface);
+    }
     if (cameraModeRef.current === "thirdPerson"
       && thirdPersonFireHeld.current
       && now >= nextShotAt.current
       && document.pointerLockElement === gl.domElement) {
       shootAtRef.current(getThirdPersonAimPoint());
     }
+  });
+
+  useFrame((_, delta) => {
+    const now = performance.now();
     for (const { runtime } of npcActors) {
       if (runtime.dead) {
         if (now >= runtime.respawnAt) {
@@ -2624,7 +2899,8 @@ function NeighborhoodWorld({
     } else if (cameraModeRef.current === "thirdPerson") {
       const inputX = (keys.current.has("a") ? 1 : 0) - (keys.current.has("d") ? 1 : 0);
       const inputZ = (keys.current.has("w") ? 1 : 0) - (keys.current.has("s") ? 1 : 0);
-      if (aimingRef.current) playerRotation.current = cameraYaw.current;
+      const facingCamera = aimingRef.current || thirdPersonFireHeld.current || now < shootingUntil.current;
+      if (facingCamera) playerRotation.current = cameraYaw.current;
       if (inputX !== 0 || inputZ !== 0) {
         const movement = frontVector(cameraYaw.current).multiplyScalar(inputZ)
           .addScaledVector(rightVector(cameraYaw.current), inputX)
@@ -2640,7 +2916,7 @@ function NeighborhoodWorld({
         if (currentPosition.distanceToSquared(itemResolved) > 0.00000025) {
           playerPosition.current.copy(itemResolved);
           didMove = true;
-          if (!aimingRef.current) playerRotation.current = Math.atan2(movement.x, movement.z);
+          if (!facingCamera) playerRotation.current = Math.atan2(movement.x, movement.z);
         }
       }
     } else {
@@ -2704,35 +2980,44 @@ function NeighborhoodWorld({
     }
     let jumpHeight = 0;
     let jumpMotion: CharacterMotion | null = null;
-    if (!drivingRef.current && jumpStartedAt.current !== null) {
-      const jumpProgress = (now - jumpStartedAt.current) / JUMP_DURATION_MS;
+    if (!drivingRef.current && jumpElapsedMs.current !== null) {
+      jumpElapsedMs.current += Math.min(delta, 0.08) * 1000;
+      const jumpProgress = jumpElapsedMs.current / JUMP_DURATION_MS;
       if (jumpProgress >= 1) {
-        jumpStartedAt.current = null;
+        jumpElapsedMs.current = null;
       } else {
         jumpHeight = Math.sin(Math.PI * THREE.MathUtils.clamp(jumpProgress, 0, 1)) * JUMP_HEIGHT;
         jumpMotion = jumpProgress < 0.3 ? "jumpStart" : jumpProgress < 0.7 ? "jumpLoop" : "jumpLand";
       }
     }
 
-    const currentlyAiming = cameraModeRef.current === "thirdPerson" ? aimingRef.current : keys.current.has("q");
+    const currentlyAiming = cameraModeRef.current === "thirdPerson"
+      ? aimingRef.current || thirdPersonFireHeld.current
+      : keys.current.has("q");
+    const currentlyShooting = now < shootingUntil.current;
+    playerUpperMotionRef.current = currentlyShooting
+      ? "shoot"
+      : currentlyAiming
+        ? "aim"
+        : null;
     const nextMotion: CharacterMotion = jumpMotion
-      ?? (now < shootingUntil.current
-        ? "shoot"
-        : keys.current.has("control")
-          ? locomoting ? "crouchWalk" : "crouchIdle"
-          : locomoting
-            ? travelMode.current === "run" ? "run" : "walk"
-            : currentlyAiming
-              ? "aim"
-              : activeInteriorRef.current ? "idle" : "armedIdle");
+      ?? (keys.current.has("control")
+        ? locomoting ? "crouchWalk" : "crouchIdle"
+        : locomoting
+          ? travelMode.current === "run" ? "run" : "walk"
+          : activeInteriorRef.current ? "idle" : "armedIdle");
     updatePlayerMotion(nextMotion);
 
-    const visualPlayerPosition = playerPosition.current.clone();
-    visualPlayerPosition.y = jumpHeight;
-    setRenderPlayerPosition(visualPlayerPosition);
-    setRenderPlayerRotation(playerRotation.current);
-    setRenderCarPosition(carPosition.current.clone());
-    setRenderCarRotation(carRotation.current);
+    renderPlayerPosition.copy(playerPosition.current);
+    renderPlayerPosition.y = jumpHeight;
+    renderPlayerRotation.current = playerRotation.current;
+    cameraFollowPosition
+      .copy(drivingRef.current ? carPosition.current : renderPlayerPosition)
+      .sub(viewOrigin);
+    if (drivingRef.current) {
+      setRenderCarPosition(carPosition.current.clone());
+      setRenderCarRotation(carRotation.current);
+    }
 
     const rotationDelta = Math.abs(Math.atan2(
       Math.sin(playerRotation.current - lastRotationSent.current),
@@ -2755,7 +3040,7 @@ function NeighborhoodWorld({
         vehicle: drivingRef.current
       });
     }
-  });
+  }, -2);
 
   function handleInteriorObjectInteract(
     resident: NeighborhoodResident,
@@ -2928,7 +3213,6 @@ function NeighborhoodWorld({
   }
 
   const controlledCarTransform = { position: renderCarPosition, rotation: renderCarRotation };
-  const cameraPosition = (driving ? renderCarPosition : renderPlayerPosition).clone().sub(viewOrigin);
   const cameraResident = activeInterior ?? ownResident;
   const displayHomePosition = new THREE.Vector3(cameraResident.lot.x, 0, cameraResident.lot.z).sub(viewOrigin);
   const cameraHomeFront = frontVector(cameraResident.lot.rotation);
@@ -3037,13 +3321,19 @@ function NeighborhoodWorld({
             outfit={ownOutfit}
             moving={moving}
             motion={playerMotion}
+            motionRef={playerMotionRef}
             weapon={activeInterior ? undefined : selectedWeapon}
             muzzleRef={playerMuzzleRef}
-            actionNonce={shotNonce}
-            rotation={renderPlayerRotation}
+            weaponAimTargetRef={playerAimTargetRef}
+            weaponRecoilRef={recoilRef}
+            actionNonceRef={shotNonceRef}
+            upperMotionRef={playerUpperMotionRef}
+            rotation={renderPlayerRotation.current}
+            rotationRef={playerRotation}
           />
         ) : null}
         {shotEffects.map((effect) => <ShotEffectView key={effect.id} effect={effect} />)}
+        {bloodEffects.map((effect) => <BloodHitEffect key={effect.id} effect={effect} />)}
         {remoteVectors.map((player) => player.position.vehicle ? (
           <Car
             key={player.id ?? player.username}
@@ -3064,8 +3354,8 @@ function NeighborhoodWorld({
         ))}
       </group>
       <StreetCamera
-        position={cameraPosition}
-        rotation={driving ? renderCarRotation : renderPlayerRotation}
+        position={cameraFollowPosition}
+        rotation={driving ? renderCarRotation : renderPlayerRotation.current}
         driving={driving}
         cameraMode={cameraMode}
         cameraYaw={cameraYaw}
@@ -3085,6 +3375,40 @@ function NeighborhoodWorld({
   );
 }
 
+function ThirdPersonReticle({
+  aiming,
+  recoilRef
+}: {
+  aiming: boolean;
+  recoilRef: RefObject<WeaponRecoilState>;
+}) {
+  const elementRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let animationFrame = 0;
+    const update = () => {
+      const element = elementRef.current;
+      if (element) {
+        const bounds = (element.offsetParent as HTMLElement | null)?.getBoundingClientRect();
+        const width = bounds?.width ?? window.innerWidth;
+        const height = bounds?.height ?? window.innerHeight;
+        const x = recoilRef.current.x * width * 0.5;
+        const y = -recoilRef.current.y * height * 0.5;
+        element.style.transform = `translate(calc(-50% + ${x.toFixed(2)}px), calc(-50% + ${y.toFixed(2)}px))`;
+      }
+      animationFrame = window.requestAnimationFrame(update);
+    };
+    animationFrame = window.requestAnimationFrame(update);
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [recoilRef]);
+
+  return (
+    <div ref={elementRef} className={aiming ? "third-person-reticle aiming" : "third-person-reticle"} aria-hidden="true">
+      <span />
+    </div>
+  );
+}
+
 export function NeighborhoodScene(props: NeighborhoodSceneProps) {
   const [driving, setDriving] = useState(false);
   const [inside, setInside] = useState(() => {
@@ -3096,6 +3420,7 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
   const [aiming, setAiming] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>("strategy");
   const [pointerLocked, setPointerLocked] = useState(false);
+  const recoilRef = useRef<WeaponRecoilState>({ x: 0, y: 0, kick: 0 });
 
   return (
     <>
@@ -3116,13 +3441,12 @@ export function NeighborhoodScene(props: NeighborhoodSceneProps) {
           cameraMode={cameraMode}
           onCameraModeChange={setCameraMode}
           onPointerLockChange={setPointerLocked}
+          recoilRef={recoilRef}
         />
       </Canvas>
       {cameraMode === "thirdPerson" ? (
         <>
-          <div className={aiming ? "third-person-reticle aiming" : "third-person-reticle"} aria-hidden="true">
-            <span />
-          </div>
+          <ThirdPersonReticle aiming={aiming} recoilRef={recoilRef} />
           {!pointerLocked ? (
             <div className="pointer-lock-hint">Кликните по сцене, чтобы вернуть управление мышью</div>
           ) : null}

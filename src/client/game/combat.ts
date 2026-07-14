@@ -12,6 +12,14 @@ export type CharacterMotion =
   | "shoot"
   | "death";
 
+export type UpperBodyMotion = "aim" | "shoot";
+
+export type WeaponRecoilState = {
+  x: number;
+  y: number;
+  kick: number;
+};
+
 export type WeaponKind = "pistol" | "rifle" | "rocket" | "laser" | "sniper";
 
 export type BodyPart =
@@ -50,6 +58,9 @@ export type WeaponConfig = {
   color: string;
   tracerWidth: number;
   impactImpulse: number;
+  recoilPitch: number;
+  recoilYaw: number;
+  recoilKick: number;
   blastRadius?: number;
   blastImpulse?: number;
 };
@@ -59,9 +70,10 @@ export const WEAPON_ORDER: WeaponKind[] = ["pistol", "rifle", "rocket", "laser",
 type WeaponModelConfig = {
   url: string;
   scale: number;
-  position: [number, number, number];
+  gripNudge: [number, number, number];
   rotation: [number, number, number];
   muzzlePosition: [number, number, number];
+  barrelAxis: [number, number, number];
 };
 
 export const WEAPON_MODELS: Record<WeaponKind, WeaponModelConfig> = {
@@ -71,37 +83,42 @@ export const WEAPON_MODELS: Record<WeaponKind, WeaponModelConfig> = {
   pistol: {
     url: "/assets/models/quaternius-weapons/pistol.gltf",
     scale: 0.37,
-    position: [0.01, 0.035, 0.005],
+    gripNudge: [0, 0, 0],
     rotation: [Math.PI / 2, -Math.PI / 2, 0],
-    muzzlePosition: [-0.7, 0.2587, 0]
+    muzzlePosition: [-0.7, 0.2587, 0],
+    barrelAxis: [-1, 0, 0]
   },
   rifle: {
     url: "/assets/models/quaternius-weapons/rifle.gltf",
     scale: 0.42,
-    position: [0.02, 0.035, 0.01],
+    gripNudge: [0, 0, 0.005],
     rotation: [Math.PI / 2, -Math.PI / 2, 0],
-    muzzlePosition: [-1.05, 0.2455, -0.0023]
+    muzzlePosition: [-1.05, 0.2455, -0.0023],
+    barrelAxis: [-1, 0, 0]
   },
   rocket: {
     url: "/assets/models/quaternius-weapons/rocket-launcher.gltf",
     scale: 0.4,
-    position: [0.06, 0.015, 0.055],
+    gripNudge: [0, -0.02, 0.05],
     rotation: [Math.PI / 2, Math.PI / 2, 0],
-    muzzlePosition: [0.55, 0.3683, 0]
+    muzzlePosition: [0.55, 0.3683, 0],
+    barrelAxis: [1, 0, 0]
   },
   laser: {
     url: "/assets/models/quaternius-weapons/laser.gltf",
     scale: 0.38,
-    position: [0.02, 0.035, 0.01],
+    gripNudge: [0, 0, 0.005],
     rotation: [Math.PI / 2, -Math.PI / 2, 0],
-    muzzlePosition: [-0.93, 0.054, -0.012]
+    muzzlePosition: [-0.93, 0.054, -0.012],
+    barrelAxis: [-1, 0, 0]
   },
   sniper: {
     url: "/assets/models/quaternius-weapons/sniper.gltf",
     scale: 0.35,
-    position: [0.025, 0.03, 0.02],
+    gripNudge: [0, -0.003, 0.01],
     rotation: [Math.PI / 2, -Math.PI / 2, 0],
-    muzzlePosition: [-1.62, 0.2293, -0.0214]
+    muzzlePosition: [-1.62, 0.2293, -0.0214],
+    barrelAxis: [-1, 0, 0]
   }
 };
 
@@ -114,7 +131,10 @@ export const WEAPONS: Record<WeaponKind, WeaponConfig> = {
     cooldownMs: 330,
     color: "#ffd166",
     tracerWidth: 0.018,
-    impactImpulse: 2.8
+    impactImpulse: 2.8,
+    recoilPitch: 0.018,
+    recoilYaw: 0.011,
+    recoilKick: 0.045
   },
   rifle: {
     label: "Автомат",
@@ -124,7 +144,10 @@ export const WEAPONS: Record<WeaponKind, WeaponConfig> = {
     cooldownMs: 125,
     color: "#ff9f43",
     tracerWidth: 0.022,
-    impactImpulse: 2.35
+    impactImpulse: 2.35,
+    recoilPitch: 0.011,
+    recoilYaw: 0.012,
+    recoilKick: 0.036
   },
   rocket: {
     label: "Ракетница",
@@ -135,6 +158,9 @@ export const WEAPONS: Record<WeaponKind, WeaponConfig> = {
     color: "#ff5d5d",
     tracerWidth: 0.075,
     impactImpulse: 5.4,
+    recoilPitch: 0.028,
+    recoilYaw: 0.018,
+    recoilKick: 0.075,
     blastRadius: 3.4,
     blastImpulse: 6.8
   },
@@ -146,7 +172,10 @@ export const WEAPONS: Record<WeaponKind, WeaponConfig> = {
     cooldownMs: 210,
     color: "#5ef2ff",
     tracerWidth: 0.036,
-    impactImpulse: 3.6
+    impactImpulse: 3.6,
+    recoilPitch: 0.009,
+    recoilYaw: 0.008,
+    recoilKick: 0.025
   },
   sniper: {
     label: "Снайперская винтовка",
@@ -156,7 +185,10 @@ export const WEAPONS: Record<WeaponKind, WeaponConfig> = {
     cooldownMs: 900,
     color: "#d8b4fe",
     tracerWidth: 0.014,
-    impactImpulse: 5.2
+    impactImpulse: 5.2,
+    recoilPitch: 0.034,
+    recoilYaw: 0.017,
+    recoilKick: 0.082
   }
 };
 
