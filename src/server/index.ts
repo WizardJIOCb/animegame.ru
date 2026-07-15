@@ -7,6 +7,7 @@ import {
   createDefaultExpeditionProfile,
   expeditionEnemyPatrolTolerance,
   expeditionGearUpgradeCost,
+  expeditionVehicleImpactDamage,
   expeditionWeaponStats,
   expeditionWeaponUpgradeCost,
   EXPEDITION_AMMO_PACK,
@@ -42,6 +43,8 @@ import {
   EXPEDITION_SHIELD_PER_MODULE,
   EXPEDITION_TRADER_BUY_PRICES,
   EXPEDITION_TRADER_SELL_PRICES,
+  EXPEDITION_VEHICLE_MAX_IMPACT_SPEED,
+  EXPEDITION_VEHICLE_MIN_IMPACT_SPEED,
   EXPEDITION_WEAPONS,
   EXPEDITION_WEAPON_IDS,
   EXPEDITION_WEAPON_UPGRADE_PATHS,
@@ -61,6 +64,7 @@ import {
   type ExpeditionSkillId,
   type ExpeditionTacticalId,
   type ExpeditionTacticalTarget,
+  type ExpeditionVehicleHitInput,
   type ExpeditionWeaponId,
   type ExpeditionWeaponUpgradeStat,
   type ItemStack,
@@ -160,6 +164,13 @@ type InternalParty = {
 
 const activeExpeditionRuns = new Map<string, ActiveExpeditionRun>();
 const lastExpeditionPositionPersistAt = new Map<string, number>();
+const nextExpeditionVehicleHitAt = new Map<string, number>();
+const nextExpeditionVehicleEnemyHitAt = new Map<string, Map<ExpeditionEnemyId, number>>();
+const neighborhoodVehicleMovementTelemetry = new Map<string, {
+  observedSpeed: number;
+  observedAt: number;
+  vehicle: boolean;
+}>();
 const parties = new Map<string, InternalParty>();
 const partyIdByUserId = new Map<string, string>();
 const partyInvites = new Map<string, PartyInvite>();
@@ -171,6 +182,12 @@ const NEIGHBORHOOD_MAX_SPEED = 14;
 const NEIGHBORHOOD_MOVE_BUDGET_CAPACITY = 3.5;
 const NEIGHBORHOOD_INITIAL_MOVE_BUDGET = 0.75;
 const NEIGHBORHOOD_MIN_MOVE_INTERVAL_MS = 12;
+const EXPEDITION_VEHICLE_HIT_COOLDOWN_MS = 180;
+const EXPEDITION_VEHICLE_ENEMY_HIT_COOLDOWN_MS = 650;
+const EXPEDITION_VEHICLE_HIT_RADIUS = 7;
+const EXPEDITION_VEHICLE_MAX_TARGETS_PER_IMPACT = 6;
+const EXPEDITION_VEHICLE_TELEMETRY_MAX_AGE_MS = 450;
+const EXPEDITION_VEHICLE_SPEED_TOLERANCE = 0.75;
 const INITIAL_CITY_SYNC_MIN_X = -95;
 const INITIAL_CITY_SYNC_MAX_X = 95;
 const INITIAL_CITY_SYNC_MIN_Z = -80;
@@ -415,6 +432,7 @@ function leaveNeighborhoodPresence(socket: Socket) {
       .some((player) => player.username === previousPlayer.username);
     if (!sameUserStillPresent) {
       updateActiveExpeditionPosition(String(socket.data.userId), previousPlayer.position, true);
+      neighborhoodVehicleMovementTelemetry.delete(String(socket.data.userId));
       socket.to(NEIGHBORHOOD_ROOM).emit("player:left", {
         id: socket.id,
         username: previousPlayer.username
@@ -902,6 +920,9 @@ function discardActiveExpedition(db: DbShape, user: User, run: ActiveExpeditionR
 function resetNeighborhoodPositionAfterExpedition(userId: string) {
   const position = { x: 0, y: 0, z: -72, rotation: Math.PI, vehicle: false };
   lastNeighborhoodPositions.set(userId, position);
+  nextExpeditionVehicleHitAt.delete(userId);
+  nextExpeditionVehicleEnemyHitAt.delete(userId);
+  neighborhoodVehicleMovementTelemetry.delete(userId);
   neighborhoodMovementStates.set(userId, {
     lastAt: Date.now(),
     budget: NEIGHBORHOOD_INITIAL_MOVE_BUDGET,
@@ -2108,6 +2129,191 @@ fastify.post("/api/expedition/hit", async (request, reply) => {
   }
 });
 
+fastify.post("/api/expedition/vehicle-hit", async (request, reply) => {
+  try {
+    const authenticatedUser = requireUser(request);
+    const body = (request.body ?? {}) as { hits?: unknown };
+    if (
+      !Array.isArray(body.hits)
+      || body.hits.length < 1
+      || body.hits.length > EXPEDITION_VEHICLE_MAX_TARGETS_PER_IMPACT
+    ) {
+      return reply.code(400).send({
+        error: `Передайте от 1 до ${EXPEDITION_VEHICLE_MAX_TARGETS_PER_IMPACT} столкновений`
+      });
+    }
+
+    const seenEnemyIds = new Set<ExpeditionEnemyId>();
+    const requestedHits: ExpeditionVehicleHitInput[] = [];
+    for (const candidate of body.hits) {
+      if (!candidate || typeof candidate !== "object") {
+        return reply.code(400).send({ error: "Некорректные данные столкновения" });
+      }
+      const raw = candidate as {
+        enemyId?: unknown;
+        speed?: unknown;
+        position?: { x?: unknown; z?: unknown };
+      };
+      const enemyId = String(raw.enemyId ?? "");
+      if (!expeditionEnemyIds.has(enemyId)) {
+        return reply.code(400).send({ error: "Неизвестный противник" });
+      }
+      const typedEnemyId = enemyId as ExpeditionEnemyId;
+      if (seenEnemyIds.has(typedEnemyId)) {
+        return reply.code(400).send({ error: "Один противник не может быть указан дважды" });
+      }
+      seenEnemyIds.add(typedEnemyId);
+
+      const rawSpeed = Number(raw.speed);
+      const rawPositionX = Number(raw.position?.x);
+      const rawPositionZ = Number(raw.position?.z);
+      if (!Number.isFinite(rawSpeed) || !Number.isFinite(rawPositionX) || !Number.isFinite(rawPositionZ)) {
+        return reply.code(400).send({ error: "Укажите скорость и точку столкновения" });
+      }
+      const impactSpeed = Math.min(EXPEDITION_VEHICLE_MAX_IMPACT_SPEED, Math.abs(rawSpeed));
+      if (impactSpeed < EXPEDITION_VEHICLE_MIN_IMPACT_SPEED) {
+        return reply.code(400).send({ error: "Скорость машины слишком мала для нанесения урона" });
+      }
+      requestedHits.push({
+        enemyId: typedEnemyId,
+        speed: impactSpeed,
+        position: { x: rawPositionX, z: rawPositionZ }
+      });
+    }
+
+    const db = readDb();
+    const user = db.users.find((entry) => entry.id === authenticatedUser.id)!;
+    const run = activeRunForUser(user);
+    if (!run) {
+      return reply.code(409).send({ error: "Сначала начните экспедицию" });
+    }
+    if (run.downedAt || run.playerHealth <= 0) {
+      return reply.code(409).send({ error: "В тяжёлом состоянии управлять машиной нельзя" });
+    }
+
+    const livePosition = liveNeighborhoodPosition(user.id);
+    if (!livePosition || livePosition.vehicle !== true) {
+      return reply.code(403).send({ error: "Столкновение доступно только при управлении машиной" });
+    }
+
+    const now = Date.now();
+    const vehicleTelemetry = neighborhoodVehicleMovementTelemetry.get(user.id);
+    if (
+      !vehicleTelemetry
+      || !vehicleTelemetry.vehicle
+      || now - vehicleTelemetry.observedAt > EXPEDITION_VEHICLE_TELEMETRY_MAX_AGE_MS
+    ) {
+      return reply.code(403).send({ error: "Нет свежих данных о движении машины" });
+    }
+    if (vehicleTelemetry.observedSpeed < EXPEDITION_VEHICLE_MIN_IMPACT_SPEED) {
+      return reply.code(400).send({ error: "Фактическая скорость машины слишком мала для нанесения урона" });
+    }
+
+    const liveHits = requestedHits
+      .filter((hit) => !run.killedEnemyIds.includes(hit.enemyId))
+      .map((hit) => ({
+        ...hit,
+        speed: Math.min(
+          EXPEDITION_VEHICLE_MAX_IMPACT_SPEED,
+          hit.speed,
+          vehicleTelemetry.observedSpeed + EXPEDITION_VEHICLE_SPEED_TOLERANCE
+        )
+      }));
+    if (liveHits.some((hit) => hit.speed < EXPEDITION_VEHICLE_MIN_IMPACT_SPEED)) {
+      return reply.code(400).send({ error: "Подтверждённая скорость столкновения слишком мала" });
+    }
+    for (const hit of liveHits) {
+      const enemy = EXPEDITION_ENEMIES[hit.enemyId];
+      const distanceFromVehicle = Math.hypot(
+        hit.position.x - livePosition.x,
+        hit.position.z - livePosition.z
+      );
+      const distanceFromSpawn = Math.hypot(
+        hit.position.x - enemy.position[0],
+        hit.position.z - enemy.position[1]
+      );
+      if (distanceFromVehicle > EXPEDITION_VEHICLE_HIT_RADIUS) {
+        return reply.code(403).send({ error: `${enemy.name}: столкновение слишком далеко от машины` });
+      }
+      if (distanceFromSpawn > expeditionEnemyPatrolTolerance(hit.enemyId)) {
+        return reply.code(403).send({ error: `${enemy.name}: некорректная позиция столкновения` });
+      }
+    }
+
+    if (liveHits.length === 0) {
+      return {
+        profile: user.expedition,
+        run: makeRunSnapshot(run),
+        hits: []
+      };
+    }
+
+    const nextHitAt = nextExpeditionVehicleHitAt.get(user.id) ?? 0;
+    if (now < nextHitAt) {
+      return reply.code(429).send({
+        error: "Следующее столкновение ещё не зарегистрировано",
+        retryAfterMs: Math.max(1, nextHitAt - now)
+      });
+    }
+
+    let enemyHitCooldowns = nextExpeditionVehicleEnemyHitAt.get(user.id);
+    if (!enemyHitCooldowns) {
+      enemyHitCooldowns = new Map<ExpeditionEnemyId, number>();
+      nextExpeditionVehicleEnemyHitAt.set(user.id, enemyHitCooldowns);
+    }
+    const eligibleHits = liveHits.filter((hit) => now >= (enemyHitCooldowns!.get(hit.enemyId) ?? 0));
+    if (eligibleHits.length === 0) {
+      const retryAfterMs = Math.max(1, Math.min(...liveHits.map((hit) => (
+        (enemyHitCooldowns!.get(hit.enemyId) ?? now + 1) - now
+      ))));
+      return reply.code(429).send({
+        error: "Эта цель только что получила удар машиной",
+        retryAfterMs
+      });
+    }
+
+    const hitResults = eligibleHits.map((hit) => {
+      const enemy = EXPEDITION_ENEMIES[hit.enemyId];
+      const damage = expeditionVehicleImpactDamage(hit.speed);
+      const remainingHealth = Math.max(0, (run.enemyHealth[hit.enemyId] ?? enemy.maxHealth) - damage);
+      const killed = remainingHealth <= 0;
+      run.enemyHealth[hit.enemyId] = remainingHealth;
+      if (killed) {
+        run.killedEnemyIds.push(hit.enemyId);
+        run.enemyDeathPositions[hit.enemyId] = { ...hit.position };
+        user.expedition.stats.enemiesKilled += 1;
+        if (enemy.hostile) {
+          user.expedition.stats.hostileEnemiesKilled += 1;
+        }
+        recordExpeditionEnemyDefeat(user, hit.enemyId);
+      }
+      return {
+        enemy,
+        impactSpeed: hit.speed,
+        impactPosition: { ...hit.position },
+        damage,
+        remainingHealth,
+        killed,
+        corpseLootAvailable: killed
+      };
+    });
+
+    nextExpeditionVehicleHitAt.set(user.id, now + EXPEDITION_VEHICLE_HIT_COOLDOWN_MS);
+    for (const hit of eligibleHits) {
+      enemyHitCooldowns.set(hit.enemyId, now + EXPEDITION_VEHICLE_ENEMY_HIT_COOLDOWN_MS);
+    }
+    persistActiveRun(user, run);
+    writeDb(db);
+    return {
+      profile: user.expedition,
+      run: makeRunSnapshot(run),
+      hits: hitResults
+    };
+  } catch {
+    return reply.code(401).send({ error: "Нужно войти" });
+  }
+});
+
 fastify.post("/api/expedition/kill", async (request, reply) => {
   try {
     requireUser(request);
@@ -3031,6 +3237,8 @@ io.on("connection", (socket) => {
       movementState.needsInitialCitySync = false;
     }
 
+    let acceptedMovementDistance = 0;
+    let acceptedMovementElapsedMs = 0;
     if (acceptsInitialCitySync) {
       movementState.lastAt = now;
       movementState.budget = NEIGHBORHOOD_INITIAL_MOVE_BUDGET;
@@ -3049,6 +3257,8 @@ io.on("connection", (socket) => {
       const dz = requestedPosition.z - previousPosition.z;
       const requestedDistance = Math.hypot(dx, dz);
       const acceptedDistance = Math.min(requestedDistance, movementBudget);
+      acceptedMovementDistance = acceptedDistance;
+      acceptedMovementElapsedMs = elapsedMs;
       if (requestedDistance > acceptedDistance && requestedDistance > 0) {
         const scale = acceptedDistance / requestedDistance;
         requestedPosition.x = previousPosition.x + dx * scale;
@@ -3057,6 +3267,34 @@ io.on("connection", (socket) => {
       movementBudget = Math.max(0, movementBudget - acceptedDistance);
       movementState.lastAt = now;
       movementState.budget = movementBudget;
+    }
+
+    const previousVehicleTelemetry = neighborhoodVehicleMovementTelemetry.get(neighborhoodUserId);
+    if (!requestedPosition.vehicle) {
+      neighborhoodVehicleMovementTelemetry.set(neighborhoodUserId, {
+        observedSpeed: 0,
+        observedAt: now,
+        vehicle: false
+      });
+    } else if (acceptedMovementDistance > 0.001 && acceptedMovementElapsedMs > 0) {
+      neighborhoodVehicleMovementTelemetry.set(neighborhoodUserId, {
+        observedSpeed: Math.min(
+          NEIGHBORHOOD_MAX_SPEED,
+          acceptedMovementDistance / (acceptedMovementElapsedMs / 1000)
+        ),
+        observedAt: now,
+        vehicle: true
+      });
+    } else if (
+      !previousVehicleTelemetry
+      || !previousVehicleTelemetry.vehicle
+      || now - previousVehicleTelemetry.observedAt > EXPEDITION_VEHICLE_TELEMETRY_MAX_AGE_MS
+    ) {
+      neighborhoodVehicleMovementTelemetry.set(neighborhoodUserId, {
+        observedSpeed: 0,
+        observedAt: now,
+        vehicle: true
+      });
     }
     lastNeighborhoodPositions.set(neighborhoodUserId, { ...requestedPosition });
     updateActiveExpeditionPosition(neighborhoodUserId, requestedPosition);

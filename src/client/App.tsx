@@ -27,6 +27,7 @@ import {
   getPlayers,
   getToken,
   hitExpeditionEnemies,
+  hitExpeditionEnemiesWithVehicle,
   login,
   lootExpeditionContainer,
   lootExpeditionEnemy,
@@ -70,6 +71,7 @@ import type {
   ExpeditionSkillId,
   ExpeditionTacticalId,
   ExpeditionTacticalTarget,
+  ExpeditionVehicleHitInput,
   ExpeditionWeaponId,
   ExpeditionWeaponUpgradeStat,
   PartyInvite,
@@ -132,6 +134,7 @@ export default function App() {
   const [expeditionRun, setExpeditionRun] = useState<ExpeditionRunSnapshot | null>(null);
   const [expeditionBusy, setExpeditionBusy] = useState("");
   const [pendingExpeditionShots, setPendingExpeditionShots] = useState(0);
+  const [pendingExpeditionVehicleHits, setPendingExpeditionVehicleHits] = useState(0);
   const [expeditionHealPulse, setExpeditionHealPulse] = useState(0);
   const [expeditionPlayerStatus, setExpeditionPlayerStatus] = useState({
     health: 100,
@@ -163,6 +166,7 @@ export default function App() {
   const voiceActiveRef = useRef(false);
   const enemyHitQueueRef = useRef(Promise.resolve());
   const pendingExpeditionShotsRef = useRef(0);
+  const pendingExpeditionVehicleHitsRef = useRef(0);
   const pendingContainersRef = useRef(new Set<ExpeditionContainerId>());
   const pendingEnemyLootRef = useRef(new Set<ExpeditionEnemyId>());
   const pendingBandageRef = useRef(false);
@@ -244,6 +248,8 @@ export default function App() {
       playerStatusRetryAttemptRef.current = 0;
       pendingExpeditionShotsRef.current = 0;
       setPendingExpeditionShots(0);
+      pendingExpeditionVehicleHitsRef.current = 0;
+      setPendingExpeditionVehicleHits(0);
       pendingEnemyLootRef.current.clear();
       pendingBandageRef.current = false;
       pendingTacticalRef.current = false;
@@ -1746,6 +1752,63 @@ export default function App() {
       });
   }
 
+  function adjustPendingExpeditionVehicleHits(delta: number) {
+    pendingExpeditionVehicleHitsRef.current = Math.max(0, pendingExpeditionVehicleHitsRef.current + delta);
+    setPendingExpeditionVehicleHits(pendingExpeditionVehicleHitsRef.current);
+  }
+
+  function handleExpeditionVehicleHit(hits: ExpeditionVehicleHitInput[]) {
+    const session = captureSession();
+    const runId = expeditionRunRef.current?.id;
+    if (!session || !runId || hits.length === 0) return;
+
+    adjustPendingExpeditionVehicleHits(1);
+    enemyHitQueueRef.current = enemyHitQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (!isCurrentSession(session) || expeditionRunRef.current?.id !== runId) return;
+        try {
+          const response = await hitExpeditionEnemiesWithVehicle(hits);
+          if (!isCurrentSession(session) || expeditionRunRef.current?.id !== runId) return;
+          setExpeditionProfile(response.profile);
+          updateExpeditionRun(response.run);
+          for (const result of response.hits) {
+            if (!result.killed) continue;
+            showToast(`${result.enemy.name} сбит машиной · останки можно обыскать`);
+            trackGoal("expedition_enemy_kill", {
+              enemy: result.enemy.id,
+              hostile: result.enemy.hostile,
+              source: "vehicle"
+            });
+          }
+        } catch (expeditionError) {
+          const message = expeditionError instanceof Error
+            ? expeditionError.message
+            : "Не удалось подтвердить столкновение";
+          if (isCurrentSession(session)
+            && expeditionRunRef.current?.id === runId
+            && !message.includes("ещё не зарегистрировано")) {
+            showToast(message);
+          }
+          if (isCurrentSession(session) && expeditionRunRef.current?.id === runId) {
+            try {
+              const snapshot = await getExpeditionProfile();
+              if (isCurrentSession(session) && expeditionRunRef.current?.id === runId) {
+                setExpeditionProfile(snapshot.profile);
+                updateExpeditionRun(snapshot.run);
+              }
+            } catch {
+              // The next successful impact/profile refresh will reconcile state.
+            }
+          }
+        } finally {
+          if (isCurrentSession(session) && expeditionRunRef.current?.id === runId) {
+            adjustPendingExpeditionVehicleHits(-1);
+          }
+        }
+      });
+  }
+
   async function handleExtractExpedition() {
     const session = captureSession();
     const runId = expeditionRunRef.current?.id;
@@ -1883,6 +1946,8 @@ export default function App() {
     setPartyOutgoingInvites([]);
     setPartyOnlinePlayers([]);
     enemyHitQueueRef.current = Promise.resolve();
+    pendingExpeditionVehicleHitsRef.current = 0;
+    setPendingExpeditionVehicleHits(0);
     pendingContainersRef.current.clear();
   }
 
@@ -2067,7 +2132,7 @@ export default function App() {
               lootedEnemyIds={expeditionRun?.lootedEnemyIds ?? []}
               defeatedEnemyIds={expeditionRun?.killedEnemyIds ?? []}
               enemyHealth={expeditionRun?.enemyHealth}
-              expeditionSyncPending={pendingExpeditionShots > 0}
+              expeditionSyncPending={pendingExpeditionShots > 0 || pendingExpeditionVehicleHits > 0}
               expeditionAmmo={expeditionRun
                 ? Math.max(0, expeditionRun.backpack.reduce((total, stack) => (
                   stack.itemId === "ammo" ? total + stack.quantity : total
@@ -2094,6 +2159,7 @@ export default function App() {
                 openExpeditionPanel(tab === "gear" ? "equipment" : tab ?? "raid");
               }}
               onExpeditionShot={handleExpeditionShot}
+              onExpeditionVehicleHit={handleExpeditionVehicleHit}
               onExtract={() => void handleExtractExpedition()}
               onPlayerDefeated={() => handleAbandonExpedition(true)}
               onPlayerSurrender={() => handleAbandonExpedition(true)}

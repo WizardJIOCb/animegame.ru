@@ -19,6 +19,7 @@ import type {
   ExpeditionSkillId,
   ExpeditionTacticalId,
   ExpeditionTacticalTarget,
+  ExpeditionVehicleHitInput,
   ExpeditionWeaponDefinition,
   ExpeditionWeaponId,
   ExpeditionWeaponUpgradeStat,
@@ -317,6 +318,27 @@ export type ExpeditionHitResult = {
 
 export function hitExpeditionEnemies(hits: ExpeditionHitInput[]) {
   return request<ExpeditionHitResult>("/api/expedition/hit", {
+    method: "POST",
+    body: JSON.stringify({ hits })
+  });
+}
+
+export type ExpeditionVehicleHitResult = {
+  profile: ExpeditionProfile;
+  run: ExpeditionRunSnapshot;
+  hits: Array<{
+    enemy: ExpeditionEnemyDefinition;
+    impactSpeed: number;
+    impactPosition: { x: number; z: number };
+    damage: number;
+    remainingHealth: number;
+    killed: boolean;
+    corpseLootAvailable: boolean;
+  }>;
+};
+
+export function hitExpeditionEnemiesWithVehicle(hits: ExpeditionVehicleHitInput[]) {
+  return request<ExpeditionVehicleHitResult>("/api/expedition/vehicle-hit", {
     method: "POST",
     body: JSON.stringify({ hits })
   });

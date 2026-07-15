@@ -500,6 +500,23 @@ export type ExpeditionHitInput = {
   position?: { x: number; z: number };
 };
 
+export const EXPEDITION_VEHICLE_MIN_IMPACT_SPEED = 2.5;
+export const EXPEDITION_VEHICLE_MAX_IMPACT_SPEED = 14;
+
+export function expeditionVehicleImpactDamage(speed: number) {
+  const numericSpeed = Number(speed);
+  const impactSpeed = Number.isFinite(numericSpeed)
+    ? Math.min(EXPEDITION_VEHICLE_MAX_IMPACT_SPEED, Math.max(0, Math.abs(numericSpeed)))
+    : 0;
+  return Math.round(impactSpeed * impactSpeed * 2.2);
+}
+
+export type ExpeditionVehicleHitInput = {
+  enemyId: ExpeditionEnemyId;
+  speed: number;
+  position: { x: number; z: number };
+};
+
 export const EXPEDITION_AMMO_PACK = { quantity: 30, price: 450 } as const;
 export const EXPEDITION_START_AMMO: Record<ExpeditionWeaponId, number> = {
   pistol: 36,

@@ -62,13 +62,16 @@ import type {
   ExpeditionHitZone,
   ExpeditionSkillId,
   ExpeditionTacticalId,
-  ExpeditionTacticalTarget
+  ExpeditionTacticalTarget,
+  ExpeditionVehicleHitInput
 } from "../../shared/expedition";
 import {
   EXPEDITION_ARTIFACTS,
   EXPEDITION_ARTIFACT_IDS,
   EXPEDITION_DOWNED_BLEED_OUT_MS,
+  EXPEDITION_VEHICLE_MIN_IMPACT_SPEED,
   expeditionEnemyPatrolTolerance,
+  expeditionVehicleImpactDamage,
   EXPEDITION_GEAR,
   EXPEDITION_GRENADE_IDS,
   EXPEDITION_GRENADES,
@@ -127,6 +130,7 @@ type NeighborhoodSceneProps = {
   expeditionGearUpgrades?: Partial<Record<ExpeditionGearId, number>>;
   onOpenExpeditionPanel?: (tab?: "inventory" | "skills" | "gear" | "traders" | "quests" | "upgrades") => void;
   onExpeditionShot?: (hits: ExpeditionHitInput[]) => void;
+  onExpeditionVehicleHit?: (hits: ExpeditionVehicleHitInput[]) => void;
   onExtract?: () => void;
   onPlayerDefeated?: () => boolean | Promise<boolean>;
   onPlayerSurrender?: () => boolean | Promise<boolean>;
@@ -203,6 +207,9 @@ const MAX_CORPSE_IMPULSE_SPEED = 8;
 const INTERIOR_GRID_STEP = 0.45;
 const PLAYER_PATH_CLEARANCE = 0.28;
 const CAR_MAX_SPEED = 12.5;
+const VEHICLE_HALF_LENGTH = 1.85;
+const VEHICLE_HALF_WIDTH = 1.12;
+const VEHICLE_HIT_COOLDOWN_MS = 720;
 const DOWNED_FALL_MS = 1_350;
 const DOWNED_BLEED_OUT_MS = EXPEDITION_DOWNED_BLEED_OUT_MS;
 const DOWNED_CRAWL_SPEED = 0.58;
@@ -536,10 +543,14 @@ function residentCarTransform(resident: NeighborhoodResident): CarTransform {
   };
 }
 
-function isRoad(x: number, z: number) {
-  return (Math.abs(x) <= 8.6 || (Math.abs(z) <= 5.7 && Math.abs(x) <= 42))
-    && x >= WORLD_MIN_X && x <= WORLD_MAX_X
+function isCarDriveable(x: number, z: number) {
+  const insideWorld = x >= WORLD_MIN_X && x <= WORLD_MAX_X
     && z >= WORLD_MIN_Z && z <= WORLD_MAX_Z;
+  const onCityRoad = Math.abs(x) <= 8.6 || (Math.abs(z) <= 5.7 && Math.abs(x) <= 42);
+  // Beyond the checkpoint the terrain is intentionally driveable: world
+  // blockers still handle trees, bases, rocks and containers, while the car
+  // can reach roaming monsters instead of being confined to the highway.
+  return insideWorld && (onCityRoad || z <= OUTLANDS_ENTRY_Z);
 }
 
 function resolveWalkPosition(current: THREE.Vector3, requested: THREE.Vector3, residents: NeighborhoodResident[]) {
@@ -931,6 +942,25 @@ function routeLength(start: THREE.Vector3, route: THREE.Vector3[]) {
   return length;
 }
 
+function distanceSquaredToSegmentXZ(point: THREE.Vector3, start: THREE.Vector3, end: THREE.Vector3) {
+  const segmentX = end.x - start.x;
+  const segmentZ = end.z - start.z;
+  const lengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+  if (lengthSquared < 0.000001) {
+    const dx = point.x - start.x;
+    const dz = point.z - start.z;
+    return dx * dx + dz * dz;
+  }
+  const projection = THREE.MathUtils.clamp(
+    ((point.x - start.x) * segmentX + (point.z - start.z) * segmentZ) / lengthSquared,
+    0,
+    1
+  );
+  const dx = point.x - (start.x + segmentX * projection);
+  const dz = point.z - (start.z + segmentZ * projection);
+  return dx * dx + dz * dz;
+}
+
 function resolveInteriorItemCollisions(
   current: THREE.Vector3,
   requested: THREE.Vector3,
@@ -972,7 +1002,7 @@ function resolveInteriorItemCollisions(
 
 function StreetCamera({
   position,
-  rotation,
+  rotationRef,
   driving,
   cameraMode,
   cameraYaw,
@@ -989,7 +1019,7 @@ function StreetCamera({
   bounds
 }: {
   position: THREE.Vector3;
-  rotation: number;
+  rotationRef: RefObject<number>;
   driving: boolean;
   cameraMode: CameraMode;
   cameraYaw: { current: number };
@@ -1166,7 +1196,7 @@ function StreetCamera({
   useFrame((_, delta) => {
     const controls = controlsRef.current;
     if (!controls) return;
-    const forward = frontVector(rotation);
+    const forward = frontVector(rotationRef.current);
 
     if (driving) {
       if (!wasDriving.current) {
@@ -2264,9 +2294,30 @@ function CarFallback({ color }: { color: string }) {
   );
 }
 
-function Car({ transform, color, active = false }: { transform: CarTransform; color: string; active?: boolean }) {
+function Car({
+  transform,
+  color,
+  active = false,
+  livePositionRef,
+  liveRotationRef
+}: {
+  transform: CarTransform;
+  color: string;
+  active?: boolean;
+  livePositionRef?: RefObject<THREE.Vector3>;
+  liveRotationRef?: RefObject<number>;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+
+  useFrame(() => {
+    if (!groupRef.current || !livePositionRef) return;
+    groupRef.current.position.copy(livePositionRef.current);
+    groupRef.current.rotation.y = liveRotationRef?.current ?? transform.rotation;
+  }, -1);
+
   return (
     <group
+      ref={groupRef}
       position={transform.position}
       rotation={[0, transform.rotation, 0]}
       userData={{ impactSurface: "metal", impactDynamic: true }}
@@ -2446,6 +2497,7 @@ function NeighborhoodWorld({
   onUseTactical,
   onOpenExpeditionPanel,
   onExpeditionShot,
+  onExpeditionVehicleHit,
   onExtract,
   onPlayerDefeated,
   onPlayerSurrender,
@@ -2519,6 +2571,7 @@ function NeighborhoodWorld({
   const carPosition = useRef(ownCarStart.position.clone());
   const carRotation = useRef(ownCarStart.rotation);
   const carSpeed = useRef(0);
+  const vehicleHitAtRef = useRef(new Map<NpcRuntime, number>());
   const keys = useRef(new Set<string>());
   const clickTarget = useRef<THREE.Vector3 | null>(null);
   const clickPath = useRef<THREE.Vector3[]>([]);
@@ -2564,8 +2617,6 @@ function NeighborhoodWorld({
   const [renderPlayerPosition] = useState(() => playerPosition.current.clone());
   const renderPlayerRotation = useRef(playerRotation.current);
   const [cameraFollowPosition] = useState(() => playerPosition.current.clone().sub(viewOrigin));
-  const [renderCarPosition, setRenderCarPosition] = useState(() => carPosition.current.clone());
-  const [renderCarRotation, setRenderCarRotation] = useState(carRotation.current);
   const [moving, setMoving] = useState(false);
   const [playerMotion, setPlayerMotion] = useState<CharacterMotion>("idle");
   const [shotEffects, setShotEffects] = useState<ShotEffect[]>([]);
@@ -2651,6 +2702,7 @@ function NeighborhoodWorld({
   const onLootEnemyRef = useRef(onLootEnemy);
   const onUseBandageRef = useRef(onUseBandage);
   const onUseTacticalRef = useRef(onUseTactical);
+  const onExpeditionVehicleHitRef = useRef(onExpeditionVehicleHit);
   const onReloadRef = useRef(onReload);
   const onWeaponChangeRef = useRef(onWeaponChange);
 
@@ -2663,6 +2715,7 @@ function NeighborhoodWorld({
   tacticalCountsRef.current = expeditionTacticalCounts;
   supportRobotUntilRef.current = expeditionSupportRobotUntil ?? 0;
   onUseTacticalRef.current = onUseTactical;
+  onExpeditionVehicleHitRef.current = onExpeditionVehicleHit;
   playerMaxHealthRef.current = 100 + survivalSkillLevel * 10;
   weaponSkillLevelRef.current = weaponSkillLevel;
   bandageCountRef.current = bandageCount;
@@ -2712,8 +2765,6 @@ function NeighborhoodWorld({
       carPosition.current.copy(ownCarStart.position);
       carRotation.current = ownCarStart.rotation;
       carSpeed.current = 0;
-      setRenderCarPosition(ownCarStart.position.clone());
-      setRenderCarRotation(ownCarStart.rotation);
     }
     if (playerOutside) {
       playerPosition.current.set(0, 0, -72);
@@ -2760,6 +2811,10 @@ function NeighborhoodWorld({
     }
     return { definition, runtime };
   }), []);
+  const vehicleTargets = useMemo(
+    () => [...npcActors.map(({ runtime }) => runtime), ...outlandsActors.map(({ runtime }) => runtime)],
+    [npcActors, outlandsActors]
+  );
 
   useEffect(() => {
     if (previousExpeditionActiveRef.current === expeditionActive) return;
@@ -2824,8 +2879,6 @@ function NeighborhoodWorld({
         carPosition.current.copy(ownCarStart.position);
         carRotation.current = ownCarStart.rotation;
         carSpeed.current = 0;
-        setRenderCarPosition(ownCarStart.position.clone());
-        setRenderCarRotation(ownCarStart.rotation);
       }
       if (playerPosition.current.z <= OUTLANDS_ENTRY_Z) {
         playerPosition.current.set(0, 0, -72);
@@ -3380,8 +3433,6 @@ function NeighborhoodWorld({
     carPosition.current.copy(ownCarStart.position);
     carRotation.current = ownCarStart.rotation;
     carSpeed.current = 0;
-    setRenderCarPosition(ownCarStart.position.clone());
-    setRenderCarRotation(ownCarStart.rotation);
     playerHealthRef.current = playerMaxHealthRef.current;
     playerShieldRef.current = 0;
     playerPosition.current.set(0, 0, -72);
@@ -4248,6 +4299,17 @@ function NeighborhoodWorld({
       drivingRef.current = next;
       setDriving(next);
       onDrivingChangeRef.current(next);
+      lastMoveSent.current = performance.now();
+      const syncedPosition = next ? carPosition.current : playerPosition.current;
+      const syncedRotation = next ? carRotation.current : playerRotation.current;
+      lastRotationSent.current = syncedRotation;
+      onMoveRef.current({
+        x: syncedPosition.x,
+        y: 0,
+        z: syncedPosition.z,
+        rotation: syncedRotation,
+        vehicle: next
+      });
       if (next) {
         jumpElapsedMs.current = null;
         keys.current.delete("q");
@@ -4900,31 +4962,112 @@ function NeighborhoodWorld({
     let didMove = false;
     let completedClickRoute = false;
     if (drivingRef.current) {
+      const vehicleDelta = Math.min(delta, WALK_DELTA_CAP);
       const throttle = (keys.current.has("w") || keys.current.has("arrowup") ? 1 : 0)
         - (keys.current.has("s") || keys.current.has("arrowdown") ? 1 : 0);
       const steering = (keys.current.has("a") || keys.current.has("arrowleft") ? 1 : 0)
         - (keys.current.has("d") || keys.current.has("arrowright") ? 1 : 0);
       if (throttle !== 0) {
-        carSpeed.current += throttle * delta * (throttle * carSpeed.current < 0 ? 13 : 7.8);
+        carSpeed.current += throttle * vehicleDelta * (throttle * carSpeed.current < 0 ? 13 : 7.8);
       } else {
-        carSpeed.current *= Math.exp(-delta * 1.85);
+        carSpeed.current *= Math.exp(-vehicleDelta * 1.85);
       }
-      if (keys.current.has(" ")) carSpeed.current *= Math.exp(-delta * 7);
+      if (keys.current.has(" ")) carSpeed.current *= Math.exp(-vehicleDelta * 7);
       carSpeed.current = THREE.MathUtils.clamp(carSpeed.current, -5.2, CAR_MAX_SPEED);
       if (Math.abs(carSpeed.current) < 0.04) carSpeed.current = 0;
       const steerPower = (0.22 + Math.min(1, Math.abs(carSpeed.current) / 4.5)) * Math.sign(carSpeed.current || 1);
-      carRotation.current += steering * delta * 1.45 * steerPower;
-      const requestedCarPosition = carPosition.current.clone().addScaledVector(frontVector(carRotation.current), carSpeed.current * delta);
+      carRotation.current += steering * vehicleDelta * 1.45 * steerPower;
+      const previousCarPosition = carPosition.current.clone();
+      const requestedCarPosition = carPosition.current.clone().addScaledVector(
+        frontVector(carRotation.current),
+        carSpeed.current * vehicleDelta
+      );
       const nextPosition = resolveOutlandsCollisions(
         carPosition.current,
         resolveWorldAccess(carPosition.current, requestedCarPosition),
         1.05
       );
-      if (isRoad(nextPosition.x, nextPosition.z)) {
+      if (isCarDriveable(nextPosition.x, nextPosition.z)) {
         carPosition.current.copy(nextPosition);
-        didMove = Math.abs(carSpeed.current) > 0.03;
+        didMove = carPosition.current.distanceToSquared(previousCarPosition) > 0.00000025;
       } else {
         carSpeed.current *= -0.16;
+      }
+
+      const actualFrameSpeed = didMove
+        ? carPosition.current.distanceTo(previousCarPosition) / Math.max(0.001, vehicleDelta)
+        : 0;
+      const impactSpeed = Math.min(Math.abs(carSpeed.current), actualFrameSpeed);
+      if (didMove && impactSpeed >= EXPEDITION_VEHICLE_MIN_IMPACT_SPEED) {
+        const travelDirection = carPosition.current.clone().sub(previousCarPosition).setY(0);
+        if (travelDirection.lengthSq() < 0.000001) {
+          travelDirection.copy(frontVector(carRotation.current)).multiplyScalar(Math.sign(carSpeed.current || 1));
+        } else {
+          travelDirection.normalize();
+        }
+        const sweepStart = previousCarPosition.clone().addScaledVector(travelDirection, -VEHICLE_HALF_LENGTH);
+        const sweepEnd = carPosition.current.clone().addScaledVector(travelDirection, VEHICLE_HALF_LENGTH);
+        const serverHits: ExpeditionVehicleHitInput[] = [];
+        let impactCount = 0;
+        for (const runtime of vehicleTargets) {
+          if (runtime.dead && runtime.kind !== "resident" && runtime.kind !== "human") continue;
+          if (now - (vehicleHitAtRef.current.get(runtime) ?? -Infinity) < VEHICLE_HIT_COOLDOWN_MS) continue;
+          const actorRadius = runtime.behavior.startsWith("boss-")
+            ? 2.2
+            : runtime.kind === "quadShell"
+              ? 1.8
+              : runtime.kind === "eyeDrone"
+                ? 0.85
+                : 0.55;
+          const hitRadius = VEHICLE_HALF_WIDTH + actorRadius;
+          if (distanceSquaredToSegmentXZ(runtime.position, sweepStart, sweepEnd) > hitRadius * hitRadius) continue;
+
+          vehicleHitAtRef.current.set(runtime, now);
+          impactCount += 1;
+          const impactPoint = worldGroupRef.current
+            ? worldGroupRef.current.localToWorld(runtime.position.clone().setY(runtime.kind === "eyeDrone" ? 1.25 : 0.92))
+            : runtime.position.clone().setY(0.92);
+          const impulse = travelDirection.clone().multiplyScalar(impactSpeed * 1.35 + 2.4);
+          impulse.y = 2.4 + impactSpeed * 0.24;
+          const impact: PendingRagdollImpact = {
+            kind: "explosion",
+            bodyPart: "chest",
+            boneName: DEFAULT_BODY_BONE,
+            point: impactPoint.toArray(),
+            velocity: impulse.toArray()
+          };
+          const wasAlive = !runtime.dead;
+          if (runtime.dead) {
+            impactDeadNpc(runtime, impact);
+          } else {
+            damageNpc(runtime, expeditionVehicleImpactDamage(impactSpeed), now, impact);
+          }
+          if (wasAlive && expeditionActiveRef.current && runtime.enemyId) {
+            serverHits.push({
+              enemyId: runtime.enemyId as ExpeditionEnemyId,
+              speed: impactSpeed,
+              position: { x: runtime.position.x, z: runtime.position.z }
+            });
+          }
+          if (runtime.kind === "resident" || runtime.kind === "human") {
+            spawnBloodEffect(impactPoint, travelDirection, now);
+          } else {
+            spawnSyntheticImpact(
+              impactPoint,
+              travelDirection.clone().negate(),
+              travelDirection,
+              "metal",
+              "pistol",
+              now
+            );
+          }
+        }
+        if (impactCount > 0) {
+          carSpeed.current *= Math.pow(0.72, Math.min(2, impactCount));
+        }
+        if (serverHits.length > 0) {
+          onExpeditionVehicleHitRef.current?.(serverHits.slice(0, 6));
+        }
       }
       playerPosition.current.copy(carPosition.current);
       playerRotation.current = carRotation.current;
@@ -5138,11 +5281,6 @@ function NeighborhoodWorld({
     cameraFollowPosition
       .copy(drivingRef.current ? carPosition.current : renderPlayerPosition)
       .sub(viewOrigin);
-    if (drivingRef.current) {
-      setRenderCarPosition(carPosition.current.clone());
-      setRenderCarRotation(carRotation.current);
-    }
-
     const rotationDelta = Math.abs(Math.atan2(
       Math.sin(playerRotation.current - lastRotationSent.current),
       Math.cos(playerRotation.current - lastRotationSent.current)
@@ -5358,7 +5496,7 @@ function NeighborhoodWorld({
     onLootContainer?.(containerId);
   }
 
-  const controlledCarTransform = { position: renderCarPosition, rotation: renderCarRotation };
+  const controlledCarTransform = { position: carPosition.current, rotation: carRotation.current };
   const cameraResident = activeInterior ?? ownResident;
   const displayHomePosition = new THREE.Vector3(cameraResident.lot.x, 0, cameraResident.lot.z).sub(viewOrigin);
   const cameraHomeFront = frontVector(cameraResident.lot.rotation);
@@ -5616,7 +5754,13 @@ function NeighborhoodWorld({
             color={residentCarColor(resident)}
           />
         ))}
-        <Car transform={controlledCarTransform} color={residentCarColor(ownResident)} active={!driving} />
+        <Car
+          transform={controlledCarTransform}
+          color={residentCarColor(ownResident)}
+          active={!driving}
+          livePositionRef={carPosition}
+          liveRotationRef={carRotation}
+        />
 
         {!driving ? (
           <Player
@@ -5679,7 +5823,7 @@ function NeighborhoodWorld({
       </group>
       <StreetCamera
         position={cameraFollowPosition}
-        rotation={driving ? renderCarRotation : renderPlayerRotation.current}
+        rotationRef={driving ? carRotation : playerRotation}
         driving={driving}
         cameraMode={cameraMode}
         cameraYaw={cameraYaw}
