@@ -38,6 +38,10 @@ const walkLimit = floorSize / 2 - 0.45;
 const walkStep = 0.45;
 const gridCount = Math.round((walkLimit * 2) / walkStep) + 1;
 const playerVisualYOffset = -0.025;
+// Universal Animation Library has no dedicated prone clips. Swim_Fwd is the
+// closest grounded pose, but its waterline sits below Y=0, so crawl motions
+// need a visual-only lift. Logical position, collisions and camera stay at Y=0.
+const CRAWL_VISUAL_GROUND_LIFT = 0.6;
 
 type Blocker = {
   x: number;
@@ -989,7 +993,7 @@ const MOTION_CLIPS: Record<CharacterMotion, string> = {
   jumpLand: "Jump_Land",
   crouchIdle: "Crouch_Idle_Loop",
   crouchWalk: "Crouch_Fwd_Loop",
-  crawlIdle: "Swim_Idle_Loop",
+  crawlIdle: "Swim_Fwd_Loop",
   crawl: "Swim_Fwd_Loop",
   aim: "Pistol_Aim_Neutral",
   shoot: "Pistol_Shoot",
@@ -1007,8 +1011,8 @@ const MOTION_SPEED: Record<CharacterMotion, number> = {
   jumpLand: 3.1,
   crouchIdle: 1,
   crouchWalk: 1.3,
-  crawlIdle: 0.72,
-  crawl: 0.62,
+  crawlIdle: 0,
+  crawl: 0.86,
   aim: 1,
   shoot: 1.75,
   reload: 1,
@@ -2704,7 +2708,10 @@ export function Player({
       }
       if (body.current) {
         const targetRotation = rotationRef?.current ?? rotation;
-        body.current.position.y = playerVisualYOffset;
+        const crawlLift = character?.modelUrl && (requestedMotion === "crawl" || requestedMotion === "crawlIdle")
+          ? CRAWL_VISUAL_GROUND_LIFT * (character.modelScale ?? 1)
+          : 0;
+        body.current.position.y = playerVisualYOffset + crawlLift;
         body.current.rotation.y += shortestAngleDelta(body.current.rotation.y, targetRotation) * Math.min(1, delta * 9);
         body.current.rotation.z = character?.modelUrl ? 0 : actuallyMoving ? Math.sin(bob.current) * 0.035 : 0;
       }
@@ -2712,6 +2719,7 @@ export function Player({
   }, -1);
 
   const renderedMotion = motion ?? (isActuallyMoving ? "walk" : "idle");
+  const isCrawlPose = renderedMotion === "crawl" || renderedMotion === "crawlIdle";
   const healthPercent = THREE.MathUtils.clamp((health ?? maxHealth) / Math.max(1, maxHealth), 0, 1);
 
   return (
@@ -2771,7 +2779,7 @@ export function Player({
           )}
         </group>
         {!combatDead ? (
-          <Html center position={[0, 1.95, 0]} distanceFactor={7} style={{ pointerEvents: "none" }}>
+          <Html center position={[0, isCrawlPose ? 0.82 : 1.95, 0]} distanceFactor={7} style={{ pointerEvents: "none" }}>
             <div className={health !== undefined ? "name-tag combat-name-tag" : "name-tag"}>
               <span>{username}</span>
               {health !== undefined ? (
